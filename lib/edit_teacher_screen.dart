@@ -214,7 +214,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     final positions = employment['employmentPositions'];
     final statuses = employment['employmentStatuses'];
     final currentPosition = e['currentEmploymentPosition'] ??
-        (positions is List && positions.isNotEmpty && positions.first is Map ? positions.first['position'] : null);
+        (positions is List && positions.isNotEmpty && positions.first is Map
+            ? ((positions.first as Map)['position'] ?? (positions.first as Map)['Position'])
+            : null);
     final currentStatusRecord = statuses is List && statuses.isNotEmpty && statuses.first is Map
         ? Map<String, dynamic>.from(statuses.first)
         : <String, dynamic>{};
@@ -243,20 +245,20 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       'bloodGroup': e['bloodGroup'],
       'religion': e['religion'],
       'notes': e['notes'],
-      'employmentType': e['employmentType'],
-      'employeeCategory': e['employeeCategory'],
-      'status': e['status'],
+      'employmentType': e['employmentType'] ?? employment['employmentType'],
+      'employeeCategory': e['employeeCategory'] ?? employment['employeeCategory'],
+      'status': currentStatusRecord['statusType'] ?? currentStatusRecord['StatusType'] ?? e['currentEmploymentStatus'] ?? e['status'],
       'statusDate': _dateOnly(currentStatusRecord['statusDate'] ?? currentStatusRecord['effectiveDate'] ?? currentStatusRecord['date']),
       'statusReason': currentStatusRecord['reason'],
-      'jobDesignation': e['jobDesignation'],
-      'employmentGrade': e['employmentGrade'],
-      'classification': e['classification'],
+      'jobDesignation': e['jobDesignation'] ?? employment['jobDesignation'],
+      'employmentGrade': e['employmentGrade'] ?? employment['employmentGrade'],
+      'classification': e['classification'] ?? employment['classification'],
       'currentPosition': currentPosition,
       'dateOfStartWorking': _dateOnly(e['dateOfStartWorking']),
-      'educationLevel': e['educationLevel'],
-      'universityName': e['universityName'],
+      'educationLevel': e['educationLevel'] ?? employment['educationLevel'],
+      'universityName': e['universityName'] ?? employment['universityName'],
       'graduationYear': _dateOnly(e['graduationYear']),
-      'specialization': e['specialization'],
+      'specialization': e['specialization'] ?? employment['specialization'],
       'specialNeedsInformation': e['specialNeedsInformation'],
       'emergencyContactName': e['emergencyContactName'],
       'emergencyContactRelationship': e['emergencyContactRelationship'],
@@ -283,21 +285,34 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return s.length >= 10 ? s.substring(0, 10) : s;
   }
 
+  List<String> _optionEndpointCandidates(String key) {
+    const aliases = <String, List<String>>{
+      'jobDesignation': ['/SelectOption/نوع الوظيفة', '/selectoption/نوع الوظيفة', '/SelectOption/JobDesignation', '/selectoption/JobDesignation'],
+      'employmentType': ['/SelectOption/نوع التوظيف', '/selectoption/نوع التوظيف', '/SelectOption/EmploymentType', '/selectoption/EmploymentType'],
+      'employeeCategory': ['/SelectOption/نوع الموظف', '/selectoption/نوع الموظف', '/SelectOption/EmployeeCategory', '/selectoption/EmployeeCategory', '/SelectOption/تصنيف الموظف', '/selectoption/تصنيف الموظف'],
+      'classification': ['/SelectOption/التصنيف', '/selectoption/التصنيف', '/SelectOption/EmployeeClassification', '/selectoption/EmployeeClassification'],
+      'status': ['/SelectOption/الحالة الوظيفية', '/selectoption/الحالة الوظيفية', '/SelectOption/EmploymentStatus', '/selectoption/EmploymentStatus'],
+      'currentPosition': ['/SelectOption/المنصب الحالي', '/selectoption/المنصب الحالي', '/SelectOption/CurrentPosition', '/selectoption/CurrentPosition'],
+    };
+    return aliases[key] ?? (_commonOptionEndpoints[key] == null ? const [] : [_commonOptionEndpoints[key]!]);
+  }
+
   Future<void> _loadOption(String key) async {
-    final endpoint = _commonOptionEndpoints[key];
-    if (endpoint == null) return;
-    try {
-      final response = await http.get(
-        Uri.parse('https://emis.moedu.gov.iq/api$endpoint'),
-        headers: {'Authorization': widget.token, 'Accept': 'application/json'},
-      );
-      if (response.statusCode != 200) return;
-      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      final raw = decoded is Map ? (decoded['data'] ?? decoded['items'] ?? decoded['results']) : decoded;
-      if (raw is List) {
-        _options[key] = raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
-      }
-    } catch (_) {}
+    for (final endpoint in _optionEndpointCandidates(key)) {
+      try {
+        final response = await http.get(
+          Uri.parse('https://emis.moedu.gov.iq/api$endpoint'),
+          headers: {'Authorization': widget.token, 'Accept': 'application/json'},
+        );
+        if (response.statusCode != 200) continue;
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        final raw = decoded is Map ? (decoded['data'] ?? decoded['items'] ?? decoded['results']) : decoded;
+        if (raw is List && raw.isNotEmpty) {
+          _options[key] = raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+          return;
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _loadCountryStructure() async {
@@ -863,32 +878,32 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   Map<String, dynamic> _buildEmploymentRecord(Map<String, dynamic> old) {
-    final statuses = old['employmentStatuses'];
-    final positions = old['employmentPositions'];
-    final currentStatus = _c['status']!.text.trim();
-    final currentPosition = _c['currentPosition']!.text.trim();
+    final record = Map<String, dynamic>.from(old);
+    final statuses = old['employmentStatuses'] is List
+        ? (old['employmentStatuses'] as List).map((x) => x is Map ? Map<String, dynamic>.from(x) : <String, dynamic>{}).toList()
+        : <Map<String, dynamic>>[];
+    final positions = old['employmentPositions'] is List
+        ? (old['employmentPositions'] as List).map((x) => x is Map ? Map<String, dynamic>.from(x) : <String, dynamic>{}).toList()
+        : <Map<String, dynamic>>[];
 
-    return {
-      'EmploymentStatuses': [
-        {
-          'StatusType': currentStatus,
-          'DisEngagementDate': null,
-          'MinistryOfficialDocumentNumber': null,
-          'Reason': _c['statusReason']!.text.trim().isEmpty ? null : _c['statusReason']!.text.trim(),
-          'StatusDate': _c['statusDate']!.text.trim().isEmpty ? null : _c['statusDate']!.text.trim(),
-          'CurrentBelongToEntityId': int.tryParse(widget.schoolId),
-        }
-      ],
-      'EmploymentPositions': [
-        {
-          'Position': currentPosition,
-          'InitiateDate': _c['dateOfStartWorking']!.text.trim(),
-        }
-      ],
-      'IsCurrentlyActive': true,
-      'CurrentBelongToEntityId': int.tryParse(widget.schoolId),
-      'CurrentEmploymentPosition': currentPosition,
-    };
+    final status = statuses.isNotEmpty ? statuses.first : <String, dynamic>{};
+    status['StatusType'] = _c['status']!.text.trim();
+    status['Reason'] = _c['statusReason']!.text.trim().isEmpty ? null : _c['statusReason']!.text.trim();
+    status['StatusDate'] = _c['statusDate']!.text.trim().isEmpty ? null : _c['statusDate']!.text.trim();
+    status['CurrentBelongToEntityId'] = int.tryParse(widget.schoolId);
+    if (statuses.isEmpty) statuses.add(status);
+
+    final position = positions.isNotEmpty ? positions.first : <String, dynamic>{};
+    position['Position'] = _c['currentPosition']!.text.trim();
+    position['InitiateDate'] = _c['dateOfStartWorking']!.text.trim();
+    if (positions.isEmpty) positions.add(position);
+
+    record['EmploymentStatuses'] = statuses;
+    record['EmploymentPositions'] = positions;
+    record['IsCurrentlyActive'] = true;
+    record['CurrentBelongToEntityId'] = int.tryParse(widget.schoolId);
+    record['CurrentEmploymentPosition'] = _c['currentPosition']!.text.trim();
+    return record;
   }
 
   dynamic _nullable(dynamic value) {

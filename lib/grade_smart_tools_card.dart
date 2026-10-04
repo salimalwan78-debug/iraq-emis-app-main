@@ -79,44 +79,12 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
 
   Future<void> _loadCatalog() async {
     try {
-      final rawStages = await _get(
-        '/selectoption/getschoolstages/${widget.schoolId}',
-      );
+      final rawStages = await _get('/selectoption/getschoolstages/${widget.schoolId}');
       stages = _maps(rawStages);
-
-      int subjectCount = 0;
-      int examCount = 0;
-      for (final stage in stages) {
-        final stageId = _id(stage);
-        if (stageId.isEmpty) continue;
-        status = 'جاري قراءة مواد ${_label(stage)}...';
-        if (mounted) setState(() {});
-
-        final rawSubjects = await _get(
-          '/subject/getsubjectsselect?stageId=$stageId&schoolId=${widget.schoolId}',
-        );
-        final subjects = _maps(rawSubjects);
-        subjectsByStage[stageId] = subjects;
-        subjectCount += subjects.length;
-
-        for (final subject in subjects) {
-          final subjectId = _id(subject);
-          if (subjectId.isEmpty) continue;
-          final rawExams = await _get(
-            '/examscore/getexamsformarks?schoolId=${widget.schoolId}'
-            '&stageId=$stageId&subjectId=$subjectId',
-          );
-          final raw = rawExams is Map ? rawExams['exams'] : null;
-          final exams = _maps(raw);
-          examsBySubject['$stageId:$subjectId'] = exams;
-          examCount += exams.length;
-        }
-      }
-
       if (!mounted) return;
       setState(() {
         loadingCatalog = false;
-        status = 'تمت قراءة $subjectCount مادة و$examCount فصلاً من EMIS.';
+        status = 'تم تحميل الصفوف الدراسية. اختر الصفوف المطلوبة لتحميل موادها فقط.';
         error = null;
       });
     } catch (e) {
@@ -124,9 +92,41 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
       setState(() {
         loadingCatalog = false;
         error = '$e';
-        status = 'تعذر قراءة بيانات الفصول والمواد من EMIS.';
+        status = 'تعذر قراءة الصفوف الدراسية من EMIS.';
       });
     }
+  }
+
+  Future<void> _loadSubjectsForStages(Iterable<String> stageIds) async {
+    final ids = stageIds.where((x) => x.isNotEmpty).toSet();
+    if (ids.isEmpty) return;
+    setState(() { status = 'جاري تحميل مواد الصفوف المختارة فقط...'; });
+    for (final stageId in ids) {
+      if (subjectsByStage.containsKey(stageId)) continue;
+      try {
+        final raw = await _get('/subject/getsubjectsselect?stageId=$stageId&schoolId=${widget.schoolId}');
+        subjectsByStage[stageId] = _maps(raw);
+      } catch (e) {
+        error = '$e';
+      }
+    }
+    if (mounted) setState(() { status = 'تم تحميل مواد الصفوف المختارة.'; });
+  }
+
+  Future<void> _loadExamsForSubjects(Iterable<String> subjectKeys) async {
+    for (final key in subjectKeys.toSet()) {
+      if (examsBySubject.containsKey(key)) continue;
+      final parts = key.split(':');
+      if (parts.length != 2) continue;
+      final stageId = parts[0], subjectId = parts[1];
+      try {
+        final raw = await _get('/examscore/getexamsformarks?schoolId=${widget.schoolId}&stageId=$stageId&subjectId=$subjectId');
+        examsBySubject[key] = _maps(raw is Map ? raw['exams'] : raw);
+      } catch (e) {
+        error = '$e';
+      }
+    }
+    if (mounted) setState(() {});
   }
 
   List<Map<String, dynamic>> get _selectedStageSubjects {
@@ -170,25 +170,26 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
     return result;
   }
 
-  void _setAllStagesAndSubjects(bool enabled) {
-    setState(() {
-      allStagesAndSubjects = enabled;
-      if (enabled) {
-        selectedStages
-          ..clear()
-          ..addAll(stages.map(_id).where((x) => x.isNotEmpty));
-        selectedSubjects
-          ..clear()
-          ..addAll([
-            for (final entry in subjectsByStage.entries)
-              for (final subject in entry.value)
-                if (_id(subject).isNotEmpty) '${entry.key}:${_id(subject)}',
-          ]);
-      } else {
+  Future<void> _setAllStagesAndSubjects(bool enabled) async {
+    if (!enabled) {
+      setState(() {
+        allStagesAndSubjects = false;
         selectedStages.clear();
         selectedSubjects.clear();
-      }
-    });
+        selectedTerms.clear();
+      });
+      return;
+    }
+    final ids = stages.map(_id).where((x) => x.isNotEmpty).toSet();
+    setState(() { allStagesAndSubjects = true; selectedStages..clear()..addAll(ids); });
+    await _loadSubjectsForStages(ids);
+    final subjectKeys = <String>{
+      for (final entry in subjectsByStage.entries)
+        for (final subject in entry.value)
+          if (_id(subject).isNotEmpty) '${entry.key}:${_id(subject)}',
+    };
+    setState(() => selectedSubjects..clear()..addAll(subjectKeys));
+    await _loadExamsForSubjects(subjectKeys);
   }
 
   Future<void> _chooseTerms() async {
@@ -220,14 +221,16 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
       items: items,
       selected: selectedLabels,
       allLabel: 'اختيار كل الصفوف',
-      onApply: (values) {
+      onApply: (values) async {
         final ids = values.map((x) => idsByLabel[x]).whereType<String>().toSet();
         setState(() {
           selectedStages
             ..clear()
             ..addAll(ids);
           selectedSubjects.removeWhere((key) => !ids.contains(key.split(':').first));
+          selectedTerms.clear();
         });
+        await _loadSubjectsForStages(ids);
       },
     );
   }
@@ -253,11 +256,16 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
       items: labels,
       selected: selectedLabels,
       allLabel: 'اختيار كل المواد',
-      onApply: (values) => setState(() {
-        selectedSubjects
-          ..clear()
-          ..addAll(values.map((x) => idsByLabel[x]).whereType<String>());
-      }),
+      onApply: (values) async {
+        final keys = values.map((x) => idsByLabel[x]).whereType<String>().toSet();
+        setState(() {
+          selectedSubjects
+            ..clear()
+            ..addAll(keys);
+          selectedTerms.clear();
+        });
+        await _loadExamsForSubjects(keys);
+      },
     );
   }
 
@@ -524,9 +532,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
                   dense: true,
                   controlAffinity: ListTileControlAffinity.leading,
                   value: allStagesAndSubjects,
-                  onChanged: loadingCatalog
-                      ? null
-                      : (v) => _setAllStagesAndSubjects(v == true),
+                  onChanged: loadingCatalog ? null : (v) => _setAllStagesAndSubjects(v == true),
                   title: const Text(
                     'تطبيق العملية على جميع الصفوف والمواد الدراسية',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),

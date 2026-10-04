@@ -217,7 +217,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       await _loadCountryStructure();
       if (student['identification'] is Map) {
         final identification = Map<String, dynamic>.from(student['identification']);
-        identification['idType'] = 12;
+        identification['idType'] ??= 12;
         student['identification'] = identification;
       }
 
@@ -392,9 +392,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     required bool isDark,
     required Color textColor,
   }) {
-    final items = key == 'idType'
-        ? <Map<String, dynamic>>[{'value': 12, 'displayName': 'البطاقة الوطنية الموحدة'}]
-        : (_options[key] ?? const <Map<String, dynamic>>[]);
+    final items = _options[key] ?? const <Map<String, dynamic>>[];
     final value = owner[key];
     Map<String, dynamic>? selected;
     for (final item in items) {
@@ -886,7 +884,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
   bool _identityFieldVisible(String key, dynamic idType) {
     final t = int.tryParse(idType?.toString() ?? '');
     if (t == 3) return {'idNumber','jinsiyaIdNumber','issuer','recordNumber','pageNumber','issuingCountry','issuingDate','nameOfDocument'}.contains(key);
-    if (t == 12) return {'idNumber','issuingCountry','issuingDate','nameOfDocument'}.contains(key);
+    if (t == 12) return {'idNumber'}.contains(key);
     if (t == 22) return {'birthCertificateNumber','issuer','issuingDate','issuingCountry','nameOfDocument'}.contains(key);
     if (t == 16) return {'otherIdNumber','nameOfDocument','issuer','issuingDate','issuingCountry'}.contains(key);
     return true;

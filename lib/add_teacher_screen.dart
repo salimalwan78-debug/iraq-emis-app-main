@@ -24,6 +24,13 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
   final Map<String, TextEditingController> c = {};
   final Map<String, List<Map<String, dynamic>>> options = {};
 
+  List<Map<String, dynamic>> _addressCountries = [];
+  List<Map<String, dynamic>> _addressGovernorates = [];
+  List<Map<String, dynamic>> _addressDistricts = [];
+  String? _addressCountryId;
+  String? _addressGovernorateId;
+  String? _addressDistrictId;
+
   bool loading = true, saving = false;
   String? error;
   final GlobalKey<EmisLiveSyncState> _liveSyncKey = GlobalKey<EmisLiveSyncState>();
@@ -99,6 +106,9 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     'mobilePhoneNumber': 'رقم هاتف المعلم',
     'email': 'البريد الإلكتروني',
     'notes': 'ملاحظات',
+    'addressCountry': 'الدولة',
+    'addressGovernorate': 'المحافظة',
+    'addressDistrict': 'القضاء',
   };
 
   Map<String, String> get h => {
@@ -136,10 +146,18 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
   Map<String, List<String>> _liveAliases() => {
         for (final entry in labels.entries)
           entry.key: <String>[entry.key, entry.value],
+        'addressCountry': ['addressCountry', 'الدولة', 'country'],
+        'addressGovernorate': ['addressGovernorate', 'المحافظة', 'governorate'],
+        'addressDistrict': ['addressDistrict', 'القضاء', 'district'],
+        'countryStructureId': ['countryStructureId', 'الموقع الجغرافي'],
       };
 
   Map<String, String> _liveValues() => {
         for (final entry in c.entries) entry.key: entry.value.text,
+        'addressCountry': _addressCountryId ?? '',
+        'addressGovernorate': _addressGovernorateId ?? '',
+        'addressDistrict': _addressDistrictId ?? '',
+        'countryStructureId': _addressDistrictId ?? '',
       };
 
   void _focusLive(String key) {
@@ -202,10 +220,9 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
   Future<void> _load() async {
     try {
       for (final e in endpoints.entries) {
-        options[e.key] = await _list(e.value);
+        options[e.key] = await _loadOptionCandidates(e.key);
       }
-      // لا نضع قيماً محلية بديلة في الحالة الوظيفية؛ إذا كانت EMIS توفر
-      // خيارات، نستخدم أول قيمة فعلية منها فقط كقيمة ابتدائية.
+      await _loadCountryStructure();
       if (c['status']!.text.trim().isEmpty && (options['status'] ?? const []).isNotEmpty) {
         c['status']!.text = _value(options['status']!.first);
       }
@@ -213,11 +230,84 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       setState(() => loading = false);
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        loading = false;
-        error = '$e';
-      });
+      setState(() { loading = false; error = '$e'; });
     }
+  }
+
+  List<String> _optionEndpointCandidates(String key) {
+    const aliases = <String, List<String>>{
+      'jobDesignation': ['/SelectOption/نوع الوظيفة', '/selectoption/نوع الوظيفة', '/SelectOption/JobDesignation', '/selectoption/JobDesignation'],
+      'employmentType': ['/SelectOption/نوع التوظيف', '/selectoption/نوع التوظيف', '/SelectOption/EmploymentType', '/selectoption/EmploymentType'],
+      'employeeCategory': ['/SelectOption/نوع الموظف', '/selectoption/نوع الموظف', '/SelectOption/EmployeeCategory', '/selectoption/EmployeeCategory', '/SelectOption/تصنيف الموظف', '/selectoption/تصنيف الموظف'],
+      'classification': ['/SelectOption/التصنيف', '/selectoption/التصنيف', '/SelectOption/EmployeeClassification', '/selectoption/EmployeeClassification'],
+      'status': ['/SelectOption/الحالة الوظيفية', '/selectoption/الحالة الوظيفية', '/SelectOption/EmploymentStatus', '/selectoption/EmploymentStatus'],
+      'currentPosition': ['/SelectOption/المنصب الحالي', '/selectoption/المنصب الحالي', '/SelectOption/CurrentPosition', '/selectoption/CurrentPosition'],
+    };
+    return aliases[key] ?? (endpoints[key] == null ? const [] : [endpoints[key]!]);
+  }
+
+  Future<List<Map<String, dynamic>>> _loadOptionCandidates(String key) async {
+    for (final endpoint in _optionEndpointCandidates(key)) {
+      try {
+        final list = await _list(endpoint);
+        if (list.isNotEmpty) return list;
+      } catch (_) {}
+    }
+    return [];
+  }
+
+  Future<void> _loadCountryStructure() async {
+    try {
+      final list = await _list('/CountryStructure/getcountrystructure');
+      if (list.isEmpty) return;
+      _addressCountries = list;
+      Map<String, dynamic>? iraq;
+      for (final item in list) {
+        if (_text(item).contains('العراق') || _text(item).toLowerCase() == 'iraq') { iraq = item; break; }
+      }
+      iraq ??= list.first;
+      _addressCountryId = _value(iraq);
+      _addressGovernorates = _childrenOf(iraq);
+      _addressGovernorateId = null;
+      _addressDistrictId = null;
+      _addressDistricts = [];
+    } catch (_) {}
+  }
+
+  List<Map<String, dynamic>> _childrenOf(Map<String, dynamic> node) {
+    final raw = node['children'] ?? node['items'] ?? node['subItems'] ?? node['childs'];
+    if (raw is! List) return [];
+    return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  void _setAddressGovernorates(Map<String, dynamic> country) {
+    _addressGovernorates = _childrenOf(country);
+    _addressGovernorateId = null;
+    _addressDistricts = [];
+    _addressDistrictId = null;
+  }
+
+  void _setAddressDistricts(Map<String, dynamic> governorate) {
+    _addressDistricts = _childrenOf(governorate);
+    _addressDistrictId = null;
+  }
+
+  Widget _addressDropdown({required String label, required String? value, required List<Map<String, dynamic>> items, required ValueChanged<String?> onChanged}) {
+    final safe = items.any((x) => _value(x) == value) ? value : null;
+    return DropdownButtonFormField<String>(
+      value: safe,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+      items: items.map((x) => DropdownMenuItem<String>(value: _value(x), child: Text(_text(x), overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
+      onChanged: onChanged,
+    );
   }
 
   List<Map<String, dynamic>> _values(String key) {
@@ -423,7 +513,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
           'Quarter': _n('quarter') ?? '',
           'Street': _n('street') ?? '',
           'ClosestLocation': _n('closestLocation') ?? '',
-          'countryStructureId': null,
+          'countryStructureId': _addressDistrictId == null ? null : int.tryParse(_addressDistrictId!),
           'Latitude': '0',
           'Longitude': '0',
           'ApartmentNumber': '',
@@ -671,6 +761,46 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                       ),
                     ]),
                     _section('العنوان', [
+                      _addressDropdown(
+                        label: 'الدولة',
+                        value: _addressCountryId,
+                        items: _addressCountries,
+                        onChanged: (v) {
+                          final item = _addressCountries.where((x) => _value(x) == v).toList();
+                          if (item.isEmpty) return;
+                          setState(() {
+                            _addressCountryId = v;
+                            _setAddressGovernorates(item.first);
+                          });
+                          _focusLive('addressCountry');
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _addressDropdown(
+                        label: 'المحافظة',
+                        value: _addressGovernorateId,
+                        items: _addressGovernorates,
+                        onChanged: (v) {
+                          final item = _addressGovernorates.where((x) => _value(x) == v).toList();
+                          if (item.isEmpty) return;
+                          setState(() {
+                            _addressGovernorateId = v;
+                            _setAddressDistricts(item.first);
+                          });
+                          _focusLive('addressGovernorate');
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _addressDropdown(
+                        label: 'القضاء',
+                        value: _addressDistrictId,
+                        items: _addressDistricts,
+                        onChanged: (v) {
+                          setState(() => _addressDistrictId = v);
+                          _focusLive('addressDistrict');
+                        },
+                      ),
+                      const SizedBox(height: 10),
                       _textField('town'),
                       const SizedBox(height: 10),
                       Row(

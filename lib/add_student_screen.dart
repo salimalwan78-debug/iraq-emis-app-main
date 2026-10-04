@@ -64,7 +64,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     'motherName': 'إسم الأم',
     'mothersFatherName': 'اسم والد الأم',
     'mothersGrandFatherName': 'اسم جد الأم',
-    'nationalId': 'رقم الهوية',
+    'nationalId': 'رقم البطاقة الوطنية الموحدة',
     'idType': 'نوع الهوية',
     'issuingCountry': 'بلد الإصدار',
     'dateOfBirth': 'تاريخ التولد',
@@ -120,6 +120,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       'mothersFatherName',
       'mothersGrandFatherName',
       'nationalId',
+      'idNumber',
       'idType',
       'issuingCountry',
       'dateOfBirth',
@@ -470,14 +471,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     bool required = false,
     List<String>? fallback,
   }) {
-    final values = key == 'idType'
-        ? <Map<String, dynamic>>[{'value': '12', 'displayName': 'البطاقة الوطنية الموحدة'}]
-        : <Map<String, dynamic>>[
-            ...(options[key] ?? []),
-            ...((fallback ?? []).map((x) => {'value': x, 'displayName': x})),
-          ];
-    final current = key == 'idType' ? '12' : c[key]!.text.trim();
-    if (key == 'idType') c[key]!.text = '12';
+    final values = <Map<String, dynamic>>[
+      ...(options[key] ?? []),
+      ...((fallback ?? []).map((x) => {'value': x, 'displayName': x})),
+    ];
+    final current = c[key]!.text.trim();
     final valid = values.any((x) => _value(x) == current);
     if (current.isNotEmpty && !valid) {
       values.insert(0, {'value': current, 'displayName': current});
@@ -556,29 +554,26 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     });
 
     try {
-      final nationalId = _n('nationalId') ?? '';
-      if (nationalId.isNotEmpty) {
-        final check = await _get(
-          '/student/checknationalidnumber?value=${Uri.encodeQueryComponent(nationalId)}',
-        );
-        if (check is Map && check['isUnique'] == false) {
-          throw Exception('رقم الهوية مستخدم مسبقاً في EMIS');
-        }
+      final idType = int.tryParse(c['idType']!.text) ?? 12;
+      final nationalId = _isNationalId ? (_n('nationalId') ?? '') : (_n('idNumber') ?? '');
+      if (_isNationalId && nationalId.isNotEmpty) {
+        final check = await _get('/student/checknationalidnumber?value=${Uri.encodeQueryComponent(nationalId)}');
+        if (check is Map && check['isUnique'] == false) throw Exception('رقم البطاقة الوطنية مستخدم مسبقاً في EMIS');
       }
 
       final identification = <String, dynamic>{
         'id': 0,
         'idNumber': nationalId,
-        'issuingCountry': 'العراق',
-        'idType': int.tryParse(c['idType']!.text),
-        'jinsiyaIdNumber': _n('jinsiyaIdNumber'),
-        'issuer': _n('issuer') ?? '',
-        'recordNumber': _n('recordNumber') ?? '',
-        'pageNumber': _n('pageNumber') ?? '',
+        'issuingCountry': _isNationalId ? 'العراق' : (_n('issuingCountry') ?? 'العراق'),
+        'idType': idType,
+        'jinsiyaIdNumber': _isCivilId ? _n('jinsiyaIdNumber') : null,
+        'issuer': _n('issuer'),
+        'recordNumber': _isCivilId ? _n('recordNumber') : null,
+        'pageNumber': _isCivilId ? _n('pageNumber') : null,
         'issuingDate': _n('issuingDate'),
-        'nameOfDocument': _n('nameOfDocument') ?? '',
-        'birthCertificateNumber': _n('birthCertificateNumber'),
-        'otherIdNumber': _n('otherIdNumber'),
+        'nameOfDocument': _n('nameOfDocument'),
+        'birthCertificateNumber': _isBirthCertificate ? _n('birthCertificateNumber') : null,
+        'otherIdNumber': _isOtherId ? _n('otherIdNumber') : null,
       };
 
       final payload = <String, dynamic>{
@@ -752,22 +747,42 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                     _section('وثيقة التعريف', [
                       _select('idType', required: true),
                       const SizedBox(height: 10),
-                      // البطاقة الوطنية الموحدة في EMIS تحتوي على رقم البطاقة فقط.
-                      // لا نعرض حقول هوية الأحوال المدنية ولا بلد الإصدار للمستخدم.
-                      _textField(
-                        'nationalId',
-                        required: true,
-                        keyboard: TextInputType.number,
-                      ),
-                      if (_isBirthCertificate) ...[
+                      if (_isNationalId)
+                        _textField('nationalId', required: true, keyboard: TextInputType.number),
+                      if (_isCivilId) ...[
+                        _textField('idNumber', required: true, keyboard: TextInputType.number),
                         const SizedBox(height: 10),
+                        _textField('jinsiyaIdNumber', keyboard: TextInputType.number),
+                        const SizedBox(height: 10),
+                        _textField('issuer'),
+                        const SizedBox(height: 10),
+                        _textField('recordNumber', keyboard: TextInputType.number),
+                        const SizedBox(height: 10),
+                        _textField('pageNumber', keyboard: TextInputType.number),
+                        const SizedBox(height: 10),
+                        _select('issuingCountry'),
+                        const SizedBox(height: 10),
+                        _textField('issuingDate'),
+                      ],
+                      if (_isBirthCertificate) ...[
                         _textField('birthCertificateNumber', required: true),
+                        const SizedBox(height: 10),
+                        _textField('issuer'),
+                        const SizedBox(height: 10),
+                        _select('issuingCountry'),
+                        const SizedBox(height: 10),
+                        _textField('issuingDate'),
                         const SizedBox(height: 10),
                         _textField('nameOfDocument'),
                       ],
                       if (_isOtherId) ...[
-                        const SizedBox(height: 10),
                         _textField('otherIdNumber', required: true),
+                        const SizedBox(height: 10),
+                        _textField('issuer'),
+                        const SizedBox(height: 10),
+                        _select('issuingCountry'),
+                        const SizedBox(height: 10),
+                        _textField('issuingDate'),
                         const SizedBox(height: 10),
                         _textField('nameOfDocument'),
                       ],
