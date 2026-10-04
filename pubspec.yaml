@@ -1,0 +1,52 @@
+name: iraq_emis
+description: A new Flutter project for Iraq EMIS System.
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  flutter_localizations:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.2
+  http: ^1.1.0
+  webview_flutter: ^4.4.2
+  audioplayers: ^6.8.1
+  video_player: ^2.8.2
+
+  # الكاميرا والمعرض
+  image_picker: ^1.0.7
+
+  # صلاحيات الكاميرا والملفات وغيرها
+  permission_handler: ^11.3.0
+
+  # التخزين المحلي
+  shared_preferences: ^2.2.2
+
+  # معالجة الصور
+  image: ^4.10.1
+
+  # إزالة خلفية الشخص محليًا
+  google_mlkit_selfie_segmentation: 0.12.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/avatar.jpg
+    - assets/avatar.png
+    - assets/relax.mp3
+    - assets/intro.mp4

@@ -1,0 +1,144 @@
+name: Build Flutter Android APK
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ==========================================
+      # Checkout
+      # ==========================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ==========================================
+      # Java 17
+      # Required by the current Android Gradle setup
+      # ==========================================
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      # ==========================================
+      # Flutter
+      # The project metadata identifies Flutter 3.47.6
+      # ==========================================
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.6"
+          channel: "stable"
+          cache: true
+
+      # ==========================================
+      # Verify Flutter environment
+      # ==========================================
+      - name: Verify Flutter environment
+        run: |
+          echo "========================================"
+          echo "Flutter version"
+          echo "========================================"
+          flutter --version
+
+          echo ""
+          echo "========================================"
+          echo "Dart version"
+          echo "========================================"
+          dart --version
+
+      # ==========================================
+      # Verify existing Android configuration
+      #
+      # IMPORTANT:
+      # Do NOT run "flutter create ."
+      # Do NOT replace the existing Android project.
+      # ==========================================
+      - name: Verify Android configuration
+        run: |
+          echo "========================================"
+          echo "Android minSdk"
+          echo "========================================"
+          grep -Rni "minSdk" android || true
+
+          echo ""
+          echo "========================================"
+          echo "Gradle wrapper"
+          echo "========================================"
+          cat android/gradle/wrapper/gradle-wrapper.properties
+
+          echo ""
+          echo "========================================"
+          echo "Android settings"
+          echo "========================================"
+          cat android/settings.gradle.kts
+
+          echo ""
+          echo "========================================"
+          echo "Android app Gradle"
+          echo "========================================"
+          cat android/app/build.gradle.kts
+
+      # ==========================================
+      # Verify Internet permission
+      # The permission already exists in the project.
+      # This step does not modify the file.
+      # ==========================================
+      - name: Verify Internet permission
+        run: |
+          if grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml; then
+            echo "Internet permission: OK"
+          else
+            echo "ERROR: INTERNET permission is missing."
+            exit 1
+          fi
+
+      # ==========================================
+      # Verify Android Embedding V2
+      # ==========================================
+      - name: Verify Android Embedding
+        run: |
+          echo "========================================"
+          echo "MainActivity"
+          echo "========================================"
+          find android/app/src/main -type f \
+            \( -name "MainActivity.kt" -o -name "MainActivity.java" \) \
+            -print \
+            -exec cat {} \;
+
+          echo ""
+          echo "========================================"
+          echo "Embedding metadata"
+          echo "========================================"
+          grep -Rni "flutterEmbedding" \
+            android/app/src/main/AndroidManifest.xml || true
+
+      # ==========================================
+      # Install dependencies
+      # ==========================================
+      - name: Install dependencies
+        run: flutter pub get
+
+      # ==========================================
+      # Build Release APK
+      # ==========================================
+      - name: Build APK
+        run: flutter build apk --release
+
+      # ==========================================
+      # Upload APK
+      # ==========================================
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: emis-app-release
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
