@@ -108,6 +108,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     c['nationality']!.text = 'العراق';
     c['issuingCountry']!.text = 'العراق';
     c['countryOfBirth']!.text = 'العراق';
+    c['idType']!.text = '12';
     c['motherTongue']!.text = 'العربية';
     c['bloodGroup']!.text = 'غير معروف';
     c['religion']!.text = 'الإسلام';
@@ -128,6 +129,15 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         for (final entry in labels.entries)
           entry.key: <String>[entry.key, entry.value],
       };
+
+  Map<String, String> _liveValues() => {
+        for (final entry in c.entries) entry.key: entry.value.text,
+      };
+
+  void _focusLive(String key) {
+    _liveSyncKey.currentState?.focusField(key);
+    _liveSyncKey.currentState?.pushValues(_liveValues());
+  }
 
   void _pushLive() {
     _liveSyncKey.currentState?.pushValues({
@@ -220,7 +230,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         maxLines: maxLines,
         textDirection: TextDirection.rtl,
         decoration: InputDecoration(
-          labelText: '${labels[key] ?? key}${required ? ' *' : ''}',
+          labelText: labels[key] ?? key,
           filled: true,
           fillColor: Colors.white,
           border: OutlineInputBorder(
@@ -232,10 +242,9 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
             borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
           ),
         ),
-        validator: required
-            ? (v) =>
-                v == null || v.trim().isEmpty ? 'هذا الحقل مطلوب' : null
-            : null,
+        validator: null,
+        onChanged: (_) => _liveSyncKey.currentState?.pushValues(_liveValues()),
+        onTap: () => _focusLive(key),
       );
 
   Widget _select(
@@ -254,8 +263,9 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     return DropdownButtonFormField<String>(
       value: current.isEmpty ? null : current,
       isExpanded: true,
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       decoration: InputDecoration(
-        labelText: '${labels[key] ?? key}${required ? ' *' : ''}',
+        labelText: labels[key] ?? key,
         filled: true,
         fillColor: Colors.white,
         border: OutlineInputBorder(
@@ -271,15 +281,14 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
           .map(
             (x) => DropdownMenuItem<String>(
               value: _value(x),
-              child: Text(_text(x), overflow: TextOverflow.ellipsis),
+              child: Text(_text(x), overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
             ),
           )
           .where((x) => x.value != null && x.value!.isNotEmpty)
           .toList(),
-      onChanged: (v) => setState(() => c[key]!.text = v ?? ''),
-      validator: required
-          ? (v) => v == null || v.isEmpty ? 'هذا الحقل مطلوب' : null
-          : null,
+      onTap: () => _focusLive(key),
+      onChanged: (v) { setState(() => c[key]!.text = v ?? ''); _focusLive(key); },
+      validator: null,
     );
   }
 
@@ -690,6 +699,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                 url: 'https://emis.moedu.gov.iq/centers/schools/${widget.schoolId}/individuals/teachers/management',
                 mode: 'add',
                 entity: 'teacher',
+                token: widget.token,
                 aliases: _liveAliases(),
                 onSnapshot: _applyLiveSnapshot,
                 onStatus: (v) { if (mounted) setState(() => _liveStatus = v); },

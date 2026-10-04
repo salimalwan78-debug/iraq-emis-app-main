@@ -127,6 +127,15 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           entry.key: <String>[entry.key, entry.value],
       };
 
+  Map<String, String> _liveValues() => {
+        for (final entry in _c.entries) entry.key: entry.value.text,
+      };
+
+  void _focusLive(String key) {
+    _liveSyncKey.currentState?.focusField(key);
+    _liveSyncKey.currentState?.pushValues(_liveValues());
+  }
+
   void _pushLive() {
     _liveSyncKey.currentState?.pushValues({
       for (final entry in _c.entries) entry.key: entry.value.text,
@@ -317,10 +326,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         filled: true,
         fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white.withOpacity(0.03) : Colors.white,
       ),
-      validator: required ? (v) => v == null || v.trim().isEmpty ? 'هذا الحقل مطلوب' : null : null,
+      validator: null,
+      onChanged: (_) => _liveSyncKey.currentState?.pushValues(_liveValues()),
       onTap: readOnly && (key == 'dateOfBirth' || key == 'dateOfStartWorking' || key == 'graduationYear')
-          ? () => _pickDate(key)
-          : null,
+          ? () { _focusLive(key); _pickDate(key); }
+          : () => _focusLive(key),
     );
   }
 
@@ -335,9 +345,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         filled: true,
         fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white.withOpacity(0.03) : Colors.white,
       ),
-      items: values.map((v) => DropdownMenuItem<String>(value: v, child: Text(v, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis))).toList(),
-      onChanged: (value) => setState(() => _c[key]!.text = value ?? ''),
-      validator: required ? (v) => v == null || v.isEmpty ? 'هذا الحقل مطلوب' : null : null,
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+      items: values.map((v) => DropdownMenuItem<String>(value: v, child: Text(v, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
+      onTap: () => _focusLive(key),
+      onChanged: (value) { setState(() => _c[key]!.text = value ?? ''); _focusLive(key); },
+      validator: null,
     );
   }
 
@@ -1029,6 +1041,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
               url: 'https://emis.moedu.gov.iq/centers/schools/${widget.schoolId}/individuals/teachers/management',
               mode: 'edit',
               entity: 'teacher',
+              token: widget.token,
               recordId: widget.teacherId,
               aliases: _liveAliases(),
               onSnapshot: _applyLiveSnapshot,

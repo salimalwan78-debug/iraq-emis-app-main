@@ -27,6 +27,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
   final Set<String> selectedSubjects = {};
 
   bool loadingCatalog = true;
+  bool allStagesAndSubjects = false;
   bool running = false;
   String? error;
   String status = 'جاري قراءة الفصول والمواد من EMIS...';
@@ -169,6 +170,27 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
     return result;
   }
 
+  void _setAllStagesAndSubjects(bool enabled) {
+    setState(() {
+      allStagesAndSubjects = enabled;
+      if (enabled) {
+        selectedStages
+          ..clear()
+          ..addAll(stages.map(_id).where((x) => x.isNotEmpty));
+        selectedSubjects
+          ..clear()
+          ..addAll([
+            for (final entry in subjectsByStage.entries)
+              for (final subject in entry.value)
+                if (_id(subject).isNotEmpty) '${entry.key}:${_id(subject)}',
+          ]);
+      } else {
+        selectedStages.clear();
+        selectedSubjects.clear();
+      }
+    });
+  }
+
   Future<void> _chooseTerms() async {
     await _multiChoice(
       title: 'اختيار فصل أو عدة فصول من EMIS',
@@ -288,7 +310,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
                             return CheckboxListTile(
                               dense: true,
                               value: temp.contains(item),
-                              title: Text(item),
+                              title: Text(item, style: const TextStyle(fontWeight: FontWeight.bold)),
                               onChanged: (v) => setDialog(() {
                                 if (v == true) {
                                   temp.add(item);
@@ -490,7 +512,32 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
                 enabled: !loadingCatalog && _termLabels.isNotEmpty,
                 onTap: _chooseTerms,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 2),
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F8FB),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE1E6EF)),
+                ),
+                child: CheckboxListTile(
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: allStagesAndSubjects,
+                  onChanged: loadingCatalog
+                      ? null
+                      : (v) => _setAllStagesAndSubjects(v == true),
+                  title: const Text(
+                    'تطبيق العملية على جميع الصفوف والمواد الدراسية',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  subtitle: const Text(
+                    'عند التفعيل لن تحتاج لاختيار الصفوف والمواد يدوياً.',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
               _choiceButton(
                 label: 'الصف الدراسي',
                 value: selectedStages.isEmpty ? 'اختر صفاً أو عدة صفوف' : selectedStages.map(_stageLabel).join('، '),
@@ -564,7 +611,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
                 children: [
                   Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                   const SizedBox(height: 3),
-                  Text(value, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  Text(value, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
                 ],
               ),
             ),

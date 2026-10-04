@@ -31,17 +31,14 @@ class StudentManagementScreen extends StatelessWidget {
                   await Navigator.push(context, MaterialPageRoute(builder: (_) => AddStudentScreen(token: token, schoolId: schoolId)));
                 },
               ),
-              IconButton(
-                tooltip: 'الطلبة غير المفعلين',
-                icon: const Icon(Icons.person_off_outlined, color: Colors.white),
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DeactivatedStudentsScreen(token: token, schoolId: schoolId))),
-              ),
             ],
           ),
           body: Padding(
             padding: const EdgeInsets.all(20),
             child: ListView(children: [
               _buildCard(context, 'تعديل بيانات الطلاب', 'عرض جميع طلاب المدرسة ثم تصفيتهم حسب الصف والشعبة', Icons.edit_document, Colors.indigo, dark, () => Navigator.push(context, MaterialPageRoute(builder: (_) => SelectStudentScreen(token: token, schoolId: schoolId, preLoadedStudents: allStudents)))),
+              const SizedBox(height: 15),
+              _buildCard(context, 'الطلبة غير المفعلين', 'عرض الطلبة غير المفعلين في صفحة مستقلة وإعادة تفعيلهم من EMIS', Icons.person_off_outlined, Colors.redAccent, dark, () => Navigator.push(context, MaterialPageRoute(builder: (_) => DeactivatedStudentsScreen(token: token, schoolId: schoolId)))),
               const SizedBox(height: 15),
               _buildCard(context, 'الأدوات الذكية', 'حذف AA وإضافة صور الطلاب وتوزيعهم وترحيلهم', Icons.auto_awesome, Colors.teal, dark, () => Navigator.push(context, MaterialPageRoute(builder: (_) => SmartToolsScreen(token: token, schoolId: schoolId, allStudents: allStudents)))),
             ]),

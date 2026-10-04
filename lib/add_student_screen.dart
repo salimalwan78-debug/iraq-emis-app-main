@@ -34,6 +34,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   List<Map<String, dynamic>> stages = [], rooms = [];
   Map<String, dynamic>? stageDetails;
 
+  // هيكل العنوان الحقيقي من EMIS: بلد ← محافظة ← قضاء.
+  List<Map<String, dynamic>> _addressCountries = [];
+  List<Map<String, dynamic>> _addressGovernorates = [];
+  List<Map<String, dynamic>> _addressDistricts = [];
+  String? _addressCountryId;
+  String? _addressGovernorateId;
+  String? _addressDistrictId;
+
   final Map<String, String> endpoints = const {
     'gender': '/selectoption/Gender',
     'countryOfBirth': '/selectoption/بلد الولادة',
@@ -87,6 +95,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     'address1': 'عنوان 1',
     'address2': 'عنوان 2',
     'closestLocation': 'أقرب نقطة دالة',
+    'mobilePhoneNumber': 'رقم الهاتف',
+    'addressCountry': 'الدولة',
+    'addressGovernorate': 'المحافظة',
+    'addressDistrict': 'القضاء',
   };
 
   Map<String, String> get h => {
@@ -142,6 +154,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       c[key] = TextEditingController();
     }
     c['nationality']!.text = 'العراق';
+    c['countryOfBirth']!.text = 'العراق';
+    c['issuingCountry']!.text = 'العراق';
+    c['idType']!.text = '12';
     c['studyLanguage']!.text = 'العربية';
     _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _load();
@@ -161,15 +176,28 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           entry.key: <String>[entry.key, entry.value],
         'stageId': ['stageId', 'الصف الدراسي'],
         'classRoomId': ['classRoomId', 'الشعبة'],
+        'addressCountry': ['addressCountry', 'الدولة', 'country'],
+        'addressGovernorate': ['addressGovernorate', 'المحافظة', 'governorate'],
+        'addressDistrict': ['addressDistrict', 'القضاء', 'district'],
+        'countryStructureId': ['countryStructureId', 'الموقع الجغرافي'],
       };
 
   Map<String, String> _liveValues() => {
         for (final entry in c.entries) entry.key: entry.value.text,
         'stageId': stageId ?? '',
         'classRoomId': roomId ?? '',
+        'addressCountry': _addressCountryId ?? '',
+        'addressGovernorate': _addressGovernorateId ?? '',
+        'addressDistrict': _addressDistrictId ?? '',
+        'countryStructureId': _addressDistrictId ?? '',
       };
 
   void _pushLive() {
+    _liveSyncKey.currentState?.pushValues(_liveValues());
+  }
+
+  void _focusLive(String key) {
+    _liveSyncKey.currentState?.focusField(key);
     _liveSyncKey.currentState?.pushValues(_liveValues());
   }
 
@@ -198,6 +226,32 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       final match = rooms.where((x) => _value(x) == v || _text(x) == v).toList();
       if (match.isNotEmpty && roomId != _value(match.first)) {
         roomId = _value(match.first);
+        changed = true;
+      }
+    }
+    if (values.containsKey('addressCountry') && _addressCountries.isNotEmpty) {
+      final v = values['addressCountry']!;
+      final match = _addressCountries.where((x) => _value(x) == v || _text(x) == v).toList();
+      if (match.isNotEmpty) {
+        _addressCountryId = _value(match.first);
+        _setAddressGovernorates(match.first);
+        changed = true;
+      }
+    }
+    if (values.containsKey('addressGovernorate') && _addressGovernorates.isNotEmpty) {
+      final v = values['addressGovernorate']!;
+      final match = _addressGovernorates.where((x) => _value(x) == v || _text(x) == v).toList();
+      if (match.isNotEmpty) {
+        _addressGovernorateId = _value(match.first);
+        _setAddressDistricts(match.first);
+        changed = true;
+      }
+    }
+    if (values.containsKey('addressDistrict') && _addressDistricts.isNotEmpty) {
+      final v = values['addressDistrict']!;
+      final match = _addressDistricts.where((x) => _value(x) == v || _text(x) == v).toList();
+      if (match.isNotEmpty) {
+        _addressDistrictId = _value(match.first);
         changed = true;
       }
     }
@@ -252,6 +306,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
       stages = results.remove('stageId') ?? [];
       options.addAll(results);
+      await _loadAddressStructure();
       options['nationality'] = List<Map<String, dynamic>>.from(options['countryOfBirth'] ?? const []);
       options['studyLanguage'] = List<Map<String, dynamic>>.from(options['motherTongue'] ?? const []);
 
@@ -264,6 +319,66 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         error = '$e';
       });
     }
+  }
+
+  Future<void> _loadAddressStructure() async {
+    try {
+      final raw = _unwrap(await _get('/CountryStructure/getcountrystructure'));
+      if (raw is! List) return;
+      final nodes = raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      if (nodes.isEmpty) return;
+
+      _addressCountries = nodes;
+      Map<String, dynamic>? iraq;
+      for (final item in nodes) {
+        final name = _text(item);
+        if (name.contains('العراق') || name.toLowerCase() == 'iraq') {
+          iraq = item;
+          break;
+        }
+      }
+      iraq ??= nodes.first;
+      _addressCountryId = _value(iraq);
+      _setAddressGovernorates(iraq);
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('تعذر تحميل هيكل العنوان من EMIS: $e');
+    }
+  }
+
+  List<Map<String, dynamic>> _children(Map<String, dynamic> node) {
+    final raw = node['children'] ?? node['items'] ?? node['subItems'] ?? node['childs'];
+    if (raw is! List) return [];
+    return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  void _setAddressGovernorates(Map<String, dynamic> country) {
+    _addressGovernorates = _children(country);
+    _addressGovernorateId = null;
+    _addressDistricts = [];
+    _addressDistrictId = null;
+  }
+
+  void _setAddressDistricts(Map<String, dynamic> governorate) {
+    _addressDistricts = _children(governorate);
+    _addressDistrictId = null;
+  }
+
+  Future<void> _pickDate(String key) async {
+    final initial = DateTime.tryParse(c[key]?.text ?? '') ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+      helpText: labels[key],
+      locale: const Locale('ar'),
+    );
+    if (picked == null || !mounted) return;
+    c[key]!.text =
+        '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+    _focusLive(key);
+    setState(() {});
   }
 
   Future<void> _stageChanged(String? value) async {
@@ -300,7 +415,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         .map(
           (x) => DropdownMenuItem<String>(
             value: _value(x),
-            child: Text(_text(x), overflow: TextOverflow.ellipsis),
+            child: Text(_text(x), overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
         )
         .where((x) => x.value != null && x.value!.isNotEmpty)
@@ -329,7 +444,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       keyboardType: keyboard,
       textDirection: TextDirection.rtl,
       decoration: InputDecoration(
-        labelText: '${labels[key] ?? key}${required ? ' *' : ''}',
+        labelText: labels[key] ?? key,
         filled: true,
         fillColor: Colors.white,
         border: OutlineInputBorder(
@@ -341,9 +456,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
       ),
-      validator: required
-          ? (v) => v == null || v.trim().isEmpty ? 'هذا الحقل مطلوب' : null
-          : null,
+      validator: null,
+      onChanged: (_) => _liveSyncKey.currentState?.pushValues(_liveValues()),
+      onTap: key == 'dateOfBirth' ? () => _pickDate(key) : () => _focusLive(key),
     );
   }
 
@@ -366,7 +481,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       value: current.isEmpty ? null : current,
       isExpanded: true,
       decoration: InputDecoration(
-        labelText: '${labels[key] ?? key}${required ? ' *' : ''}',
+        labelText: labels[key] ?? key,
         filled: true,
         fillColor: Colors.white,
         border: OutlineInputBorder(
@@ -378,19 +493,19 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
       ),
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       items: values
           .map(
             (x) => DropdownMenuItem<String>(
               value: _value(x),
-              child: Text(_text(x), overflow: TextOverflow.ellipsis),
+              child: Text(_text(x), overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
             ),
           )
           .where((x) => x.value != null && x.value!.isNotEmpty)
           .toList(),
-      onChanged: (v) => setState(() => c[key]!.text = v ?? ''),
-      validator: required
-          ? (v) => v == null || v.isEmpty ? 'هذا الحقل مطلوب' : null
-          : null,
+      onTap: () => _focusLive(key),
+      onChanged: (v) { setState(() => c[key]!.text = v ?? ''); _focusLive(key); },
+      validator: null,
     );
   }
 
@@ -427,11 +542,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       );
 
   Future<void> _save() async {
-    if (!(_form.currentState?.validate() ?? false)) return;
-    if (stageId == null || roomId == null) {
-      setState(() => error = 'يجب اختيار الصف والشعبة');
-      return;
-    }
 
     setState(() {
       saving = true;
@@ -500,9 +610,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'lastCompletedStageId': null,
         'lastSchoolId': null,
         'academicYearId': null,
-        'stageId': int.tryParse(stageId!),
+        'stageId': stageId == null ? null : int.tryParse(stageId!),
         'schoolId': int.tryParse(widget.schoolId),
-        'classRoomId': int.tryParse(roomId!),
+        'classRoomId': roomId == null ? null : int.tryParse(roomId!),
         'studentStatus': 0,
         'addressId': 0,
         'address': {
@@ -519,10 +629,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           'latitude': 0,
           'longitude': 0,
           'schoolPhoneNumber': '',
-          'mobilePhoneNumber': '',
+          'mobilePhoneNumber': _n('mobilePhoneNumber') ?? '',
           'email': '',
           'website': '',
-          'countryStructureId': null,
+          'countryStructureId': _addressDistrictId == null ? null : int.tryParse(_addressDistrictId!),
         },
       };
 
@@ -712,6 +822,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                       const SizedBox(height: 10),
                       _select('specialNeeds'),
                       const SizedBox(height: 10),
+                      _textField('mobilePhoneNumber', keyboard: TextInputType.phone),
+                      const SizedBox(height: 10),
                       _textField('notes', maxLines: 3),
                     ]),
                     _section('التسجيل الدراسي', [
@@ -724,6 +836,48 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                       ],
                     ]),
                     _section('العنوان', [
+                      _addressDropdown(
+                        label: 'الدولة',
+                        value: _addressCountryId,
+                        items: _addressCountries,
+                        onChanged: (v) {
+                          final item = _addressCountries.where((x) => _value(x) == v).toList();
+                          if (item.isEmpty) return;
+                          setState(() {
+                            _addressCountryId = v;
+                            _setAddressGovernorates(item.first);
+                          });
+                          _focusLive('addressCountry');
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _addressDropdown(
+                        label: 'المحافظة',
+                        value: _addressGovernorateId,
+                        items: _addressGovernorates,
+                        onChanged: (v) {
+                          final item = _addressGovernorates.where((x) => _value(x) == v).toList();
+                          if (item.isEmpty) return;
+                          setState(() {
+                            _addressGovernorateId = v;
+                            _setAddressDistricts(item.first);
+                          });
+                          _focusLive('addressGovernorate');
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _addressDropdown(
+                        label: 'القضاء',
+                        value: _addressDistrictId,
+                        items: _addressDistricts,
+                        onChanged: (v) {
+                          setState(() {
+                            _addressDistrictId = v;
+                          });
+                          _focusLive('addressDistrict');
+                        },
+                      ),
+                      const SizedBox(height: 10),
                       _textField('town'),
                       const SizedBox(height: 10),
                       Row(
@@ -779,6 +933,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                 url: 'https://emis.moedu.gov.iq/centers/schools/${widget.schoolId}/individuals/students/management',
                 mode: 'add',
                 entity: 'student',
+                token: widget.token,
                 aliases: _liveAliases(),
                 onSnapshot: _applyLiveSnapshot,
                 onStatus: (v) { if (mounted) setState(() => _liveStatus = v); },
@@ -789,38 +944,62 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     );
   }
 
+  Widget _addressDropdown({
+    required String label,
+    required String? value,
+    required List<Map<String, dynamic>> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    final safe = items.any((x) => _value(x) == value) ? value : null;
+    return DropdownButtonFormField<String>(
+      value: safe,
+      isExpanded: true,
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+      decoration: _decoration(label),
+      items: items
+          .map((x) => DropdownMenuItem<String>(
+                value: _value(x),
+                child: Text(_text(x), style: const TextStyle(fontWeight: FontWeight.bold)),
+              ))
+          .where((x) => x.value != null && x.value!.isNotEmpty)
+          .toList(),
+      onChanged: onChanged,
+      validator: null,
+    );
+  }
+
   Widget _selectStage() => DropdownButtonFormField<String>(
         value: stageId,
         isExpanded: true,
-        decoration: _decoration('الصف الدراسي *'),
+        decoration: _decoration('الصف الدراسي'),
         items: stages
             .map(
               (x) => DropdownMenuItem(
                 value: _value(x),
-                child: Text(_text(x)),
+                child: Text(_text(x), style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
             )
             .where((x) => x.value != null && x.value!.isNotEmpty)
             .toList(),
         onChanged: _stageChanged,
-        validator: (v) => v == null ? 'اختر الصف الدراسي' : null,
+        validator: null,
       );
 
   Widget _selectRoom() => DropdownButtonFormField<String>(
         value: roomId,
         isExpanded: true,
-        decoration: _decoration('الشعبة *'),
+        decoration: _decoration('الشعبة'),
         items: rooms
             .map(
               (x) => DropdownMenuItem(
                 value: _value(x),
-                child: Text(_text(x)),
+                child: Text(_text(x), style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
             )
             .where((x) => x.value != null && x.value!.isNotEmpty)
             .toList(),
         onChanged: (v) => setState(() => roomId = v),
-        validator: (v) => v == null ? 'اختر الشعبة' : null,
+        validator: null,
       );
 
   Widget _stageInfo() {

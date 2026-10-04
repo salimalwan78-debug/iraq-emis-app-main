@@ -33,8 +33,22 @@ class MyApp extends StatelessWidget {
           supportedLocales: const [Locale('ar', 'IQ')],
           locale: const Locale('ar', 'IQ'),
           themeMode: currentMode,
-          theme: ThemeData(fontFamily: 'Tajawal', brightness: Brightness.light, primarySwatch: Colors.blue),
-          darkTheme: ThemeData(fontFamily: 'Tajawal', brightness: Brightness.dark, primarySwatch: Colors.blue),
+          theme: ThemeData(
+            fontFamily: 'Tajawal',
+            brightness: Brightness.light,
+            primarySwatch: Colors.blue,
+            dropdownButtonTheme: const DropdownButtonThemeData(
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+            ),
+          ),
+          darkTheme: ThemeData(
+            fontFamily: 'Tajawal',
+            brightness: Brightness.dark,
+            primarySwatch: Colors.blue,
+            dropdownButtonTheme: const DropdownButtonThemeData(
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+          ),
           home: const IntroScreen(),
         );
       },

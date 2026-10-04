@@ -136,6 +136,11 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
   void _pushLive() => _liveSyncKey.currentState?.pushValues(_liveValues());
 
+  void _focusLive(String key) {
+    _liveSyncKey.currentState?.focusField(key);
+    _liveSyncKey.currentState?.pushValues(_liveValues());
+  }
+
   dynamic _liveCoerce(dynamic old, String value) {
     if (old is bool) return value.toLowerCase() == 'true' || value == '1';
     if (old is int) return int.tryParse(value) ?? old;
@@ -288,35 +293,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     'dateOfBirth', 'issuingDate', 'effectiveDate', 'startDate', 'endDate',
   }.contains(key);
 
-  bool _isRequired(String key, [Map<String, dynamic>? parent]) {
-    // Required markers mirror the fields currently treated as mandatory by
-    // the EMIS student form.  The complete API object is still retained;
-    // this only controls the UI/validation projection.
-    const core = <String>{
-      'name',
-      'fatherName',
-      'grandFatherName',
-      'motherName',
-      'dateOfBirth',
-      'gender',
-      'nationality',
-      'countryOfBirth',
-      'motherTongue',
-      'maritalStatus',
-      'bloodGroup',
-      'religion',
-      'stageId',
-      'classRoomId',
-    };
-    if (core.contains(key)) return true;
-
-    final idType = parent?['idType'] ?? _studentData?['identification']?['idType'];
-    if (key == 'idType') return true;
-    if (key == 'idNumber' && (idType == 12 || idType == 3)) return true;
-    if (key == 'jinsiyaIdNumber' && idType == 3) return true;
-    if (key == 'issuingCountry' && (idType == 3 || idType == 12 || idType == 22)) return true;
-    return false;
-  }
+  bool _isRequired(String key, [Map<String, dynamic>? parent]) => false;
 
   dynamic _optionValue(Map<String, dynamic> option) => option['value'] ?? option['id'];
   String _optionText(Map<String, dynamic> option) => (option['displayName'] ?? option['name'] ?? option['label'] ?? option['text'] ?? _optionValue(option)?.toString() ?? '').toString();
@@ -353,9 +330,10 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
         style: TextStyle(color: textColor, fontSize: 16),
         items: items.map((item) => DropdownMenuItem<dynamic>(
-          value: _optionValue(item), child: Text(_optionText(item)),
+          value: _optionValue(item), child: Text(_optionText(item), style: const TextStyle(fontWeight: FontWeight.bold)),
         )).toList(),
-        validator: requiredField ? (v) => v == null || v.toString().isEmpty ? 'هذا الحقل مطلوب' : null : null,
+        validator: null,
+        onTap: () => _focusLive(key),
         onChanged: (newValue) async {
           setState(() {
             owner[key] = newValue;
@@ -411,8 +389,8 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         child: TextFormField(
           controller: TextEditingController(text: value?.toString() ?? ''),
           readOnly: true,
-          onTap: () => _pickDate(owner, key),
-          style: TextStyle(color: textColor, fontSize: 16),
+          onTap: () { _focusLive(key); _pickDate(owner, key); },
+          style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
           decoration: InputDecoration(
             labelText: _isRequired(key, owner) ? '${_label(key)} *' : _label(key),
             suffixIcon: const Icon(Icons.calendar_month),
@@ -440,7 +418,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
             value: value.isNotEmpty && value.first.toString().isNotEmpty ? value.first.toString() : null,
             isExpanded: true,
             decoration: InputDecoration(labelText: _label(key), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
-            items: (_options[key] ?? const []).map((o) => DropdownMenuItem<String>(value: _optionValue(o)?.toString(), child: Text(_optionText(o)))).toList(),
+            items: (_options[key] ?? const []).map((o) => DropdownMenuItem<String>(value: _optionValue(o)?.toString(), child: Text(_optionText(o), style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
             onChanged: (v) => setState(() => owner[key] = v == null ? <String>[] : <String>[v]),
           ),
         );
@@ -1214,11 +1192,6 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
   Future<void> _saveStudentData() async {
     if (_studentData == null) return;
-    if (!(_formKey.currentState?.validate() ?? false)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('يرجى ملء الحقول الإلزامية المشار إليها بعلامة *'), backgroundColor: Colors.red));
-      return;
-    }
-
     setState(() => _isSaving = true);
 
     try {
@@ -1497,6 +1470,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
                   url: 'https://emis.moedu.gov.iq/centers/schools/${_studentData?['schoolId'] ?? ''}/individuals/students/management',
                   mode: 'edit',
                   entity: 'student',
+                  token: widget.token,
                   recordId: widget.studentId,
                   aliases: _liveAliases(),
                   onSnapshot: _applyLiveSnapshot,
@@ -1524,6 +1498,7 @@ class PlainTextField extends StatefulWidget {
   final Function(String) onChanged;
   final bool readOnly;
   final bool requiredField;
+  final VoidCallback? onTap;
 
   const PlainTextField({
     super.key,
@@ -1534,6 +1509,7 @@ class PlainTextField extends StatefulWidget {
     required this.onChanged,
     this.readOnly = false,
     this.requiredField = false,
+    this.onTap,
   });
 
   @override
@@ -1565,9 +1541,8 @@ class _PlainTextFieldState extends State<PlainTextField> {
         controller: _controller,
         readOnly: widget.readOnly,
         onChanged: widget.onChanged,
-        validator: widget.requiredField
-            ? (value) => value == null || value.trim().isEmpty ? 'هذا الحقل مطلوب' : null
-            : null,
+        onTap: widget.onTap,
+        validator: null,
         style: TextStyle(
           color: widget.textColor,
           fontSize: 16,
