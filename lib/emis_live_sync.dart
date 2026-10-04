@@ -421,7 +421,8 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         if(clickText(re)){
           b.opened=true;
           send('status',{message:'تم فتح نموذج الإضافة من EMIS'});
-          setTimeout(()=>collectOptions(['employmentType','employeeCategory','status','classification','currentPosition','positionType']),1200); setTimeout(()=>collectOptions(['employmentType','employeeCategory','status','classification','currentPosition','positionType']),3000);
+          setTimeout(()=>collectOptions(['employmentType','employeeCategory','status','classification','currentPosition','positionType','educationLevel','gender','maritalStatus']),1200); 
+          setTimeout(()=>collectOptions(['employmentType','employeeCategory','status','classification','currentPosition','positionType','educationLevel','gender','maritalStatus']),3000);
           return true;
         }
         return false;
@@ -437,7 +438,8 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         setTimeout(()=>clickText([/تعديل/i,/تحرير/i,/بيانات/i]),350);
         b.opened=true;
         send('status',{message:'تم فتح سجل EMIS للمزامنة'});
-        setTimeout(()=>collectOptions(['employmentType','employeeCategory','status','classification','currentPosition','positionType']),1500); setTimeout(()=>collectOptions(['employmentType','employeeCategory','status','classification','currentPosition','positionType']),3200);
+        setTimeout(()=>collectOptions(['employmentType','employeeCategory','status','classification','currentPosition','positionType','educationLevel','gender','maritalStatus']),1500); 
+        setTimeout(()=>collectOptions(['employmentType','employeeCategory','status','classification','currentPosition','positionType','educationLevel','gender','maritalStatus']),3200);
         return true;
       }
       return false;
