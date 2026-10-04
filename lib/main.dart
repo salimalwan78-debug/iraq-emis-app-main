@@ -37,18 +37,23 @@ class MyApp extends StatelessWidget {
             fontFamily: 'Tajawal',
             brightness: Brightness.light,
             primarySwatch: Colors.blue,
-            dropdownButtonTheme: const DropdownButtonThemeData(
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-            ),
           ),
           darkTheme: ThemeData(
             fontFamily: 'Tajawal',
             brightness: Brightness.dark,
             primarySwatch: Colors.blue,
-            dropdownButtonTheme: const DropdownButtonThemeData(
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-            ),
           ),
+          builder: (context, child) {
+            return DropdownButtonTheme(
+              data: DropdownButtonThemeData(
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: currentMode == ThemeMode.dark ? Colors.white : Colors.black87,
+                ),
+              ),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           home: const IntroScreen(),
         );
       },
