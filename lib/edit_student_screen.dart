@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:image/image.dart' as img;
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
+import 'emis_live_sync.dart';
 
 import 'app_core.dart';
 
@@ -26,6 +28,9 @@ class EditStudentScreen extends StatefulWidget {
 class _EditStudentScreenState extends State<EditStudentScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
+  final GlobalKey<EmisLiveSyncState> _liveSyncKey = GlobalKey<EmisLiveSyncState>();
+  Timer? _liveTimer;
+  String _liveStatus = 'المزامنة الحية مع EMIS قيد التشغيل';
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   Map<String, dynamic>? _studentData;
@@ -102,7 +107,67 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
   @override
   void initState() {
     super.initState();
+    _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _fetchStudentData();
+  }
+
+  Map<String, List<String>> _liveAliases() => {
+        for (final entry in _officialArabicNames.entries)
+          entry.key: <String>[entry.key, entry.value],
+      };
+
+  Map<String, String> _liveValues() {
+    final result = <String, String>{};
+    final data = _studentData;
+    if (data == null) return result;
+    final identification = data['identification'] is Map ? Map<String, dynamic>.from(data['identification']) : <String, dynamic>{};
+    final address = data['address'] is Map ? Map<String, dynamic>.from(data['address']) : <String, dynamic>{};
+    for (final key in _officialArabicNames.keys) {
+      dynamic value;
+      if (data.containsKey(key)) value = data[key];
+      else if (identification.containsKey(key)) value = identification[key];
+      else if (address.containsKey(key)) value = address[key];
+      if (value is List) value = value.isEmpty ? '' : value.first;
+      if (value is bool) value = value ? 'true' : 'false';
+      if (value != null) result[key] = '$value';
+    }
+    return result;
+  }
+
+  void _pushLive() => _liveSyncKey.currentState?.pushValues(_liveValues());
+
+  dynamic _liveCoerce(dynamic old, String value) {
+    if (old is bool) return value.toLowerCase() == 'true' || value == '1';
+    if (old is int) return int.tryParse(value) ?? old;
+    if (old is double) return double.tryParse(value) ?? old;
+    if (old is List) return value.isEmpty ? <String>[] : <String>[value];
+    return value;
+  }
+
+  void _applyLiveSnapshot(Map<String, String> values) {
+    final data = _studentData;
+    if (data == null) return;
+    final identification = data['identification'] is Map ? Map<String, dynamic>.from(data['identification']) : <String, dynamic>{};
+    final address = data['address'] is Map ? Map<String, dynamic>.from(data['address']) : <String, dynamic>{};
+    bool changed = false;
+    for (final entry in values.entries) {
+      final key = entry.key;
+      if (data.containsKey(key)) {
+        final next = _liveCoerce(data[key], entry.value);
+        if ('${data[key]}' != '$next') { data[key] = next; changed = true; }
+      } else if (identification.containsKey(key)) {
+        final next = _liveCoerce(identification[key], entry.value);
+        if ('${identification[key]}' != '$next') { identification[key] = next; changed = true; }
+      } else if (address.containsKey(key)) {
+        final next = _liveCoerce(address[key], entry.value);
+        if ('${address[key]}' != '$next') { address[key] = next; changed = true; }
+      }
+    }
+    if (changed) {
+      data['identification'] = identification;
+      data['address'] = address;
+      if (mounted) setState(() {});
+    }
   }
 
   Map<String, dynamic> _unwrap(dynamic decoded) {
@@ -1266,8 +1331,10 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
             ),
             iconTheme: const IconThemeData(color: Colors.white),
           ),
-          body: _isLoading
-              ? const Center(child: CircularProgressIndicator())
+          body: Stack(
+            children: [
+              _isLoading
+                  ? const Center(child: CircularProgressIndicator())
               : _studentData == null
                   ? const Center(child: Text('فشل جلب البيانات'))
                   : Column(
@@ -1422,6 +1489,22 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
                         ),
                       ],
                     ),
+              Positioned(
+                left: 0,
+                bottom: 0,
+                child: EmisLiveSync(
+                  key: _liveSyncKey,
+                  url: 'https://emis.moedu.gov.iq/centers/schools/${_studentData?['schoolId'] ?? ''}/individuals/students/management',
+                  mode: 'edit',
+                  entity: 'student',
+                  recordId: widget.studentId,
+                  aliases: _liveAliases(),
+                  onSnapshot: _applyLiveSnapshot,
+                  onStatus: (v) { if (mounted) setState(() => _liveStatus = v); },
+                ),
+              ),
+            ],
+          ),
         );
       },
     );

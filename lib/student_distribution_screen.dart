@@ -156,6 +156,21 @@ class _StudentDistributionScreenState
             '${s['studentStage'] ?? s['stageName'] ?? s['stage'] ?? ''}';
         return sid == value ||
             (stageName.isNotEmpty && sname.trim() == stageName.trim());
+      }).map((student) {
+        final id = _studentId(student);
+        if (student['classRoomName'] != null || student['classRoom'] != null || student['classRoomId'] != null) {
+          return student;
+        }
+        for (final cached in widget.allStudents) {
+          if (cached is Map && int.tryParse('${cached['id']}') == id) {
+            final merged = Map<String, dynamic>.from(student);
+            for (final key in ['classRoomName', 'classRoom', 'classroom', 'classRoomId', 'classroomId']) {
+              if (cached[key] != null) merged[key] = cached[key];
+            }
+            return merged;
+          }
+        }
+        return student;
       }).toList();
 
       if (!mounted) return;
@@ -377,36 +392,46 @@ class _StudentDistributionScreenState
                             'تم توزيع جميع الطلاب الذين تم اختيارهم في الشعب السابقة.',
                             dark,
                           ),
-                        const SizedBox(height: 14),
-                        SizedBox(
-                          height: 54,
-                          child: FilledButton.icon(
-                            onPressed: saving || assignments.values.every(
-                                    (x) => x.isEmpty) && selected.isEmpty
-                                ? null
-                                : _execute,
-                            icon: saving
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child:
-                                        CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.done_all_rounded),
-                            label: Text(
-                              'تنفيذ التوزيع'
-                              '${assignments.values.expand((x) => x).length + selected.length > 0 ? ' (${assignments.values.expand((x) => x).length + selected.length})' : ''}',
-                            ),
-                          ),
-                        ),
                       ],
                     ],
+                  ),
+                ),
+          bottomNavigationBar: _pendingCount == 0
+              ? null
+              : SafeArea(
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                    decoration: BoxDecoration(
+                      color: dark ? const Color(0xFF1E1E1E) : Colors.white,
+                      boxShadow: const [
+                        BoxShadow(blurRadius: 12, offset: Offset(0, -3), color: Colors.black12),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'الطلاب المحددون للتوزيع: $_pendingCount',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        FilledButton.icon(
+                          onPressed: saving ? null : _execute,
+                          icon: saving
+                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.done_all_rounded),
+                          label: const Text('تنفيذ التوزيع'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
         );
       },
     );
   }
+
+  int get _pendingCount => assignments.values.expand((x) => x).length + selected.length;
 
   Widget _hero(bool dark) => Container(
         padding: const EdgeInsets.all(18),
@@ -525,6 +550,17 @@ class _StudentDistributionScreenState
 
   bool listIsEmpty(int count) => count == 0 || targetRoomId == null;
 
+  String _currentRoomName(Map<String, dynamic> s) {
+    final direct = s['classRoomName'] ?? s['classRoom'] ?? s['classroom'];
+    if (direct != null && '$direct'.trim().isNotEmpty) return '$direct';
+    final roomId = '${s['classRoomId'] ?? s['classroomId'] ?? ''}';
+    if (roomId.isNotEmpty) {
+      final name = _roomName(roomId);
+      if (name.isNotEmpty) return name;
+    }
+    return 'غير محددة';
+  }
+
   Widget _studentTile(Map<String, dynamic> student, bool dark) {
     final id = _studentId(student);
     final checked = selected.contains(id);
@@ -542,7 +578,20 @@ class _StudentDistributionScreenState
                   () => checked ? selected.remove(id) : selected.add(id),
                 ),
         title: Text(_name(student)),
-        subtitle: Text('رقم الطالب: ${student['id'] ?? ''}'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('رقم الطالب: ${student['id'] ?? ''}'),
+            const SizedBox(height: 3),
+            Text(
+              'الشعبة الحالية: ${_currentRoomName(student)}',
+              style: TextStyle(
+                color: _currentRoomName(student) == 'غير محددة' ? Colors.orange : Colors.blueGrey,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
         controlAffinity: ListTileControlAffinity.leading,
       ),
     );

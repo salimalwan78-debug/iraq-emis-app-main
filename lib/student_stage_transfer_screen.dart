@@ -302,29 +302,38 @@ class _StudentStageTransferScreenState
                         ...students.map((s) => _studentTile(s, dark)),
                         if (students.isEmpty)
                           _empty(dark),
-                        const SizedBox(height: 14),
-                        SizedBox(
-                          height: 54,
-                          child: FilledButton.icon(
-                            onPressed: saving ||
-                                    selected.isEmpty ||
-                                    toStage == null ||
-                                    toStage == fromStage
-                                ? null
-                                : _run,
-                            icon: saving
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child:
-                                        CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.move_up_rounded),
-                            label: Text('تنفيذ الترحيل (${selected.length})'),
-                          ),
-                        ),
                       ],
                     ],
+                  ),
+                ),
+          bottomNavigationBar: selected.isEmpty
+              ? null
+              : SafeArea(
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                    decoration: BoxDecoration(
+                      color: dark ? const Color(0xFF1E1E1E) : Colors.white,
+                      boxShadow: const [
+                        BoxShadow(blurRadius: 12, offset: Offset(0, -3), color: Colors.black12),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'الطلاب المحددون للترحيل: ${selected.length}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        FilledButton.icon(
+                          onPressed: saving || toStage == null || toStage == fromStage ? null : _run,
+                          icon: saving
+                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.move_up_rounded),
+                          label: const Text('تنفيذ الترحيل'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
         );

@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'app_core.dart';
+import 'emis_live_sync.dart';
 
 class AddStudentScreen extends StatefulWidget {
   final String token;
@@ -24,6 +26,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   bool loading = true, saving = false;
   String? error;
+  final GlobalKey<EmisLiveSyncState> _liveSyncKey = GlobalKey<EmisLiveSyncState>();
+  Timer? _liveTimer;
+  bool _liveSnapshotSeen = false;
+  String _liveStatus = 'المزامنة الحية مع EMIS قيد التشغيل';
   String? stageId, roomId;
   List<Map<String, dynamic>> stages = [], rooms = [];
   Map<String, dynamic>? stageDetails;
@@ -137,15 +143,65 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
     c['nationality']!.text = 'العراق';
     c['studyLanguage']!.text = 'العربية';
+    _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _load();
   }
 
   @override
   void dispose() {
+    _liveTimer?.cancel();
     for (final controller in c.values) {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  Map<String, List<String>> _liveAliases() => {
+        for (final entry in labels.entries)
+          entry.key: <String>[entry.key, entry.value],
+        'stageId': ['stageId', 'الصف الدراسي'],
+        'classRoomId': ['classRoomId', 'الشعبة'],
+      };
+
+  Map<String, String> _liveValues() => {
+        for (final entry in c.entries) entry.key: entry.value.text,
+        'stageId': stageId ?? '',
+        'classRoomId': roomId ?? '',
+      };
+
+  void _pushLive() {
+    _liveSyncKey.currentState?.pushValues(_liveValues());
+  }
+
+  void _applyLiveSnapshot(Map<String, String> values) {
+    bool changed = false;
+    for (final entry in values.entries) {
+      final controller = c[entry.key];
+      if (controller != null && controller.text != entry.value) {
+        controller.value = TextEditingValue(
+          text: entry.value,
+          selection: TextSelection.collapsed(offset: entry.value.length),
+        );
+        changed = true;
+      }
+    }
+    if (values.containsKey('stageId') && stages.isNotEmpty) {
+      final v = values['stageId']!;
+      final match = stages.where((x) => _value(x) == v || _text(x) == v).toList();
+      if (match.isNotEmpty && stageId != _value(match.first)) {
+        _stageChanged(_value(match.first));
+        changed = true;
+      }
+    }
+    if (values.containsKey('classRoomId') && rooms.isNotEmpty) {
+      final v = values['classRoomId']!;
+      final match = rooms.where((x) => _value(x) == v || _text(x) == v).toList();
+      if (match.isNotEmpty && roomId != _value(match.first)) {
+        roomId = _value(match.first);
+        changed = true;
+      }
+    }
+    if (changed && mounted) setState(() {});
   }
 
   dynamic _unwrap(dynamic value) =>
@@ -516,9 +572,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           ),
         ),
       ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : Directionality(
+      body: Stack(
+        children: [
+          loading
+              ? const Center(child: CircularProgressIndicator())
+              : Directionality(
               textDirection: TextDirection.rtl,
               child: Form(
                 key: _form,
@@ -711,7 +769,23 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   ],
                 ),
               ),
+              ),
+          if (!loading)
+            Positioned(
+              left: 0,
+              bottom: 0,
+              child: EmisLiveSync(
+                key: _liveSyncKey,
+                url: 'https://emis.moedu.gov.iq/centers/schools/${widget.schoolId}/individuals/students/management',
+                mode: 'add',
+                entity: 'student',
+                aliases: _liveAliases(),
+                onSnapshot: _applyLiveSnapshot,
+                onStatus: (v) { if (mounted) setState(() => _liveStatus = v); },
+              ),
             ),
+        ],
+      ),
     );
   }
 

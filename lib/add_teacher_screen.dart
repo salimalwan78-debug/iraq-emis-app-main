@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'app_core.dart';
+import 'emis_live_sync.dart';
 
 class AddTeacherScreen extends StatefulWidget {
   final String token;
@@ -24,6 +26,9 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
 
   bool loading = true, saving = false;
   String? error;
+  final GlobalKey<EmisLiveSyncState> _liveSyncKey = GlobalKey<EmisLiveSyncState>();
+  Timer? _liveTimer;
+  String _liveStatus = 'المزامنة الحية مع EMIS قيد التشغيل';
 
   final endpoints = const <String, String>{
     'gender': '/selectoption/Gender',
@@ -106,15 +111,43 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     c['motherTongue']!.text = 'العربية';
     c['bloodGroup']!.text = 'غير معروف';
     c['religion']!.text = 'الإسلام';
+    _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _load();
   }
 
   @override
   void dispose() {
+    _liveTimer?.cancel();
     for (final controller in c.values) {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  Map<String, List<String>> _liveAliases() => {
+        for (final entry in labels.entries)
+          entry.key: <String>[entry.key, entry.value],
+      };
+
+  void _pushLive() {
+    _liveSyncKey.currentState?.pushValues({
+      for (final entry in c.entries) entry.key: entry.value.text,
+    });
+  }
+
+  void _applyLiveSnapshot(Map<String, String> values) {
+    bool changed = false;
+    for (final entry in values.entries) {
+      final controller = c[entry.key];
+      if (controller != null && controller.text != entry.value) {
+        controller.value = TextEditingValue(
+          text: entry.value,
+          selection: TextSelection.collapsed(offset: entry.value.length),
+        );
+        changed = true;
+      }
+    }
+    if (changed && mounted) setState(() {});
   }
 
   dynamic _unwrap(dynamic d) =>
@@ -431,9 +464,11 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
           ),
         ),
       ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : Directionality(
+      body: Stack(
+        children: [
+          loading
+              ? const Center(child: CircularProgressIndicator())
+              : Directionality(
               textDirection: TextDirection.rtl,
               child: Form(
                 key: _formKey,
@@ -646,6 +681,22 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                 ),
               ),
             ),
+          if (!loading)
+            Positioned(
+              left: 0,
+              bottom: 0,
+              child: EmisLiveSync(
+                key: _liveSyncKey,
+                url: 'https://emis.moedu.gov.iq/centers/schools/${widget.schoolId}/individuals/teachers/management',
+                mode: 'add',
+                entity: 'teacher',
+                aliases: _liveAliases(),
+                onSnapshot: _applyLiveSnapshot,
+                onStatus: (v) { if (mounted) setState(() => _liveStatus = v); },
+              ),
+            ),
+        ],
+      ),
     );
   }
 

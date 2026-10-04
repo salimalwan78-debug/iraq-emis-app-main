@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'grade_smart_tools_card.dart';
 
 class GradesScreen extends StatefulWidget {
   final String token;
@@ -251,36 +252,62 @@ class _GradesScreenState extends State<GradesScreen> {
     }
   }
 
+  String _normalizeNumber(String value) {
+    return value
+        .replaceAll('٠', '0').replaceAll('١', '1').replaceAll('٢', '2')
+        .replaceAll('٣', '3').replaceAll('٤', '4').replaceAll('٥', '5')
+        .replaceAll('٦', '6').replaceAll('٧', '7').replaceAll('٨', '8')
+        .replaceAll('٩', '9').replaceAll('٫', '.')
+        .replaceAll('،', '.').replaceAll(',', '.')
+        .replaceAll(' ', '');
+  }
+
   Future<void> _saveGrades() async {
     final exam = _currentExam;
     if (exam == null) return;
 
+    final examNumber = int.tryParse(_id(exam));
+    if (examNumber == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('معرف الامتحان غير صالح في بيانات EMIS'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
     setState(() => saving = true);
     int ok = 0, failed = 0;
+    final failures = <String>[];
 
     try {
       for (final student in students) {
         final studentId = int.tryParse('${student['id']}');
         if (studentId == null) continue;
 
-        final value = grades[studentId]?.text.trim() ?? '';
-        if (value.isEmpty) continue;
+        final raw = grades[studentId]?.text.trim() ?? '';
+        if (raw.isEmpty) continue;
 
-        final grade = double.tryParse(value);
+        final grade = double.tryParse(_normalizeNumber(raw));
         if (grade == null) {
           failed++;
+          failures.add('الطالب $studentId: الدرجة "$raw" ليست رقماً صالحاً');
+          continue;
+        }
+        final max = double.tryParse('${exam['maxAllowedGrade'] ?? exam['max'] ?? 100}') ?? 100;
+        if (grade < 0 || grade > max) {
+          failed++;
+          failures.add('الطالب $studentId: الدرجة $grade خارج المجال 0-$max');
           continue;
         }
 
         try {
           final response = await http.post(
-            Uri.parse(
-              'https://emis.moedu.gov.iq/api/examscore/updateexamgrade',
-            ),
-            headers: h,
+            Uri.parse('https://emis.moedu.gov.iq/api/examscore/updateexamgrade'),
+            headers: widget.token.toLowerCase().startsWith('bearer ')
+                ? h
+                : {...h, 'Authorization': 'Bearer ${widget.token}'},
             body: jsonEncode({
               'studentId': studentId,
-              'examId': int.tryParse(_id(exam)),
+              'examId': examNumber,
               'grade': grade,
             }),
           );
@@ -288,118 +315,28 @@ class _GradesScreenState extends State<GradesScreen> {
             ok++;
           } else {
             failed++;
+            final body = utf8.decode(response.bodyBytes).trim();
+            failures.add('الطالب $studentId: HTTP ${response.statusCode}${body.isEmpty ? '' : ' — $body'}');
           }
-        } catch (_) {
+        } catch (e) {
           failed++;
+          failures.add('الطالب $studentId: $e');
         }
       }
 
       if (!mounted) return;
       setState(() => saving = false);
+      final details = failures.isEmpty ? '' : '\n${failures.take(2).join('\n')}';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'تم حفظ $ok درجة${failed == 0 ? '' : ' — فشل $failed'}',
-          ),
+          content: Text('تم حفظ $ok درجة${failed == 0 ? '' : ' — فشل $failed'}$details'),
           backgroundColor: failed == 0 ? Colors.green : Colors.orange,
+          duration: const Duration(seconds: 6),
         ),
       );
+      if (ok > 0) await _loadStudents();
     } finally {
       if (mounted) setState(() => saving = false);
-    }
-  }
-
-  Future<void> _changeIgnore(bool ignore) async {
-    final exam = _currentExam;
-    if (exam == null || students.isEmpty) return;
-
-    final allowed = exam['isIgnorable'];
-    if (allowed is bool && !allowed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('هذا الفصل غير قابل للإهمال حسب EMIS'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    final title = ignore ? 'إهمال الفصل الدراسي' : 'إلغاء إهمال الفصل الدراسي';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title, textDirection: TextDirection.rtl),
-        content: Text(
-          ignore
-              ? 'سيتم إهمال هذا الفصل لجميع الطلاب الظاهرين في الشعبة المحددة. متابعة؟'
-              : 'سيتم إلغاء إهمال هذا الفصل لجميع الطلاب الظاهرين. متابعة؟',
-          textDirection: TextDirection.rtl,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('متابعة'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    setState(() => saving = true);
-    final ids = students
-        .map((s) => int.tryParse('${s['id']}'))
-        .whereType<int>()
-        .toList();
-
-    try {
-      final endpoint = ignore
-          ? '/examscore/ignoreexamgrade'
-          : '/examScore/unignoreexamgrade';
-
-      final response = await http.post(
-        Uri.parse('https://emis.moedu.gov.iq/api$endpoint'),
-        headers: h,
-        body: jsonEncode({
-          'examId': int.tryParse(_id(exam)),
-          'studentIds': ids,
-        }),
-      );
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception(
-          'HTTP ${response.statusCode}: ${utf8.decode(response.bodyBytes)}',
-        );
-      }
-
-      if (!mounted) return;
-      setState(() {
-        saving = false;
-        examIgnored = ignore;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            ignore
-                ? 'تم إهمال الفصل الدراسي بنجاح'
-                : 'تم إلغاء إهمال الفصل الدراسي بنجاح',
-          ),
-          backgroundColor: Colors.green,
-        ),
-      );
-      await _loadStudents();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('فشلت العملية: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
     }
   }
 
@@ -435,14 +372,39 @@ class _GradesScreenState extends State<GradesScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
                 children: [
                   _headerCard(),
+                  const SizedBox(height: 14),
+                  GradeSmartToolsCard(token: widget.token, schoolId: widget.schoolId),
                   const SizedBox(height: 16),
-                  _drop('الصف الدراسي', stageId, stages, _stageChanged),
-                  const SizedBox(height: 12),
-                  _drop('المادة', subjectId, subjects, _subjectChanged),
-                  const SizedBox(height: 12),
-                  _drop('الشعبة', roomId, rooms, _roomChanged),
-                  const SizedBox(height: 12),
-                  _drop('فصل الدرجات / الامتحان', examId, exams, _examChanged),
+                  Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: Color(0xFFFFF3E0),
+                                child: Icon(Icons.edit_note_rounded, color: Colors.orange),
+                              ),
+                              SizedBox(width: 10),
+                              Text('إدخال الدرجات', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          _drop('الصف الدراسي', stageId, stages, _stageChanged),
+                          const SizedBox(height: 12),
+                          _drop('المادة', subjectId, subjects, _subjectChanged),
+                          const SizedBox(height: 12),
+                          _drop('الشعبة', roomId, rooms, _roomChanged),
+                          const SizedBox(height: 12),
+                          _drop('فصل الدرجات / الامتحان', examId, exams, _examChanged),
+                        ],
+                      ),
+                    ),
+                  ),
                   if (error != null) ...[
                     const SizedBox(height: 12),
                     _messageCard(error!, Colors.red),
@@ -516,7 +478,7 @@ class _GradesScreenState extends State<GradesScreen> {
                         fontSize: 19,
                         fontWeight: FontWeight.bold)),
                 SizedBox(height: 5),
-                Text('قراءة مباشرة من EMIS وحفظ الدرجات والإهمال',
+                Text('قراءة مباشرة من EMIS وحفظ الدرجات',
                     style: TextStyle(color: Colors.white70, fontSize: 13)),
               ],
             ),
@@ -570,73 +532,35 @@ class _GradesScreenState extends State<GradesScreen> {
   Widget _examCard(Map<String, dynamic> exam, double max) {
     final ignored = examIgnored ??
         (exam['isIgnored'] is bool ? exam['isIgnored'] as bool : false);
-    final ignorable = exam['isIgnorable'] != false;
-
     return Card(
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
+        child: Row(
           children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor:
-                      (ignored ? Colors.red : Colors.orange).withOpacity(.10),
-                  child: Icon(
-                    ignored
-                        ? Icons.visibility_off_rounded
-                        : Icons.assignment_rounded,
-                    color: ignored ? Colors.red : Colors.orange,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${exam['label'] ?? _label(exam)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'الدرجة القصوى: $max  •  الطلاب: ${students.length}',
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            CircleAvatar(
+              backgroundColor: (ignored ? Colors.red : Colors.orange).withOpacity(.10),
+              child: Icon(
+                ignored ? Icons.visibility_off_rounded : Icons.assignment_rounded,
+                color: ignored ? Colors.red : Colors.orange,
+              ),
             ),
-            const Divider(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: saving || !ignorable || ignored
-                        ? null
-                        : () => _changeIgnore(true),
-                    icon: const Icon(Icons.visibility_off_rounded),
-                    label: const Text('إهمال'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: saving || !ignorable || !ignored
-                        ? null
-                        : () => _changeIgnore(false),
-                    icon: const Icon(Icons.visibility_rounded),
-                    label: const Text('إلغاء الإهمال'),
-                  ),
-                ),
-              ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${exam['label'] ?? _label(exam)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 4),
+                  Text('الدرجة القصوى: $max  •  الطلاب: ${students.length}', style: const TextStyle(color: Colors.grey)),
+                ],
+              ),
+            ),
+            Chip(
+              avatar: Icon(ignored ? Icons.visibility_off : Icons.visibility, size: 17, color: ignored ? Colors.red : Colors.green),
+              label: Text(ignored ? 'مهمل' : 'فعال'),
             ),
           ],
         ),

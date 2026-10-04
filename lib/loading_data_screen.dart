@@ -163,26 +163,12 @@ class _LoadingDataScreenState extends State<LoadingDataScreen>
                     animation: _pulse,
                     builder: (_, __) => Transform.scale(
                       scale: 1 + (_pulse.value * .035),
-                      child: Container(
-                        width: 175,
-                        height: 175,
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(.96),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(.18),
-                              blurRadius: 30,
-                              offset: const Offset(0, 14),
-                            ),
-                          ],
-                        ),
-                        child: ClipOval(
-                          child: Image.asset(
-                            'assets/avatar.jpg',
-                            fit: BoxFit.cover,
-                          ),
+                      child: SizedBox(
+                        width: 250,
+                        height: 310,
+                        child: Image.asset(
+                          'assets/avatar.png',
+                          fit: BoxFit.contain,
                         ),
                       ),
                     ),

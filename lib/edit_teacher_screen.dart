@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
@@ -7,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'emis_live_sync.dart';
 
 class EditTeacherScreen extends StatefulWidget {
   final String token;
@@ -28,6 +30,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _loading = true;
   bool _saving = false;
+  final GlobalKey<EmisLiveSyncState> _liveSyncKey = GlobalKey<EmisLiveSyncState>();
+  Timer? _liveTimer;
+  String _liveStatus = 'المزامنة الحية مع EMIS قيد التشغيل';
   String? _error;
   Map<String, dynamic>? _employee;
   File? _pickedImage;
@@ -103,16 +108,44 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   @override
   void initState() {
     super.initState();
+    _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _load();
   }
 
   @override
   void dispose() {
+    _liveTimer?.cancel();
     _selfieSegmenter?.close();
     for (final controller in _c.values) {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  Map<String, List<String>> _liveAliases() => {
+        for (final entry in _labels.entries)
+          entry.key: <String>[entry.key, entry.value],
+      };
+
+  void _pushLive() {
+    _liveSyncKey.currentState?.pushValues({
+      for (final entry in _c.entries) entry.key: entry.value.text,
+    });
+  }
+
+  void _applyLiveSnapshot(Map<String, String> values) {
+    bool changed = false;
+    for (final entry in values.entries) {
+      final controller = _c[entry.key];
+      if (controller != null && controller.text != entry.value) {
+        controller.value = TextEditingValue(
+          text: entry.value,
+          selection: TextSelection.collapsed(offset: entry.value.length),
+        );
+        changed = true;
+      }
+    }
+    if (changed && mounted) setState(() {});
   }
 
   Map<String, String> get _headers => {
@@ -896,11 +929,13 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         backgroundColor: const Color(0xFF4527A0),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center)))
-              : Directionality(
+      body: Stack(
+        children: [
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center)))
+                  : Directionality(
                   textDirection: TextDirection.rtl,
                   child: Form(
                     key: _formKey,
@@ -986,6 +1021,22 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                     ),
                   ),
                 ),
+          Positioned(
+            left: 0,
+            bottom: 0,
+            child: EmisLiveSync(
+              key: _liveSyncKey,
+              url: 'https://emis.moedu.gov.iq/centers/schools/${widget.schoolId}/individuals/teachers/management',
+              mode: 'edit',
+              entity: 'teacher',
+              recordId: widget.teacherId,
+              aliases: _liveAliases(),
+              onSnapshot: _applyLiveSnapshot,
+              onStatus: (v) { if (mounted) setState(() => _liveStatus = v); },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
