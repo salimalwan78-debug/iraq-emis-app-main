@@ -15,6 +15,7 @@ class EmisLiveSync extends StatefulWidget {
   final String? recordId;
   final Map<String, List<String>> aliases;
   final ValueChanged<Map<String, String>> onSnapshot;
+  final ValueChanged<Map<String, List<String>>>? onOptions;
   final ValueChanged<String>? onStatus;
 
   const EmisLiveSync({
@@ -25,6 +26,7 @@ class EmisLiveSync extends StatefulWidget {
     required this.token,
     required this.aliases,
     required this.onSnapshot,
+    this.onOptions,
     this.recordId,
     this.onStatus,
   });
@@ -57,6 +59,20 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
             }
             if (type == 'focus') {
               widget.onStatus?.call('مزامنة الحقل: ${decoded['field'] ?? ''}');
+              return;
+            }
+            if (type == 'options') {
+              final raw = decoded['options'];
+              if (raw is! Map) return;
+              final result = <String, List<String>>{};
+              for (final entry in raw.entries) {
+                final key = '${entry.key}'.trim();
+                final list = entry.value;
+                if (key.isEmpty || list is! List) continue;
+                final values = list.map((v) => '$v'.trim()).where((v) => v.isNotEmpty).toSet().toList();
+                if (values.isNotEmpty) result[key] = values;
+              }
+              if (result.isNotEmpty) widget.onOptions?.call(result);
               return;
             }
             if (type != 'snapshot') return;
@@ -268,6 +284,46 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       try { el.dispatchEvent(new Event('blur',{bubbles:true})); } catch(e) {}
     };
 
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve,ms));
+
+    const findField = (key) => {
+      const aa=(aliases[key]||[]).map(norm);
+      if(!aa.length) return null;
+      const all=[...document.querySelectorAll('.q-field, input,textarea,select,[contenteditable="true"]')];
+      for(const el of all){
+        const cs=candidates(el);
+        if(cs.some(c=>aa.some(a=>c===a || c.includes(a) || a.includes(c)))) return el.classList?.contains('q-field') ? el : (el.closest('.q-field') || el);
+      }
+      return null;
+    };
+
+    const readQSelectOptions = async (key) => {
+      const field=findField(key);
+      if(!field) return [];
+      try {
+        field.scrollIntoView({block:'center',inline:'nearest'});
+        const clickable=field.querySelector('.q-field__control,.q-field__native') || field;
+        clickable.click();
+        await sleep(120);
+        const menuItems=[...document.querySelectorAll('.q-menu .q-item, .q-menu [role="option"]')];
+        const values=menuItems.map(x=>String(x.innerText || x.textContent || '').trim()).filter(Boolean);
+        document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+        await sleep(60);
+        return [...new Set(values)];
+      } catch(e) { return []; }
+    };
+
+    const collectOptions = async (keys) => {
+      const out={};
+      for(const key of keys){
+        const values=await readQSelectOptions(key);
+        if(values.length) out[key]=values;
+      }
+      if(Object.keys(out).length) send('options',{options:out});
+      return out;
+    };
+    window.__EMIS_APP_BRIDGE__.collectOptions = (keys) => collectOptions(keys || []);
+
     window.__EMIS_APP_BRIDGE__.setFields = (values) => {
       const vals=values || {};
       for(const [key,value] of Object.entries(vals)){
@@ -285,7 +341,18 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         }
         if(!best) continue;
         try {
-          if(best.tagName==='SELECT'){
+          const qfield=best.closest ? best.closest('.q-field') : null;
+          const qnative=qfield ? qfield.querySelector('.q-field__native') : null;
+          if(qfield && qnative && qfield.classList.contains('q-select')){
+            qfield.scrollIntoView({block:'center',inline:'nearest'});
+            (qfield.querySelector('.q-field__control') || qnative || qfield).click();
+            setTimeout(()=>{
+              const wanted=norm(String(value ?? ''));
+              const items=[...document.querySelectorAll('.q-menu .q-item, .q-menu [role="option"]')];
+              const item=items.find(o=>norm(o.innerText||o.textContent||'')===wanted || norm(o.innerText||o.textContent||'').includes(wanted));
+              if(item) item.click();
+            },80);
+          } else if(best.tagName==='SELECT'){
             const wanted=String(value ?? '');
             const option=[...best.options].find(o =>
               String(o.value)===wanted || norm(o.textContent)===norm(wanted)
@@ -354,6 +421,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         if(clickText(re)){
           b.opened=true;
           send('status',{message:'تم فتح نموذج الإضافة من EMIS'});
+          setTimeout(()=>collectOptions(['employmentType','employeeCategory','status','classification','currentPosition','positionType']),1200); setTimeout(()=>collectOptions(['employmentType','employeeCategory','status','classification','currentPosition','positionType']),3000);
           return true;
         }
         return false;
@@ -369,6 +437,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         setTimeout(()=>clickText([/تعديل/i,/تحرير/i,/بيانات/i]),350);
         b.opened=true;
         send('status',{message:'تم فتح سجل EMIS للمزامنة'});
+        setTimeout(()=>collectOptions(['employmentType','employeeCategory','status','classification','currentPosition','positionType']),1500); setTimeout(()=>collectOptions(['employmentType','employeeCategory','status','classification','currentPosition','positionType']),3200);
         return true;
       }
       return false;
@@ -408,6 +477,16 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
     } catch (_) {
       _ready = false;
     }
+  }
+
+  Future<void> refreshOptions(List<String> keys) async {
+    if (!_ready || keys.isEmpty) return;
+    final encoded = jsonEncode(keys);
+    final js = '''
+(function(){
+  try { if(window.__EMIS_APP_BRIDGE__ && window.__EMIS_APP_BRIDGE__.collectOptions) window.__EMIS_APP_BRIDGE__.collectOptions($encoded); } catch(e) {}
+})();''';
+    try { await controller.runJavaScript(js); } catch (_) {}
   }
 
   Future<void> pushValues(Map<String, String> values) async {

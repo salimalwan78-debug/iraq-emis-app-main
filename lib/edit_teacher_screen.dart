@@ -58,12 +58,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'motherTongue': '/selectoption/لغة',
     'bloodGroup': '/selectoption/فصيلة الدم',
     'religion': '/selectoption/الديانة',
-    'jobDesignation': '/SelectOption/نوع الوظيفة',
-    'employmentType': '/selectoption/نوع التوظيف',
-    'employeeCategory': '/selectoption/نوع الموظف',
-    'classification': '/selectoption/التصنيف',
-    'status': '/selectoption/الحالة الوظيفية',
-    'currentPosition': '/selectoption/المنصب الحالي',
+    'positionType': '/SelectOption/نوع الوظيفة',
   };
 
   static const _labels = <String, String>{
@@ -99,6 +94,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'employmentGrade': 'الدرجة الوظيفية',
     'classification': 'التصنيف',
     'currentPosition': 'المنصب الحالي',
+    'positionType': 'نوع الوظيفة',
     'dateOfStartWorking': 'تاريخ اول تعيين للموظف',
     'educationLevel': 'التحصيل الدراسي',
     'universityName': 'إسم الكلية / المعهد',
@@ -171,6 +167,23 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     if (changed && mounted) setState(() {});
   }
 
+  void _applyLiveOptions(Map<String, List<String>> incoming) {
+    bool changed = false;
+    incoming.forEach((key, values) {
+      if (values.isEmpty) return;
+      _options[key] = values.map((v) => <String, dynamic>{'value': v, 'displayName': v}).toList();
+      changed = true;
+    });
+    if (changed && mounted) setState(() {});
+  }
+
+  List<String> _classificationFallback() {
+    final type = _c['employmentType']?.text.trim();
+    if (type == 'ملاك') return const ['موظف', 'معلم'];
+    if (type == 'عقد') return const ['موظف بعقد', 'محاضر بعقد'];
+    return const [];
+  }
+
   Map<String, String> get _headers => {
         'Authorization': widget.token,
         'Accept': 'application/json',
@@ -213,10 +226,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     final employment = e['employmentRecord'] is Map ? Map<String, dynamic>.from(e['employmentRecord']) : <String, dynamic>{};
     final positions = employment['employmentPositions'];
     final statuses = employment['employmentStatuses'];
-    final currentPosition = e['currentEmploymentPosition'] ??
-        (positions is List && positions.isNotEmpty && positions.first is Map
-            ? ((positions.first as Map)['position'] ?? (positions.first as Map)['Position'])
-            : null);
+    final positionType = e['currentEmploymentPosition'] ?? employment['currentEmploymentPosition'];
+    final currentPosition = positions is List && positions.isNotEmpty && positions.first is Map
+        ? ((positions.first as Map)['position'] ?? (positions.first as Map)['Position'])
+        : null;
     final currentStatusRecord = statuses is List && statuses.isNotEmpty && statuses.first is Map
         ? Map<String, dynamic>.from(statuses.first)
         : <String, dynamic>{};
@@ -254,6 +267,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       'employmentGrade': e['employmentGrade'] ?? employment['employmentGrade'],
       'classification': e['classification'] ?? employment['classification'],
       'currentPosition': currentPosition,
+      'positionType': positionType,
       'dateOfStartWorking': _dateOnly(e['dateOfStartWorking']),
       'educationLevel': e['educationLevel'] ?? employment['educationLevel'],
       'universityName': e['universityName'] ?? employment['universityName'],
@@ -286,15 +300,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   List<String> _optionEndpointCandidates(String key) {
-    const aliases = <String, List<String>>{
-      'jobDesignation': ['/SelectOption/نوع الوظيفة', '/selectoption/نوع الوظيفة', '/SelectOption/JobDesignation', '/selectoption/JobDesignation'],
-      'employmentType': ['/SelectOption/نوع التوظيف', '/selectoption/نوع التوظيف', '/SelectOption/EmploymentType', '/selectoption/EmploymentType'],
-      'employeeCategory': ['/SelectOption/نوع الموظف', '/selectoption/نوع الموظف', '/SelectOption/EmployeeCategory', '/selectoption/EmployeeCategory', '/SelectOption/تصنيف الموظف', '/selectoption/تصنيف الموظف'],
-      'classification': ['/SelectOption/التصنيف', '/selectoption/التصنيف', '/SelectOption/EmployeeClassification', '/selectoption/EmployeeClassification'],
-      'status': ['/SelectOption/الحالة الوظيفية', '/selectoption/الحالة الوظيفية', '/SelectOption/EmploymentStatus', '/selectoption/EmploymentStatus'],
-      'currentPosition': ['/SelectOption/المنصب الحالي', '/selectoption/المنصب الحالي', '/SelectOption/CurrentPosition', '/selectoption/CurrentPosition'],
-    };
-    return aliases[key] ?? (_commonOptionEndpoints[key] == null ? const [] : [_commonOptionEndpoints[key]!]);
+    if (key == 'positionType') return const ['/SelectOption/نوع الوظيفة'];
+    return _commonOptionEndpoints.containsKey(key) ? <String>[_commonOptionEndpoints[key]!] : const [];
   }
 
   Future<void> _loadOption(String key) async {
@@ -391,6 +398,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       final value = item['value'] ?? item['displayName'] ?? item['name'];
       if (value != null && '$value'.trim().isNotEmpty) result.add('$value');
     }
+    if (key == 'classification') {
+      for (final item in _classificationFallback()) {
+        if (!result.contains(item)) result.add(item);
+      }
+    }
     for (final item in fallback) {
       if (!result.contains(item)) result.add(item);
     }
@@ -440,7 +452,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       items: (key == 'idType' ? <String>['12'] : values).map((v) => DropdownMenuItem<String>(value: v, child: Text(key == 'idType' ? 'البطاقة الوطنية الموحدة' : v, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
       onTap: () => _focusLive(key),
-      onChanged: (value) { setState(() => _c[key]!.text = value ?? ''); _focusLive(key); },
+      onChanged: (value) { setState(() => _c[key]!.text = value ?? ''); _focusLive(key); if (key == 'employmentType') _liveSyncKey.currentState?.refreshOptions(['classification']); },
       validator: null,
     );
   }
@@ -900,9 +912,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
     record['EmploymentStatuses'] = statuses;
     record['EmploymentPositions'] = positions;
-    record['IsCurrentlyActive'] = true;
+    final statusValue = _c['status']!.text.trim();
+    record['IsCurrentlyActive'] = statusValue.isEmpty || statusValue == 'مستمر';
     record['CurrentBelongToEntityId'] = int.tryParse(widget.schoolId);
-    record['CurrentEmploymentPosition'] = _c['currentPosition']!.text.trim();
+    record['CurrentEmploymentPosition'] = _c['positionType']!.text.trim();
     return record;
   }
 
@@ -1082,9 +1095,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                           _selectField('employmentType', required: true),
                           _selectField('employeeCategory', required: true),
                           _selectField('classification', required: true),
-                          _selectField('jobDesignation'),
+                          _textField('jobDesignation'),
                           _textField('employmentGrade'),
                           _selectField('currentPosition'),
+                          _selectField('positionType', required: true),
                           _textField('dateOfStartWorking', required: true, readOnly: true),
                         ]),
                         _section('الحالة الوظيفية', [
@@ -1172,6 +1186,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
               recordId: widget.teacherId,
               aliases: _liveAliases(),
               onSnapshot: _applyLiveSnapshot,
+                onOptions: _applyLiveOptions,
               onStatus: (v) { if (mounted) setState(() => _liveStatus = v); },
             ),
           ),

@@ -47,12 +47,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     'maritalStatus': '/selectoption/الحالة الاجتماعية',
     'bloodGroup': '/selectoption/فصيلة الدم',
     'religion': '/selectoption/الديانة',
-    'jobDesignation': '/SelectOption/نوع الوظيفة',
-    'employmentType': '/selectoption/نوع التوظيف',
-    'employeeCategory': '/selectoption/نوع الموظف',
-    'classification': '/selectoption/التصنيف',
-    'status': '/selectoption/الحالة الوظيفية',
-    'currentPosition': '/selectoption/المنصب الحالي',
+    'positionType': '/SelectOption/نوع الوظيفة',
   };
 
   final labels = const <String, String>{
@@ -82,6 +77,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     'employeeCategory': 'فئة الموظف',
     'classification': 'التصنيف',
     'jobDesignation': 'المسمى الوظيفي',
+    'positionType': 'نوع الوظيفة',
     'employmentGrade': 'الدرجة الوظيفية',
     'dateOfStartWorking': 'تاريخ أول تعيين',
     'currentPosition': 'المنصب الحالي',
@@ -130,6 +126,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     c['motherTongue']!.text = 'العربية';
     c['bloodGroup']!.text = 'غير معروف';
     c['religion']!.text = 'الإسلام';
+    c['status']!.text = 'مستمر';
     _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _load();
   }
@@ -181,9 +178,29 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
           selection: TextSelection.collapsed(offset: entry.value.length),
         );
         changed = true;
+        if (entry.key == 'employmentType') {
+          _liveSyncKey.currentState?.refreshOptions(['classification']);
+        }
       }
     }
     if (changed && mounted) setState(() {});
+  }
+
+  void _applyLiveOptions(Map<String, List<String>> incoming) {
+    bool changed = false;
+    incoming.forEach((key, values) {
+      if (values.isEmpty) return;
+      options[key] = values.map((v) => <String, dynamic>{'value': v, 'displayName': v}).toList();
+      changed = true;
+    });
+    if (changed && mounted) setState(() {});
+  }
+
+  List<String> _classificationFallback() {
+    final type = c['employmentType']?.text.trim();
+    if (type == 'ملاك') return const ['موظف', 'معلم'];
+    if (type == 'عقد') return const ['موظف بعقد', 'محاضر بعقد'];
+    return const [];
   }
 
   dynamic _unwrap(dynamic d) =>
@@ -235,15 +252,8 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
   }
 
   List<String> _optionEndpointCandidates(String key) {
-    const aliases = <String, List<String>>{
-      'jobDesignation': ['/SelectOption/نوع الوظيفة', '/selectoption/نوع الوظيفة', '/SelectOption/JobDesignation', '/selectoption/JobDesignation'],
-      'employmentType': ['/SelectOption/نوع التوظيف', '/selectoption/نوع التوظيف', '/SelectOption/EmploymentType', '/selectoption/EmploymentType'],
-      'employeeCategory': ['/SelectOption/نوع الموظف', '/selectoption/نوع الموظف', '/SelectOption/EmployeeCategory', '/selectoption/EmployeeCategory', '/SelectOption/تصنيف الموظف', '/selectoption/تصنيف الموظف'],
-      'classification': ['/SelectOption/التصنيف', '/selectoption/التصنيف', '/SelectOption/EmployeeClassification', '/selectoption/EmployeeClassification'],
-      'status': ['/SelectOption/الحالة الوظيفية', '/selectoption/الحالة الوظيفية', '/SelectOption/EmploymentStatus', '/selectoption/EmploymentStatus'],
-      'currentPosition': ['/SelectOption/المنصب الحالي', '/selectoption/المنصب الحالي', '/SelectOption/CurrentPosition', '/selectoption/CurrentPosition'],
-    };
-    return aliases[key] ?? (endpoints[key] == null ? const [] : [endpoints[key]!]);
+    if (key == 'positionType') return const ['/SelectOption/نوع الوظيفة'];
+    return endpoints.containsKey(key) ? <String>[endpoints[key]!] : const [];
   }
 
   Future<List<Map<String, dynamic>>> _loadOptionCandidates(String key) async {
@@ -314,6 +324,11 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     final result = <Map<String, dynamic>>[
       ...(options[key] ?? []),
     ];
+    if (key == 'classification') {
+      for (final value in _classificationFallback()) {
+        if (!result.any((x) => _value(x) == value)) result.add({'value': value, 'displayName': value});
+      }
+    }
     final current = c[key]!.text.trim();
     if (current.isNotEmpty && !result.any((x) => _value(x) == current)) {
       result.insert(0, {'value': current, 'displayName': current});
@@ -405,7 +420,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
           .where((x) => x.value != null && x.value!.isNotEmpty)
           .toList(),
       onTap: () => _focusLive(key),
-      onChanged: (v) { setState(() => c[key]!.text = v ?? ''); _focusLive(key); },
+      onChanged: (v) { setState(() => c[key]!.text = v ?? ''); _focusLive(key); if (key == 'employmentType') _liveSyncKey.currentState?.refreshOptions(['classification']); },
       validator: null,
     );
   }
@@ -537,7 +552,15 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
               'CurrentBelongToEntityId': int.tryParse(widget.schoolId),
             }
           ],
-          'EmploymentPositions': [],
+          'EmploymentPositions': [
+            {
+              'Position': _n('currentPosition'),
+              'InitiateDate': _n('dateOfStartWorking'),
+            }
+          ],
+          'IsCurrentlyActive': (_n('status') ?? 'مستمر') == 'مستمر',
+          'CurrentBelongToEntityId': int.tryParse(widget.schoolId),
+          'CurrentEmploymentPosition': _n('positionType'),
         },
       };
 
@@ -681,7 +704,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                         children: [
                           Expanded(child: _select('employmentType', required: true)),
                           const SizedBox(width: 10),
-                          Expanded(child: _select('jobDesignation')),
+                          Expanded(child: _textField('jobDesignation')),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -696,6 +719,8 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                       Row(
                         children: [
                           Expanded(child: _select('currentPosition')),
+                          const SizedBox(width: 10),
+                          Expanded(child: _select('positionType', required: true)),
                           const SizedBox(width: 10),
                           Expanded(child: _textField('employmentGrade')),
                         ],
@@ -866,6 +891,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                 token: widget.token,
                 aliases: _liveAliases(),
                 onSnapshot: _applyLiveSnapshot,
+                onOptions: _applyLiveOptions,
                 onStatus: (v) { if (mounted) setState(() => _liveStatus = v); },
               ),
             ),
