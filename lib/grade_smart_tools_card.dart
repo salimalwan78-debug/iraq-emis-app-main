@@ -499,10 +499,10 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
                 ],
               ),
               const SizedBox(height: 10),
-              Text(status, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              Text(status, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 12)),
               if (error != null) ...[
                 const SizedBox(height: 8),
-                Text(error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                Text(error!, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.red, fontSize: 12)),
               ],
               const SizedBox(height: 12),
               _choiceButton(
@@ -533,7 +533,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
                   ),
                   subtitle: const Text(
                     'عند التفعيل لن تحتاج لاختيار الصفوف والمواد يدوياً.',
-                    style: TextStyle(fontSize: 11),
+                    style: TextStyle(fontWeight: FontWeight.bold,fontSize: 11),
                   ),
                 ),
               ),
@@ -609,7 +609,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  Text(label, style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 12, color: Colors.grey)),
                   const SizedBox(height: 3),
                   Text(value, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
                 ],

@@ -290,7 +290,7 @@ class _StudentStageTransferScreenState
                       ),
                       if (error != null) ...[
                         const SizedBox(height: 12),
-                        Text(error!, style: const TextStyle(color: Colors.red)),
+                        Text(error!, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.red)),
                       ],
                       if (loadingStudents) ...[
                         const SizedBox(height: 22),
@@ -370,7 +370,7 @@ class _StudentStageTransferScreenState
                           fontWeight: FontWeight.bold)),
                   SizedBox(height: 5),
                   Text('قراءة مباشرة من EMIS ثم تحديث المرحلة للطلاب المحددين.',
-                      style: TextStyle(color: Colors.white70, fontSize: 13)),
+                      style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white70, fontSize: 13)),
                 ],
               ),
             ),

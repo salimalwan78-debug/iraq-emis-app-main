@@ -287,7 +287,7 @@ class _BatchTeacherPhotosScreenState extends State<BatchTeacherPhotosScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              const Text('قرّب الصورة وحركها لمراجعتها قبل الحفظ', style: TextStyle(color: Colors.grey, fontSize: 12), textAlign: TextAlign.center),
+              const Text('قرّب الصورة وحركها لمراجعتها قبل الحفظ', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 12), textAlign: TextAlign.center),
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
@@ -324,7 +324,7 @@ class _BatchTeacherPhotosScreenState extends State<BatchTeacherPhotosScreen> {
                       Navigator.pop(dialogContext);
                     },
               style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              child: const Text('اعتماد', style: TextStyle(color: Colors.white)),
+              child: const Text('اعتماد', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white)),
             ),
           ],
         ),
@@ -726,7 +726,7 @@ class _BatchTeacherPhotosScreenState extends State<BatchTeacherPhotosScreen> {
     return Column(
       children: [
         Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
-        Text(title, style: TextStyle(fontSize: 11, color: text)),
+        Text(title, style: TextStyle(fontWeight: FontWeight.bold,fontSize: 11, color: text)),
       ],
     );
   }
@@ -792,7 +792,7 @@ class _BatchTeacherPhotosScreenState extends State<BatchTeacherPhotosScreen> {
                                   children: [
                                     Text(_teacherName(teacher), style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: text), textAlign: TextAlign.center),
                                     const SizedBox(height: 5),
-                                    Text('المعلم ${_currentIndex + 1} من ${_teachers.length}', style: const TextStyle(color: Colors.grey)),
+                                    Text('المعلم ${_currentIndex + 1} من ${_teachers.length}', style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.grey)),
                                     const SizedBox(height: 15),
                                     Container(
                                       height: 310,
@@ -807,7 +807,7 @@ class _BatchTeacherPhotosScreenState extends State<BatchTeacherPhotosScreen> {
                                       children: [
                                         Expanded(child: OutlinedButton.icon(onPressed: _saving ? null : () => _pickImage(ImageSource.gallery), icon: const Icon(Icons.photo_library), label: const Text('من الجهاز'))),
                                         const SizedBox(width: 8),
-                                        Expanded(child: ElevatedButton.icon(onPressed: _saving ? null : () => _pickImage(ImageSource.camera), icon: const Icon(Icons.camera_alt, color: Colors.white), label: const Text('التقاط الصورة', style: TextStyle(color: Colors.white)), style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple))),
+                                        Expanded(child: ElevatedButton.icon(onPressed: _saving ? null : () => _pickImage(ImageSource.camera), icon: const Icon(Icons.camera_alt, color: Colors.white), label: const Text('التقاط الصورة', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white)), style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple))),
                                       ],
                                     ),
                                     const SizedBox(height: 8),
@@ -819,7 +819,7 @@ class _BatchTeacherPhotosScreenState extends State<BatchTeacherPhotosScreen> {
                                         child: ElevatedButton.icon(
                                           onPressed: _saving || _processing || _backgroundRemovedForCurrentImage ? null : _removeBackgroundFromCurrentImage,
                                           icon: _processing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.auto_fix_high, color: Colors.white),
-                                          label: Text(_processing ? 'جاري إزالة الخلفية...' : (_backgroundRemovedForCurrentImage ? 'تمت إزالة الخلفية' : 'إزالة الخلفية'), style: const TextStyle(color: Colors.white)),
+                                          label: Text(_processing ? 'جاري إزالة الخلفية...' : (_backgroundRemovedForCurrentImage ? 'تمت إزالة الخلفية' : 'إزالة الخلفية'), style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.white)),
                                           style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade700),
                                         ),
                                       ),

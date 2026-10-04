@@ -185,7 +185,7 @@ class _LoadingDataScreenState extends State<LoadingDataScreen>
                   const SizedBox(height: 7),
                   const Text(
                     'مساعد الإدارة المدرسية',
-                    style: TextStyle(color: Colors.white70, fontSize: 15),
+                    style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white70, fontSize: 15),
                   ),
                   const SizedBox(height: 34),
                   Container(
@@ -206,7 +206,7 @@ class _LoadingDataScreenState extends State<LoadingDataScreen>
                               child: Text(
                                 _statusText,
                                 textAlign: TextAlign.right,
-                                style: const TextStyle(
+                                style: const TextStyle(fontWeight: FontWeight.bold,
                                   color: Colors.white,
                                   fontSize: 15,
                                   height: 1.4,
@@ -232,7 +232,7 @@ class _LoadingDataScreenState extends State<LoadingDataScreen>
                           alignment: Alignment.centerLeft,
                           child: Text(
                             '${(_progressValue * 100).round()}%',
-                            style: const TextStyle(
+                            style: const TextStyle(fontWeight: FontWeight.bold,
                               color: Colors.white70,
                               fontSize: 12,
                             ),

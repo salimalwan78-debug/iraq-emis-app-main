@@ -93,7 +93,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Spacer(),
                 const Text('نسخة غير رسمية', style: TextStyle(color: Colors.grey, fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 5),
-                const Text('تصميم/ علي الفتلاوي / ثانوية الديوانية للمتميزين', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                const Text('تصميم/ علي الفتلاوي / ثانوية الديوانية للمتميزين', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 14)),
                 const SizedBox(height: 40),
               ],
             ),

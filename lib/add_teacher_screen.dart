@@ -41,8 +41,11 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     'bloodGroup': '/selectoption/فصيلة الدم',
     'religion': '/selectoption/الديانة',
     'jobDesignation': '/SelectOption/نوع الوظيفة',
-    'employmentType': '/SelectOption/نوع الوظيفة',
-    'currentPosition': '/SelectOption/نوع الوظيفة',
+    'employmentType': '/selectoption/نوع التوظيف',
+    'employeeCategory': '/selectoption/نوع الموظف',
+    'classification': '/selectoption/التصنيف',
+    'status': '/selectoption/الحالة الوظيفية',
+    'currentPosition': '/selectoption/المنصب الحالي',
   };
 
   final labels = const <String, String>{
@@ -76,6 +79,8 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     'dateOfStartWorking': 'تاريخ أول تعيين',
     'currentPosition': 'المنصب الحالي',
     'status': 'الحالة الوظيفية',
+    'statusDate': 'تاريخ سريان الحالة الوظيفية',
+    'statusReason': 'سبب تغيير الحالة الوظيفية',
     'educationLevel': 'التحصيل الدراسي',
     'universityName': 'إسم الكلية / المعهد',
     'graduationYear': 'سنة التخرج',
@@ -199,6 +204,11 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       for (final e in endpoints.entries) {
         options[e.key] = await _list(e.value);
       }
+      // لا نضع قيماً محلية بديلة في الحالة الوظيفية؛ إذا كانت EMIS توفر
+      // خيارات، نستخدم أول قيمة فعلية منها فقط كقيمة ابتدائية.
+      if (c['status']!.text.trim().isEmpty && (options['status'] ?? const []).isNotEmpty) {
+        c['status']!.text = _value(options['status']!.first);
+      }
       if (!mounted) return;
       setState(() => loading = false);
     } catch (e) {
@@ -231,7 +241,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         controller: c[key],
         keyboardType: keyboard,
         maxLines: maxLines,
-        readOnly: key == 'dateOfBirth' || key == 'dateOfStartWorking',
+        readOnly: key == 'dateOfBirth' || key == 'dateOfStartWorking' || key == 'statusDate',
         textDirection: TextDirection.rtl,
         decoration: InputDecoration(
           labelText: labels[key] ?? key,
@@ -250,7 +260,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
         validator: null,
         onChanged: (_) => _liveSyncKey.currentState?.pushValues(_liveValues()),
-        onTap: () { if (key == 'dateOfBirth' || key == 'dateOfStartWorking') { _pickDate(key); } else { _focusLive(key); } },
+        onTap: () { if (key == 'dateOfBirth' || key == 'dateOfStartWorking' || key == 'statusDate') { _pickDate(key); } else { _focusLive(key); } },
       );
 
   Future<void> _pickDate(String key) async {
@@ -429,10 +439,11 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         'EmploymentRecord': {
           'EmploymentStatuses': [
             {
-              'StatusType': 'مستمر',
+              'StatusType': _n('status'),
               'DisEngagementDate': null,
               'MinistryOfficialDocumentNumber': null,
-              'Reason': null,
+              'Reason': _n('statusReason'),
+              'StatusDate': _n('statusDate'),
               'CurrentBelongToEntityId': int.tryParse(widget.schoolId),
             }
           ],
@@ -578,36 +589,37 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                     _section('البيانات الوظيفية', [
                       Row(
                         children: [
-                          Expanded(
-                            child: _select(
-                              'employmentType',
-                              required: true,
-                            ),
-                          ),
+                          Expanded(child: _select('employmentType', required: true)),
                           const SizedBox(width: 10),
                           Expanded(child: _select('jobDesignation')),
-                          const SizedBox(width: 10),
-                          Expanded(child: _select('currentPosition', fallback: const ['مدرس', 'مدرس اول', 'مدرس ثاني', 'مدرس ثالث', 'مدرس اقدم'])),
                         ],
                       ),
                       const SizedBox(height: 10),
                       Row(
                         children: [
-                          Expanded(child: _select('employeeCategory', fallback: const ['تدريسي'])),
+                          Expanded(child: _select('employeeCategory', required: true)),
                           const SizedBox(width: 10),
-                          Expanded(child: _select('classification', fallback: const ['معلم'])),
-                          const SizedBox(width: 10),
-                          Expanded(child: _select('status', fallback: const ['مستمر'])),
+                          Expanded(child: _select('classification', required: true)),
                         ],
                       ),
                       const SizedBox(height: 10),
                       Row(
                         children: [
+                          Expanded(child: _select('currentPosition')),
+                          const SizedBox(width: 10),
                           Expanded(child: _textField('employmentGrade')),
-                          const SizedBox(width: 10),
-                          Expanded(child: _textField('dateOfStartWorking')),
                         ],
                       ),
+                      const SizedBox(height: 10),
+                      _textField('dateOfStartWorking'),
+                      const SizedBox(height: 10),
+                      _section('الحالة الوظيفية', [
+                        _select('status', required: true),
+                        const SizedBox(height: 10),
+                        _textField('statusDate'),
+                        const SizedBox(height: 10),
+                        _textField('statusReason', maxLines: 2),
+                      ]),
                       const SizedBox(height: 10),
                       _select('educationLevel', fallback: const ['ابتدائية','متوسطة','إعدادية','دبلوم','بكالوريوس','دبلوم عالي','ماجستير','دكتوراه']),
                       const SizedBox(height: 10),
@@ -703,7 +715,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                             : const Icon(Icons.person_add_alt_1_rounded),
                         label: const Text(
                           'حفظ المعلم',
-                          style: TextStyle(fontSize: 17),
+                          style: TextStyle(fontWeight: FontWeight.bold,fontSize: 17),
                         ),
                       ),
                     ),
@@ -763,7 +775,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                   SizedBox(height: 5),
                   Text(
                     'الحقول والقوائم تُقرأ مباشرة من EMIS.',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                    style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white70, fontSize: 13),
                   ),
                 ],
               ),
@@ -778,6 +790,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
           color: Colors.red.withOpacity(.07),
           borderRadius: BorderRadius.circular(14),
         ),
-        child: Text(text, style: const TextStyle(color: Colors.red)),
+        child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.red)),
       );
 }

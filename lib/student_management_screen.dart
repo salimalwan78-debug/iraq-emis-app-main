@@ -20,7 +20,7 @@ class StudentManagementScreen extends StatelessWidget {
         return Scaffold(
           backgroundColor: dark ? const Color(0xFF121212) : const Color(0xFFF5F7FA),
           appBar: AppBar(
-            title: const Text('إدارة الطلاب', style: TextStyle(color: Colors.white)),
+            title: const Text('إدارة الطلاب', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white)),
             backgroundColor: const Color(0xFF1A237E),
             iconTheme: const IconThemeData(color: Colors.white),
             actions: [
@@ -58,7 +58,7 @@ class StudentManagementScreen extends StatelessWidget {
         contentPadding: const EdgeInsets.all(15),
         leading: Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: color.withOpacity(.10), shape: BoxShape.circle), child: Icon(icon, color: color, size: 30)),
         title: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: dark ? Colors.white : Colors.black87)),
-        subtitle: Text(sub, style: const TextStyle(color: Colors.grey)),
+        subtitle: Text(sub, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.grey)),
         trailing: Icon(Icons.arrow_forward_ios, size: 16, color: dark ? Colors.white54 : Colors.black54),
       ),
     ),

@@ -42,6 +42,13 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   final Map<String, TextEditingController> _c = {};
   final Map<String, List<Map<String, dynamic>>> _options = {};
 
+  List<Map<String, dynamic>> _addressCountries = [];
+  List<Map<String, dynamic>> _addressGovernorates = [];
+  List<Map<String, dynamic>> _addressDistricts = [];
+  String? _addressCountryId;
+  String? _addressGovernorateId;
+  String? _addressDistrictId;
+
   static const _commonOptionEndpoints = <String, String>{
     'countryOfBirth': '/selectoption/بلد الولادة',
     'idType': '/selectoption/IdentificationType',
@@ -52,6 +59,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'bloodGroup': '/selectoption/فصيلة الدم',
     'religion': '/selectoption/الديانة',
     'jobDesignation': '/SelectOption/نوع الوظيفة',
+    'employmentType': '/selectoption/نوع التوظيف',
+    'employeeCategory': '/selectoption/نوع الموظف',
+    'classification': '/selectoption/التصنيف',
+    'status': '/selectoption/الحالة الوظيفية',
+    'currentPosition': '/selectoption/المنصب الحالي',
   };
 
   static const _labels = <String, String>{
@@ -81,6 +93,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'employmentType': 'نوع التوظيف',
     'employeeCategory': 'نوع الموظف',
     'status': 'الحالة الوظيفية',
+    'statusDate': 'تاريخ سريان الحالة الوظيفية',
+    'statusReason': 'سبب تغيير الحالة الوظيفية',
     'jobDesignation': 'المسمى الوظيفي',
     'employmentGrade': 'الدرجة الوظيفية',
     'classification': 'التصنيف',
@@ -198,8 +212,12 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     final address = e['address'] is Map ? Map<String, dynamic>.from(e['address']) : <String, dynamic>{};
     final employment = e['employmentRecord'] is Map ? Map<String, dynamic>.from(e['employmentRecord']) : <String, dynamic>{};
     final positions = employment['employmentPositions'];
+    final statuses = employment['employmentStatuses'];
     final currentPosition = e['currentEmploymentPosition'] ??
         (positions is List && positions.isNotEmpty && positions.first is Map ? positions.first['position'] : null);
+    final currentStatusRecord = statuses is List && statuses.isNotEmpty && statuses.first is Map
+        ? Map<String, dynamic>.from(statuses.first)
+        : <String, dynamic>{};
 
     final values = <String, dynamic>{
       'name': e['name'],
@@ -228,6 +246,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       'employmentType': e['employmentType'],
       'employeeCategory': e['employeeCategory'],
       'status': e['status'],
+      'statusDate': _dateOnly(currentStatusRecord['statusDate'] ?? currentStatusRecord['effectiveDate'] ?? currentStatusRecord['date']),
+      'statusReason': currentStatusRecord['reason'],
       'jobDesignation': e['jobDesignation'],
       'employmentGrade': e['employmentGrade'],
       'classification': e['classification'],
@@ -289,10 +309,65 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       if (response.statusCode != 200) return;
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
       final raw = decoded is Map ? (decoded['data'] ?? decoded['items'] ?? decoded['results']) : decoded;
-      if (raw is List) {
-        _options['countryStructure'] = raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      if (raw is! List) return;
+      _addressCountries = raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      final address = _employee?['address'] is Map ? Map<String, dynamic>.from(_employee!['address']) : <String, dynamic>{};
+      final stored = address['countryStructureId']?.toString();
+      Map<String, dynamic>? selected;
+      void walk(Map<String, dynamic> node) {
+        if (_optionValue(node)?.toString() == stored) selected = node;
+        for (final child in _childrenOf(node)) walk(child);
       }
+      for (final country in _addressCountries) walk(country);
+
+      Map<String, dynamic>? iraq;
+      for (final country in _addressCountries) {
+        final t = _optionText(country);
+        if (t.contains('العراق') || t.toLowerCase() == 'iraq') { iraq = country; break; }
+      }
+      iraq ??= _addressCountries.isNotEmpty ? _addressCountries.first : null;
+      if (iraq == null) return;
+      _addressCountryId = _optionValue(iraq)?.toString();
+      _addressGovernorates = _childrenOf(iraq);
+
+      if (selected != null) {
+        final sid = _optionValue(selected!)?.toString();
+        for (final country in _addressCountries) {
+          for (final gov in _childrenOf(country)) {
+            final districts = _childrenOf(gov);
+            if (districts.any((d) => _optionValue(d)?.toString() == sid)) {
+              _addressCountryId = _optionValue(country)?.toString();
+              _addressGovernorates = _childrenOf(country);
+              _addressGovernorateId = _optionValue(gov)?.toString();
+              _addressDistricts = districts;
+              _addressDistrictId = sid;
+            }
+          }
+        }
+      }
+      if (mounted) setState(() {});
     } catch (_) {}
+  }
+
+  List<Map<String, dynamic>> _childrenOf(Map<String, dynamic> node) {
+    final raw = node['children'] ?? node['items'] ?? node['subItems'] ?? node['childs'];
+    if (raw is! List) return [];
+    return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  dynamic _optionValue(Map<String, dynamic> x) => x['value'] ?? x['id'] ?? x['code'];
+  String _optionText(Map<String, dynamic> x) => '${x['displayName'] ?? x['label'] ?? x['name'] ?? x['text'] ?? _optionValue(x) ?? ''}';
+
+  Widget _addressDropdown(String label, String? value, List<Map<String, dynamic>> items, ValueChanged<String?> onChanged) {
+    final safe = items.any((x) => _optionValue(x)?.toString() == value) ? value : null;
+    return DropdownButtonFormField<String>(
+      value: safe,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label, labelStyle: const TextStyle(fontWeight: FontWeight.bold), border: OutlineInputBorder(borderRadius: BorderRadius.circular(13)), filled: true),
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+      items: items.map((x) => DropdownMenuItem<String>(value: _optionValue(x)?.toString(), child: Text(_optionText(x), style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
+      onChanged: onChanged,
+    );
   }
 
   List<String> _stringOptions(String key, {List<String> fallback = const []}) {
@@ -328,7 +403,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       ),
       validator: null,
       onChanged: (_) => _liveSyncKey.currentState?.pushValues(_liveValues()),
-      onTap: readOnly && (key == 'dateOfBirth' || key == 'dateOfStartWorking' || key == 'graduationYear')
+      onTap: readOnly && (key == 'dateOfBirth' || key == 'dateOfStartWorking' || key == 'graduationYear' || key == 'statusDate')
           ? () { _focusLive(key); _pickDate(key); }
           : () => _focusLive(key),
     );
@@ -518,7 +593,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                   const Text(
                     'يمكنك تقريب الصورة وتحريكها لمراجعتها قبل اعتمادها',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                    style: TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 12),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
@@ -571,7 +646,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                           Navigator.pop(dialogContext);
                         },
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                  child: const Text('اعتماد', style: TextStyle(color: Colors.white)),
+                  child: const Text('اعتماد', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white)),
                 ),
               ],
             );
@@ -744,7 +819,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           'Quarter': _c['quarter']!.text.trim(),
           'Street': _c['street']!.text.trim(),
           'ClosestLocation': _c['closestLocation']!.text.trim(),
-          'countryStructureId': oldAddress['countryStructureId'],
+          'countryStructureId': _addressDistrictId == null ? oldAddress['countryStructureId'] : int.tryParse(_addressDistrictId!),
           'Latitude': '${oldAddress['latitude'] ?? 0}',
           'Longitude': '${oldAddress['longitude'] ?? 0}',
           'ApartmentNumber': oldAddress['apartmentNumber'] ?? '',
@@ -799,7 +874,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           'StatusType': currentStatus,
           'DisEngagementDate': null,
           'MinistryOfficialDocumentNumber': null,
-          'Reason': null,
+          'Reason': _c['statusReason']!.text.trim().isEmpty ? null : _c['statusReason']!.text.trim(),
+          'StatusDate': _c['statusDate']!.text.trim().isEmpty ? null : _c['statusDate']!.text.trim(),
           'CurrentBelongToEntityId': int.tryParse(widget.schoolId),
         }
       ],
@@ -926,7 +1002,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             TextButton.icon(
               onPressed: hasImage && !_saving ? _deleteCurrentPhoto : null,
               icon: const Icon(Icons.delete_forever, color: Colors.red),
-              label: const Text('إزالة الصورة الحالية', style: TextStyle(color: Colors.red)),
+              label: const Text('إزالة الصورة الحالية', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.red)),
             ),
           ],
         ),
@@ -938,7 +1014,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('تعديل بيانات المعلم', style: TextStyle(color: Colors.white)),
+        title: const Text('تعديل بيانات المعلم', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white)),
         centerTitle: true,
         backgroundColor: const Color(0xFF4527A0),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -988,14 +1064,18 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                           _textField('familyNumber', keyboardType: TextInputType.number),
                         ]),
                         _section('البيانات الوظيفية', [
-                          _selectField('employmentType', required: true, fallback: const ['ملاك', 'عقد']),
-                          _selectField('employeeCategory', required: true, fallback: const ['تدريسي']),
-                          _selectField('status', required: true, fallback: const ['مستمر']),
-                          _selectField('classification', required: true, fallback: const ['معلم']),
+                          _selectField('employmentType', required: true),
+                          _selectField('employeeCategory', required: true),
+                          _selectField('classification', required: true),
                           _selectField('jobDesignation'),
                           _textField('employmentGrade'),
-                          _selectField('currentPosition', fallback: const ['مدرس', 'مدرس اول', 'مدرس ثاني', 'مدرس ثالث', 'مدرس اقدم']),
+                          _selectField('currentPosition'),
                           _textField('dateOfStartWorking', required: true, readOnly: true),
+                        ]),
+                        _section('الحالة الوظيفية', [
+                          _selectField('status', required: true),
+                          _textField('statusDate', readOnly: true),
+                          _textField('statusReason', maxLines: 2),
                         ]),
                         _section('التحصيل الدراسي', [
                           _selectField('educationLevel', fallback: const ['ابتدائية', 'متوسطة', 'إعدادية', 'دبلوم', 'بكالوريوس', 'دبلوم عالي', 'ماجستير', 'دكتوراه']),
@@ -1010,6 +1090,36 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                           _textField('emergencyContactPhoneNumber', keyboardType: TextInputType.phone),
                         ]),
                         _section('العنوان ومعلومات الاتصال', [
+                          _addressDropdown('الدولة', _addressCountryId, _addressCountries, (v) {
+                            final country = _addressCountries.where((x) => _optionValue(x)?.toString() == v).toList();
+                            if (country.isEmpty) return;
+                            setState(() {
+                              _addressCountryId = v;
+                              _addressGovernorates = _childrenOf(country.first);
+                              _addressGovernorateId = null;
+                              _addressDistricts = [];
+                              _addressDistrictId = null;
+                              if (_employee?['address'] is Map) _employee!['address']['countryStructureId'] = null;
+                            });
+                          }),
+                          _addressDropdown('المحافظة', _addressGovernorateId, _addressGovernorates, (v) {
+                            final gov = _addressGovernorates.where((x) => _optionValue(x)?.toString() == v).toList();
+                            if (gov.isEmpty) return;
+                            setState(() {
+                              _addressGovernorateId = v;
+                              _addressDistricts = _childrenOf(gov.first);
+                              _addressDistrictId = null;
+                              if (_employee?['address'] is Map) _employee!['address']['countryStructureId'] = null;
+                            });
+                          }),
+                          _addressDropdown('القضاء', _addressDistrictId, _addressDistricts, (v) {
+                            setState(() {
+                              _addressDistrictId = v;
+                              if (_employee?['address'] is Map) {
+                                _employee!['address']['countryStructureId'] = v == null ? null : int.tryParse(v);
+                              }
+                            });
+                          }),
                           _textField('town'),
                           _textField('area'),
                           _textField('quarter'),

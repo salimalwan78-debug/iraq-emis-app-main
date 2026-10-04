@@ -87,7 +87,7 @@ class SmartToolsScreen extends StatelessWidget {
                           SizedBox(height: 6),
                           Text(
                             'تنفيذ المهام مباشرة على البيانات المحملة في التطبيق دون إعادة تحميل القائمة.',
-                            style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+                            style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white70, fontSize: 13, height: 1.4),
                           ),
                         ],
                       ),
@@ -208,7 +208,7 @@ class SmartToolsScreen extends StatelessWidget {
                 children: [
                   Text(title, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: textColor)),
                   const SizedBox(height: 7),
-                  Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.35)),
+                  Text(subtitle, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 13, height: 1.35)),
                 ],
               ),
             ),

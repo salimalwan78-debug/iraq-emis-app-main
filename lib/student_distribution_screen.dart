@@ -470,7 +470,7 @@ class _StudentDistributionScreenState
                   SizedBox(height: 5),
                   Text(
                     'اختر مجموعة من الطلاب لكل شعبة ثم نفّذ العملية مرة واحدة.',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                    style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white70, fontSize: 13),
                   ),
                 ],
               ),

@@ -420,7 +420,7 @@ class _BatchStudentPhotosScreenState extends State<BatchStudentPhotosScreen> {
                         padding: EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                         child: Text(
                           'قرّب أو أبعد بإصبعين واسحب الصورة للتحريك',
-                          style: TextStyle(color: Colors.white, fontSize: 12),
+                          style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white, fontSize: 12),
                         ),
                       ),
                     ),
@@ -600,6 +600,15 @@ class _BatchStudentPhotosScreenState extends State<BatchStudentPhotosScreen> {
     }
   }
 
+  void _previousStudent() {
+    if (_currentIndex <= 0 || _saving || _processing || _students.isEmpty) return;
+    setState(() {
+      _currentIndex--;
+      _currentImage = null;
+      _backgroundRemovedForCurrentImage = false;
+    });
+  }
+
   Future<void> _nextStudent() async {
     if (_currentImage == null || _saving || _processing) return;
     final saved = await _saveCurrentStudent();
@@ -706,7 +715,7 @@ class _BatchStudentPhotosScreenState extends State<BatchStudentPhotosScreen> {
                           value: _selectedStage,
                           decoration: _inputDecoration('اختر الصف', isDark),
                           dropdownColor: card,
-                          style: TextStyle(color: text),
+                          style: TextStyle(fontWeight: FontWeight.bold,color: text),
                           items: _stages
                               .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                               .toList(),
@@ -719,7 +728,7 @@ class _BatchStudentPhotosScreenState extends State<BatchStudentPhotosScreen> {
                           value: _selectedClassRoom,
                           decoration: _inputDecoration('اختر الشعبة', isDark),
                           dropdownColor: card,
-                          style: TextStyle(color: text),
+                          style: TextStyle(fontWeight: FontWeight.bold,color: text),
                           items: _classRooms
                               .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                               .toList(),
@@ -766,7 +775,7 @@ class _BatchStudentPhotosScreenState extends State<BatchStudentPhotosScreen> {
                                   ? 'اختر الصف والشعبة لبدء تصوير الطلاب'
                                   : 'اكتملت معالجة الطلاب المحددين. يمكنك مراجعة التقرير.',
                               textAlign: TextAlign.center,
-                              style: TextStyle(color: text, fontSize: 16),
+                              style: TextStyle(fontWeight: FontWeight.bold,color: text, fontSize: 16),
                             ),
                           ),
                         )
@@ -823,7 +832,7 @@ class _BatchStudentPhotosScreenState extends State<BatchStudentPhotosScreen> {
                                                 const SizedBox(height: 12),
                                                 Text(
                                                   'جاري إزالة الخلفية محليًا...',
-                                                  style: TextStyle(color: text),
+                                                  style: TextStyle(fontWeight: FontWeight.bold,color: text),
                                                 ),
                                               ],
                                             ),
@@ -940,6 +949,19 @@ class _BatchStudentPhotosScreenState extends State<BatchStudentPhotosScreen> {
                                   ),
                                   const SizedBox(height: 10),
                                   OutlinedButton.icon(
+                                    onPressed: _currentIndex <= 0 || _processing || _saving ? null : _previousStudent,
+                                    icon: const Icon(Icons.arrow_back_rounded),
+                                    label: const Text(
+                                      'الرجوع إلى الطالب السابق',
+                                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      minimumSize: const Size.fromHeight(50),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  OutlinedButton.icon(
                                     onPressed: _processing || _saving ? null : _skipCurrentStudent,
                                     icon: const Icon(
                                       Icons.skip_next_rounded,
@@ -1042,7 +1064,7 @@ class _BatchStudentPhotosScreenState extends State<BatchStudentPhotosScreen> {
 
   InputDecoration _inputDecoration(String label, bool isDark) => InputDecoration(labelText: label, filled: true, fillColor: isDark ? Colors.black12 : Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)));
 
-  Widget _counter(String title, String value, Color color) => Column(children: [Text(value, style: TextStyle(color: color, fontSize: 21, fontWeight: FontWeight.bold)), const SizedBox(height: 3), Text(title, style: const TextStyle(color: Colors.grey, fontSize: 12))]);
+  Widget _counter(String title, String value, Color color) => Column(children: [Text(value, style: TextStyle(color: color, fontSize: 21, fontWeight: FontWeight.bold)), const SizedBox(height: 3), Text(title, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 12))]);
 
   Future<void> _showReport() async {
     final photographed = _students

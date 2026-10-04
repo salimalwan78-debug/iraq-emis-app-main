@@ -178,12 +178,12 @@ class _SelectStudentScreenState extends State<SelectStudentScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
               children: [
-                if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(_error!, style: const TextStyle(color: Colors.red), textDirection: TextDirection.rtl)),
+                if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(_error!, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.red), textDirection: TextDirection.rtl)),
                 Row(children: [
                   Expanded(child: DropdownButtonFormField<String>(
                     value: _selectedStage, isExpanded: true,
                     decoration: InputDecoration(labelText: 'اختر الصف', filled: true, fillColor: card, border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none)),
-                    dropdownColor: card, style: TextStyle(color: text),
+                    dropdownColor: card, style: TextStyle(fontWeight: FontWeight.bold,color: text),
                     items: _stages.map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
                     onChanged: (v) => setState(() { _selectedStage = v; _selectedClassRoom = null; }),
                   )),
@@ -191,7 +191,7 @@ class _SelectStudentScreenState extends State<SelectStudentScreen> {
                   Expanded(child: DropdownButtonFormField<String>(
                     value: _selectedClassRoom, isExpanded: true,
                     decoration: InputDecoration(labelText: 'اختر الشعبة', filled: true, fillColor: card, border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none)),
-                    dropdownColor: card, style: TextStyle(color: text),
+                    dropdownColor: card, style: TextStyle(fontWeight: FontWeight.bold,color: text),
                     items: _classRooms.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
                     onChanged: _selectedStage == null ? null : (v) => setState(() => _selectedClassRoom = v),
                   )),
@@ -225,7 +225,7 @@ class _SelectStudentScreenState extends State<SelectStudentScreen> {
             Text(_studentName(s), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: text), textAlign: TextAlign.right),
             const SizedBox(height: 6),
             Wrap(alignment: WrapAlignment.end, spacing: 6, children: [if (stage.isNotEmpty) _chip(stage, Colors.indigo), if (room.isNotEmpty) _chip('شعبة $room', Colors.blue)]),
-            const SizedBox(height: 5), Text('رقم الطالب: ${s['id'] ?? ''}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 5), Text('رقم الطالب: ${s['id'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 12, color: Colors.grey)),
           ])),
           IconButton(tooltip: 'تعطيل الطالب', onPressed: () => _deactivateStudent(s), icon: const Icon(Icons.person_off_outlined, color: Colors.redAccent)),
           IconButton(tooltip: 'تعديل بيانات الطالب', onPressed: () => _openStudent(s), icon: const Icon(Icons.edit_outlined, color: Colors.indigo)),

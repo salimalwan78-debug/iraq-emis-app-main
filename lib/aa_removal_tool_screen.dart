@@ -222,7 +222,7 @@ class _AARemovalToolScreenState extends State<AARemovalToolScreen> {
               const SizedBox(height: 12),
               Expanded(
                 child: targets.isEmpty
-                    ? Center(child: Text('لا توجد سجلات تبدأ بـ AA', style: TextStyle(color: text, fontSize: 16)))
+                    ? Center(child: Text('لا توجد سجلات تبدأ بـ AA', style: TextStyle(fontWeight: FontWeight.bold,color: text, fontSize: 16)))
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(20, 5, 20, 20),
                         itemCount: targets.length,
@@ -242,7 +242,7 @@ class _AARemovalToolScreenState extends State<AARemovalToolScreen> {
                             child: ListTile(
                               leading: CircleAvatar(backgroundColor: statusColor.withOpacity(.12), child: Icon(ok ? Icons.check : failed ? Icons.error_outline : Icons.person, color: statusColor)),
                               title: Text(_nameOf(student), style: TextStyle(color: text, fontWeight: FontWeight.bold)),
-                              subtitle: Text('${target['oldId']}  →  ${target['newId']}\n$status', style: TextStyle(color: statusColor, height: 1.4)),
+                              subtitle: Text('${target['oldId']}  →  ${target['newId']}\n$status', style: TextStyle(fontWeight: FontWeight.bold,color: statusColor, height: 1.4)),
                               isThreeLine: true,
                             ),
                           );

@@ -129,7 +129,7 @@ class _EmisWebviewScreenState extends State<EmisWebviewScreen> {
         backgroundColor: const Color(0xFF0F172A),
         title: const Text(
           'بوابة تسجيل الدخول - EMIS الرسمية',
-          style: TextStyle(color: Colors.white, fontSize: 15),
+          style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white, fontSize: 15),
         ),
         centerTitle: true,
         actions: [

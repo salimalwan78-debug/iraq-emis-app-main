@@ -43,6 +43,13 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
   final Map<String, List<Map<String, dynamic>>> _options = {};
   final Set<String> _loadingOptions = <String>{};
 
+  List<Map<String, dynamic>> _addressCountries = [];
+  List<Map<String, dynamic>> _addressGovernorates = [];
+  List<Map<String, dynamic>> _addressDistricts = [];
+  String? _addressCountryId;
+  String? _addressGovernorateId;
+  String? _addressDistrictId;
+
   static const Map<String, String> _optionEndpoints = {
     'countryOfBirth': '/selectoption/بلد الولادة',
     'nationality': '/selectoption/بلد الولادة',
@@ -206,6 +213,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         student['schoolId']?.toString(),
         student['stageId']?.toString(),
       );
+      _studentData = student;
       await _loadCountryStructure();
       if (student['identification'] is Map) {
         final identification = Map<String, dynamic>.from(student['identification']);
@@ -279,20 +287,90 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
   Future<void> _loadCountryStructure() async {
     try {
       final list = await _getOptions('/CountryStructure/getcountrystructure');
-      final flattened = <Map<String, dynamic>>[];
-      void walk(List<dynamic> nodes, String prefix) {
-        for (final node in nodes) {
-          if (node is! Map) continue;
-          final id = node['id'];
-          final name = node['name']?.toString() ?? '';
-          if (id != null) flattened.add({'value': id, 'displayName': prefix.isEmpty ? name : '$prefix / $name'});
-          final children = node['children'];
-          if (children is List) walk(children, prefix.isEmpty ? name : '$prefix / $name');
+      if (list.isEmpty) return;
+      _addressCountries = list;
+
+      final address = _studentData?['address'] is Map
+          ? Map<String, dynamic>.from(_studentData!['address'])
+          : <String, dynamic>{};
+      final stored = address['countryStructureId']?.toString();
+
+      Map<String, dynamic>? iraq;
+      for (final item in _addressCountries) {
+        final text = _optionText(item);
+        if (text.contains('العراق') || text.toLowerCase() == 'iraq') {
+          iraq = item;
+          break;
         }
       }
-      walk(list, '');
-      if (flattened.isNotEmpty) _options['countryStructureId'] = flattened;
-    } catch (e) { debugPrint('تعذر تحميل هيكل العناوين: $e'); }
+      iraq ??= _addressCountries.first;
+      _addressCountryId = _optionValue(iraq)?.toString();
+      _addressGovernorates = _childrenOf(iraq);
+
+      Map<String, dynamic>? selectedNode;
+      void walk(Map<String, dynamic> node, String? countryId, String? governorateId) {
+        final id = _optionValue(node)?.toString();
+        if (stored != null && id == stored) {
+          selectedNode = node;
+          _addressCountryId = countryId ?? id;
+          _addressGovernorateId = governorateId;
+        }
+        for (final child in _childrenOf(node)) {
+          walk(child, countryId ?? id, governorateId ?? id);
+        }
+      }
+      for (final country in _addressCountries) {
+        walk(country, _optionValue(country)?.toString(), null);
+      }
+
+      if (selectedNode != null) {
+        final selectedId = _optionValue(selectedNode!)?.toString();
+        for (final country in _addressCountries) {
+          for (final gov in _childrenOf(country)) {
+            final districts = _childrenOf(gov);
+            if (districts.any((d) => _optionValue(d)?.toString() == selectedId)) {
+              _addressCountryId = _optionValue(country)?.toString();
+              _addressGovernorateId = _optionValue(gov)?.toString();
+              _addressDistrictId = selectedId;
+              _addressGovernorates = _childrenOf(country);
+              _addressDistricts = districts;
+            }
+          }
+        }
+      }
+      if (_addressGovernorateId == null && _addressGovernorates.isNotEmpty) {
+        _addressGovernorateId = null;
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('تعذر تحميل هيكل العناوين: $e');
+    }
+  }
+
+  List<Map<String, dynamic>> _childrenOf(Map<String, dynamic> node) {
+    final raw = node['children'] ?? node['items'] ?? node['subItems'] ?? node['childs'];
+    if (raw is! List) return [];
+    return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  void _setAddressGovernorate(String? value) {
+    final country = _addressCountries.where((x) => _optionValue(x)?.toString() == value).toList();
+    setState(() {
+      _addressCountryId = value;
+      _addressGovernorates = country.isEmpty ? [] : _childrenOf(country.first);
+      _addressGovernorateId = null;
+      _addressDistrictId = null;
+      _addressDistricts = [];
+    });
+  }
+
+  void _setAddressDistrict(String? value) {
+    final gov = _addressGovernorates.where((x) => _optionValue(x)?.toString() == value).toList();
+    setState(() {
+      _addressGovernorateId = value;
+      _addressDistricts = gov.isEmpty ? [] : _childrenOf(gov.first);
+      _addressDistrictId = null;
+    });
   }
 
   String _label(String key) => _officialArabicNames[key] ?? key;
@@ -389,7 +467,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       return const SizedBox.shrink();
     }
 
-    if (_optionEndpoints.containsKey(key) || key == 'stageId' || key == 'classRoomId' || key == 'countryStructureId') {
+    if (_optionEndpoints.containsKey(key) || key == 'stageId' || key == 'classRoomId') {
       return _dropdownField(key: key, owner: owner, isDark: isDark, textColor: textColor);
     }
 
@@ -615,6 +693,29 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     return widgets;
   }
 
+  Widget _addressDropdown(String label, String? value, List<Map<String, dynamic>> items, ValueChanged<String?> onChanged) {
+    final safe = items.any((x) => _optionValue(x)?.toString() == value) ? value : null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: DropdownButtonFormField<String>(
+        value: safe,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          filled: true,
+        ),
+        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+        items: items.map((item) => DropdownMenuItem<String>(
+          value: _optionValue(item)?.toString(),
+          child: Text(_optionText(item), style: const TextStyle(fontWeight: FontWeight.bold)),
+        )).toList(),
+        onChanged: onChanged,
+      ),
+    );
+  }
+
   Widget _studentSection(
     String title,
     List<Widget> children,
@@ -727,7 +828,37 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         field('classRoomId'),
       ], isDark),
       _studentSection('العنوان', [
-        field('countryStructureId', address),
+        _addressDropdown('الدولة', _addressCountryId, _addressCountries, (v) {
+          final country = _addressCountries.where((x) => _optionValue(x)?.toString() == v).toList();
+          if (country.isEmpty) return;
+          setState(() {
+            _addressCountryId = v;
+            _addressGovernorates = _childrenOf(country.first);
+            _addressGovernorateId = null;
+            _addressDistricts = [];
+            _addressDistrictId = null;
+            address['countryStructureId'] = null;
+          });
+          _focusLive('countryStructureId');
+        }),
+        _addressDropdown('المحافظة', _addressGovernorateId, _addressGovernorates, (v) {
+          final gov = _addressGovernorates.where((x) => _optionValue(x)?.toString() == v).toList();
+          if (gov.isEmpty) return;
+          setState(() {
+            _addressGovernorateId = v;
+            _addressDistricts = _childrenOf(gov.first);
+            _addressDistrictId = null;
+            address['countryStructureId'] = null;
+          });
+          _focusLive('countryStructureId');
+        }),
+        _addressDropdown('القضاء', _addressDistrictId, _addressDistricts, (v) {
+          setState(() {
+            _addressDistrictId = v;
+            address['countryStructureId'] = v == null ? null : int.tryParse(v);
+          });
+          _focusLive('countryStructureId');
+        }),
         field('town', address),
         field('area', address),
         field('quarter', address),
@@ -995,7 +1126,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
                     const Text(
                       'يمكنك تقريب الصورة لمراجعتها قبل اعتمادها',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                      style: TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 12),
                     ),
                     const SizedBox(height: 15),
                     if (isProcessing)
@@ -1014,7 +1145,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
                           SizedBox(height: 5),
                           Text(
                             'يرجى الانتظار',
-                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                            style: TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 12),
                           ),
                         ],
                       )
@@ -1101,7 +1232,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
                   ),
                   child: const Text(
                     'اعتماد',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white),
                   ),
                 ),
               ],
@@ -1553,7 +1684,7 @@ class _PlainTextFieldState extends State<PlainTextField> {
         onChanged: widget.onChanged,
         onTap: widget.onTap,
         validator: null,
-        style: TextStyle(
+        style: TextStyle(fontWeight: FontWeight.bold,
           color: widget.textColor,
           fontSize: 16,
         ),

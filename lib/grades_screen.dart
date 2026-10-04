@@ -138,7 +138,7 @@ class GradesScreen extends StatelessWidget {
                 SizedBox(height: 5),
                 Text(
                   'أدوات منفصلة لإدخال الدرجات وإدارة الإهمال',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                  style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white70, fontSize: 13),
                 ),
               ],
             ),
@@ -193,7 +193,7 @@ class GradesScreen extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       subtitle,
-                      style: TextStyle(
+                      style: TextStyle(fontWeight: FontWeight.bold,
                         color: dark ? Colors.white60 : Colors.grey[700],
                         height: 1.35,
                       ),

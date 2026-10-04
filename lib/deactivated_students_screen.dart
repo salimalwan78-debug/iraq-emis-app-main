@@ -150,7 +150,7 @@ class _DeactivatedStudentsScreenState extends State<DeactivatedStudentsScreen> {
       appBar: AppBar(
         title: const Text(
           'الطلبة غير المفعلين',
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white),
         ),
         backgroundColor: const Color(0xFFB71C1C),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -179,7 +179,7 @@ class _DeactivatedStudentsScreenState extends State<DeactivatedStudentsScreen> {
               ),
               const SizedBox(height: 12),
               if (error != null)
-                Text(error!, style: const TextStyle(color: Colors.red)),
+                Text(error!, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.red)),
               if (loading)
                 const Padding(
                   padding: EdgeInsets.all(30),

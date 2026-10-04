@@ -59,7 +59,7 @@ class DashboardScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('مرحباً أستاذ،', style: TextStyle(color: Colors.white70, fontSize: 16)),
+                          const Text('مرحباً أستاذ،', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white70, fontSize: 16)),
                           const SizedBox(height: 5),
                           Text(userName, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
                           const SizedBox(height: 10),
@@ -71,7 +71,7 @@ class DashboardScreen extends StatelessWidget {
                               children: [
                                 const Icon(Icons.school, color: Colors.amber, size: 18),
                                 const SizedBox(width: 5),
-                                Flexible(child: Text(schoolName, style: const TextStyle(color: Colors.white, fontSize: 12), overflow: TextOverflow.ellipsis)),
+                                Flexible(child: Text(schoolName, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.white, fontSize: 12), overflow: TextOverflow.ellipsis)),
                               ],
                             ),
                           ),
@@ -131,7 +131,7 @@ class DashboardScreen extends StatelessWidget {
             const SizedBox(height: 10),
             Text(count, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textColor)),
             const SizedBox(height: 5),
-            Text(title, style: const TextStyle(fontSize: 14, color: Colors.grey)),
+            Text(title, style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 14, color: Colors.grey)),
           ],
         ),
       ),

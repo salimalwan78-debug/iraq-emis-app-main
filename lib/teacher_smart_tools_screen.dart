@@ -61,7 +61,7 @@ class TeacherSmartToolsScreen extends StatelessWidget {
                         children: [
                           Text('أدوات ذكية لإدارة المعلمين', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                           SizedBox(height: 6),
-                          Text('تنفيذ المهام الجماعية مباشرة على بيانات المعلمين المحملة في التطبيق.', style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4)),
+                          Text('تنفيذ المهام الجماعية مباشرة على بيانات المعلمين المحملة في التطبيق.', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white70, fontSize: 13, height: 1.4)),
                         ],
                       ),
                     ),
@@ -130,7 +130,7 @@ class TeacherSmartToolsScreen extends StatelessWidget {
                 children: [
                   Text(title, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: text)),
                   const SizedBox(height: 7),
-                  Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.35)),
+                  Text(subtitle, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 13, height: 1.35)),
                 ],
               ),
             ),

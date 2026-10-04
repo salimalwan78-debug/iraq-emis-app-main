@@ -268,7 +268,7 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
                           const SizedBox(height: 12),
                           Text(
                             dialogError!,
-                            style: const TextStyle(color: Colors.red),
+                            style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.red),
                             textAlign: TextAlign.center,
                           ),
                         ],
@@ -327,7 +327,7 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
     return Scaffold(
       backgroundColor: bg,
       appBar: AppBar(
-        title: const Text('إدارة المعلمين', style: TextStyle(color: Colors.white)),
+        title: const Text('إدارة المعلمين', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white)),
         centerTitle: true,
         backgroundColor: const Color(0xFF4527A0),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -439,7 +439,7 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
           Icon(icon, color: color, size: 25),
           const SizedBox(height: 5),
           Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: text)),
-          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 11, color: Colors.grey)),
         ],
       ),
     );
@@ -491,9 +491,9 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
                     ),
                     const SizedBox(height: 6),
                     if (national.isNotEmpty)
-                      Text('الهوية الوطنية: $national', style: const TextStyle(fontSize: 12, color: Colors.grey), textAlign: TextAlign.right),
+                      Text('الهوية الوطنية: $national', style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 12, color: Colors.grey), textAlign: TextAlign.right),
                     if (employeeNo.isNotEmpty)
-                      Text('الرقم الوظيفي: $employeeNo', style: const TextStyle(fontSize: 12, color: Colors.grey), textAlign: TextAlign.right),
+                      Text('الرقم الوظيفي: $employeeNo', style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 12, color: Colors.grey), textAlign: TextAlign.right),
                   ],
                 ),
               ),
@@ -549,7 +549,7 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
         children: [
           const Icon(Icons.error_outline, color: Colors.red, size: 42),
           const SizedBox(height: 10),
-          Text(_error!, style: TextStyle(color: text), textAlign: TextAlign.center),
+          Text(_error!, style: TextStyle(fontWeight: FontWeight.bold,color: text), textAlign: TextAlign.center),
           const SizedBox(height: 14),
           ElevatedButton.icon(onPressed: _loadTeachers, icon: const Icon(Icons.refresh), label: const Text('إعادة المحاولة')),
         ],

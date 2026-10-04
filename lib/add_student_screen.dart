@@ -569,7 +569,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       final identification = <String, dynamic>{
         'id': 0,
         'idNumber': nationalId,
-        'issuingCountry': _n('issuingCountry') ?? 'العراق',
+        'issuingCountry': 'العراق',
         'idType': int.tryParse(c['idType']!.text),
         'jinsiyaIdNumber': _n('jinsiyaIdNumber'),
         'issuer': _n('issuer') ?? '',
@@ -752,38 +752,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                     _section('وثيقة التعريف', [
                       _select('idType', required: true),
                       const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _textField(
-                              'nationalId',
-                              required: true,
-                              keyboard: TextInputType.number,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _select(
-                              'issuingCountry',
-                              fallback: const ['العراق'],
-                            ),
-                          ),
-                        ],
+                      // البطاقة الوطنية الموحدة في EMIS تحتوي على رقم البطاقة فقط.
+                      // لا نعرض حقول هوية الأحوال المدنية ولا بلد الإصدار للمستخدم.
+                      _textField(
+                        'nationalId',
+                        required: true,
+                        keyboard: TextInputType.number,
                       ),
-                      if (_isNationalId || _isCivilId) ...[
-                        const SizedBox(height: 10),
-                        _textField('jinsiyaIdNumber'),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(child: _textField('issuer')),
-                            const SizedBox(width: 10),
-                            Expanded(child: _textField('recordNumber')),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        _textField('pageNumber'),
-                      ],
                       if (_isBirthCertificate) ...[
                         const SizedBox(height: 10),
                         _textField('birthCertificateNumber', required: true),
@@ -922,7 +897,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             : const Icon(Icons.person_add_alt_1_rounded),
                         label: const Text(
                           'حفظ الطالب',
-                          style: TextStyle(fontSize: 17),
+                          style: TextStyle(fontWeight: FontWeight.bold,fontSize: 17),
                         ),
                       ),
                     ),
@@ -1021,7 +996,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'العمر المسموح: ${d['minAge'] ?? '-'} إلى ${d['maxAge'] ?? '-'} سنة'
         '${d['currentAcademicYear'] == null ? '' : '  •  العام الدراسي: ${d['currentAcademicYear']}'}',
         textAlign: TextAlign.right,
-        style: const TextStyle(color: Color(0xFF294A85)),
+        style: const TextStyle(fontWeight: FontWeight.bold,color: Color(0xFF294A85)),
       ),
     );
   }
@@ -1071,7 +1046,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   SizedBox(height: 5),
                   Text(
                     'الخيارات والصفوف والشعب تُقرأ مباشرة من EMIS.',
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                    style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white70, fontSize: 13),
                   ),
                 ],
               ),
@@ -1086,6 +1061,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           color: Colors.red.withOpacity(.07),
           borderRadius: BorderRadius.circular(14),
         ),
-        child: Text(text, style: const TextStyle(color: Colors.red)),
+        child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.red)),
       );
 }
