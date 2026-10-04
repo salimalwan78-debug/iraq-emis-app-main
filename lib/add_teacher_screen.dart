@@ -86,10 +86,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     'mobilePhoneNumber': 'رقم هاتف المعلم',
     'email': 'البريد الإلكتروني',
     'notes': 'ملاحظات',
-    'specialNeedsInformation': 'معلومات ذوي الاحتياجات الخاصة إن وجدت',
-    'emergencyContactName': 'اسم جهة الاتصال في الحالات الطارئة',
-    'emergencyContactRelationship': 'صلة جهة الاتصال',
-    'emergencyContactPhoneNumber': 'رقم هاتف جهة الاتصال',
   };
 
   Map<String, String> get h => {
