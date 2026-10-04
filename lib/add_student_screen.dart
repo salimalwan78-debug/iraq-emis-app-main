@@ -442,9 +442,12 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       controller: c[key],
       maxLines: maxLines,
       keyboardType: keyboard,
+      readOnly: key == 'dateOfBirth',
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       textDirection: TextDirection.rtl,
       decoration: InputDecoration(
         labelText: labels[key] ?? key,
+        labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
         fillColor: Colors.white,
         border: OutlineInputBorder(
@@ -467,11 +470,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     bool required = false,
     List<String>? fallback,
   }) {
-    final values = <Map<String, dynamic>>[
-      ...(options[key] ?? []),
-      ...((fallback ?? []).map((x) => {'value': x, 'displayName': x})),
-    ];
-    final current = c[key]!.text.trim();
+    final values = key == 'idType'
+        ? <Map<String, dynamic>>[{'value': '12', 'displayName': 'البطاقة الوطنية الموحدة'}]
+        : <Map<String, dynamic>>[
+            ...(options[key] ?? []),
+            ...((fallback ?? []).map((x) => {'value': x, 'displayName': x})),
+          ];
+    final current = key == 'idType' ? '12' : c[key]!.text.trim();
+    if (key == 'idType') c[key]!.text = '12';
     final valid = values.any((x) => _value(x) == current);
     if (current.isNotEmpty && !valid) {
       values.insert(0, {'value': current, 'displayName': current});
@@ -482,6 +488,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       isExpanded: true,
       decoration: InputDecoration(
         labelText: labels[key] ?? key,
+        labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
         fillColor: Colors.white,
         border: OutlineInputBorder(
@@ -971,7 +978,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   Widget _selectStage() => DropdownButtonFormField<String>(
         value: stageId,
         isExpanded: true,
-        decoration: _decoration('الصف الدراسي'),
+        decoration: _decoration('الصف الدراسي').copyWith(labelStyle: const TextStyle(fontWeight: FontWeight.bold)),
         items: stages
             .map(
               (x) => DropdownMenuItem(
@@ -988,7 +995,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   Widget _selectRoom() => DropdownButtonFormField<String>(
         value: roomId,
         isExpanded: true,
-        decoration: _decoration('الشعبة'),
+        decoration: _decoration('الشعبة').copyWith(labelStyle: const TextStyle(fontWeight: FontWeight.bold)),
         items: rooms
             .map(
               (x) => DropdownMenuItem(

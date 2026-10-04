@@ -162,13 +162,6 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
             builder: (context, setDialogState) {
               Future<void> save() async {
                 final reason = reasonController.text.trim();
-                if (reason.isEmpty) {
-                  setDialogState(() {
-                    dialogError = 'سبب تغيير الحالة الوظيفية مطلوب.';
-                  });
-                  return;
-                }
-
                 setDialogState(() {
                   saving = true;
                   dialogError = null;
@@ -187,7 +180,7 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
                         documentController.text.trim().isEmpty
                             ? null
                             : documentController.text.trim(),
-                    'reason': reason,
+                    'reason': reason.isEmpty ? null : reason,
                   };
 
                   final response = await http.post(
@@ -232,7 +225,7 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
                         DropdownButtonFormField<String>(
                           value: selectedStatus,
                           decoration: const InputDecoration(
-                            labelText: 'الحالة الوظيفية *',
+                            labelText: 'الحالة الوظيفية',
                             border: OutlineInputBorder(),
                           ),
                           items: _employmentStatusOptions
@@ -267,7 +260,7 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
                           enabled: !saving,
                           maxLines: 3,
                           decoration: const InputDecoration(
-                            labelText: 'سبب تغيير الحالة الوظيفية *',
+                            labelText: 'سبب تغيير الحالة الوظيفية',
                             border: OutlineInputBorder(),
                           ),
                         ),

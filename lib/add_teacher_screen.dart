@@ -42,6 +42,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     'religion': '/selectoption/الديانة',
     'jobDesignation': '/SelectOption/نوع الوظيفة',
     'employmentType': '/SelectOption/نوع الوظيفة',
+    'currentPosition': '/SelectOption/نوع الوظيفة',
   };
 
   final labels = const <String, String>{
@@ -73,6 +74,8 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     'jobDesignation': 'المسمى الوظيفي',
     'employmentGrade': 'الدرجة الوظيفية',
     'dateOfStartWorking': 'تاريخ أول تعيين',
+    'currentPosition': 'المنصب الحالي',
+    'status': 'الحالة الوظيفية',
     'educationLevel': 'التحصيل الدراسي',
     'universityName': 'إسم الكلية / المعهد',
     'graduationYear': 'سنة التخرج',
@@ -228,9 +231,11 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         controller: c[key],
         keyboardType: keyboard,
         maxLines: maxLines,
+        readOnly: key == 'dateOfBirth' || key == 'dateOfStartWorking',
         textDirection: TextDirection.rtl,
         decoration: InputDecoration(
           labelText: labels[key] ?? key,
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
           filled: true,
           fillColor: Colors.white,
           border: OutlineInputBorder(
@@ -242,17 +247,29 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
             borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
           ),
         ),
+        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
         validator: null,
         onChanged: (_) => _liveSyncKey.currentState?.pushValues(_liveValues()),
-        onTap: () => _focusLive(key),
+        onTap: () { if (key == 'dateOfBirth' || key == 'dateOfStartWorking') { _pickDate(key); } else { _focusLive(key); } },
       );
+
+  Future<void> _pickDate(String key) async {
+    final initial = DateTime.tryParse(c[key]?.text ?? '') ?? DateTime.now();
+    final picked = await showDatePicker(context: context, initialDate: initial, firstDate: DateTime(1900), lastDate: DateTime.now(), helpText: labels[key], locale: const Locale('ar'));
+    if (picked == null || !mounted) return;
+    c[key]!.text = '${picked.year.toString().padLeft(4,'0')}-${picked.month.toString().padLeft(2,'0')}-${picked.day.toString().padLeft(2,'0')}';
+    _focusLive(key);
+    setState(() {});
+  }
 
   Widget _select(
     String key, {
     bool required = false,
     List<String> fallback = const [],
   }) {
-    final values = _values(key);
+    final values = key == 'idType'
+        ? <Map<String, dynamic>>[{'value': '12', 'displayName': 'البطاقة الوطنية الموحدة'}]
+        : _values(key);
     for (final x in fallback) {
       if (!values.any((v) => _value(v) == x)) {
         values.add({'value': x, 'displayName': x});
@@ -266,6 +283,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       decoration: InputDecoration(
         labelText: labels[key] ?? key,
+        labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
         fillColor: Colors.white,
         border: OutlineInputBorder(
@@ -568,14 +586,18 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                           ),
                           const SizedBox(width: 10),
                           Expanded(child: _select('jobDesignation')),
+                          const SizedBox(width: 10),
+                          Expanded(child: _select('currentPosition', fallback: const ['مدرس', 'مدرس اول', 'مدرس ثاني', 'مدرس ثالث', 'مدرس اقدم'])),
                         ],
                       ),
                       const SizedBox(height: 10),
                       Row(
                         children: [
-                          Expanded(child: _textField('employeeCategory')),
+                          Expanded(child: _select('employeeCategory', fallback: const ['تدريسي'])),
                           const SizedBox(width: 10),
-                          Expanded(child: _textField('classification')),
+                          Expanded(child: _select('classification', fallback: const ['معلم'])),
+                          const SizedBox(width: 10),
+                          Expanded(child: _select('status', fallback: const ['مستمر'])),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -587,7 +609,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      _textField('educationLevel'),
+                      _select('educationLevel', fallback: const ['ابتدائية','متوسطة','إعدادية','دبلوم','بكالوريوس','دبلوم عالي','ماجستير','دكتوراه']),
                       const SizedBox(height: 10),
                       Row(
                         children: [

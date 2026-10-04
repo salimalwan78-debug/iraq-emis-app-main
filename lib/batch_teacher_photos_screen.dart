@@ -625,6 +625,15 @@ class _BatchTeacherPhotosScreenState extends State<BatchTeacherPhotosScreen> {
     });
   }
 
+  void _previousTeacher() {
+    if (_currentIndex <= 0 || _saving || _teachers.isEmpty) return;
+    setState(() {
+      _currentIndex--;
+      _currentImage = null;
+      _backgroundRemovedForCurrentImage = false;
+    });
+  }
+
   Future<void> _skipCurrentTeacher() async {
     final teacher = _currentTeacher;
     if (teacher == null || _saving) return;
@@ -824,6 +833,16 @@ class _BatchTeacherPhotosScreenState extends State<BatchTeacherPhotosScreen> {
                                         icon: const Icon(Icons.skip_next),
                                         label: const Text('تجاهل المعلم (غائب)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                                         style: OutlinedButton.styleFrom(foregroundColor: Colors.deepOrange, side: const BorderSide(color: Colors.deepOrange, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      height: 48,
+                                      child: OutlinedButton.icon(
+                                        onPressed: _currentIndex <= 0 || _saving ? null : _previousTeacher,
+                                        icon: const Icon(Icons.arrow_forward_rounded),
+                                        label: const Text('الرجوع إلى المعلم السابق', style: TextStyle(fontWeight: FontWeight.bold)),
                                       ),
                                     ),
                                     const SizedBox(height: 10),

@@ -45,10 +45,13 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
   static const Map<String, String> _optionEndpoints = {
     'countryOfBirth': '/selectoption/بلد الولادة',
+    'nationality': '/selectoption/بلد الولادة',
     'idType': '/selectoption/IdentificationType',
     'issuingCountry': '/selectoption/بلد الإصدار',
     'gender': '/selectoption/Gender',
     'motherTongue': '/selectoption/لغة',
+    'studyLanguage': '/selectoption/لغة',
+    'maritalStatus': '/selectoption/الحالة الاجتماعية',
     'bloodGroup': '/selectoption/فصيلة الدم',
     'religion': '/selectoption/الديانة',
     'specialNeeds': '/selectoption/ذوي الإحتياجات الخاصة',
@@ -204,6 +207,11 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         student['stageId']?.toString(),
       );
       await _loadCountryStructure();
+      if (student['identification'] is Map) {
+        final identification = Map<String, dynamic>.from(student['identification']);
+        identification['idType'] = 12;
+        student['identification'] = identification;
+      }
 
       if (!mounted) return;
       setState(() {
@@ -306,7 +314,9 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     required bool isDark,
     required Color textColor,
   }) {
-    final items = _options[key] ?? const <Map<String, dynamic>>[];
+    final items = key == 'idType'
+        ? <Map<String, dynamic>>[{'value': 12, 'displayName': 'البطاقة الوطنية الموحدة'}]
+        : (_options[key] ?? const <Map<String, dynamic>>[]);
     final value = owner[key];
     Map<String, dynamic>? selected;
     for (final item in items) {
@@ -322,13 +332,13 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         isExpanded: true,
         decoration: InputDecoration(
           labelText: requiredField ? '${_label(key)} *' : _label(key),
-          labelStyle: const TextStyle(color: Colors.grey),
+          labelStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
           filled: true,
           fillColor: isDark ? Colors.black12 : Colors.grey[50],
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
         dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
-        style: TextStyle(color: textColor, fontSize: 16),
+        style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
         items: items.map((item) => DropdownMenuItem<dynamic>(
           value: _optionValue(item), child: Text(_optionText(item), style: const TextStyle(fontWeight: FontWeight.bold)),
         )).toList(),
@@ -404,7 +414,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     if (value is bool) {
       return SwitchListTile(
         contentPadding: EdgeInsets.zero,
-        title: Text(_label(key), style: TextStyle(color: textColor)),
+        title: Text(_label(key), style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
         value: value,
         onChanged: (v) => setState(() => owner[key] = v),
       );
@@ -1549,7 +1559,7 @@ class _PlainTextFieldState extends State<PlainTextField> {
         ),
         decoration: InputDecoration(
           labelText: widget.label,
-          labelStyle: const TextStyle(color: Colors.grey),
+          labelStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
           filled: true,
           fillColor: widget.isDark ? Colors.black12 : Colors.grey[50],
           border: OutlineInputBorder(

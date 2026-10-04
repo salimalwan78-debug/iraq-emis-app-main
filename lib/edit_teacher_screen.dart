@@ -321,7 +321,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       textDirection: TextDirection.rtl,
       decoration: InputDecoration(
         labelText: _labels[key],
-        labelStyle: const TextStyle(fontSize: 14),
+        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(13)),
         filled: true,
         fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white.withOpacity(0.03) : Colors.white,
@@ -335,18 +335,20 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   Widget _selectField(String key, {bool required = false, List<String> fallback = const []}) {
+    if (key == 'idType') { _c[key]!.text = '12'; }
     final values = _stringOptions(key, fallback: fallback);
     return DropdownButtonFormField<String>(
       value: _selected(key),
       isExpanded: true,
       decoration: InputDecoration(
         labelText: _labels[key],
+        labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(13)),
         filled: true,
         fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white.withOpacity(0.03) : Colors.white,
       ),
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-      items: values.map((v) => DropdownMenuItem<String>(value: v, child: Text(v, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
+      items: (key == 'idType' ? <String>['12'] : values).map((v) => DropdownMenuItem<String>(value: v, child: Text(key == 'idType' ? 'البطاقة الوطنية الموحدة' : v, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
       onTap: () => _focusLive(key),
       onChanged: (value) { setState(() => _c[key]!.text = value ?? ''); _focusLive(key); },
       validator: null,
