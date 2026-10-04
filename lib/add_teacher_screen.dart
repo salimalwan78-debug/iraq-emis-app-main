@@ -48,6 +48,12 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     'bloodGroup': '/selectoption/فصيلة الدم',
     'religion': '/selectoption/الديانة',
     'positionType': '/SelectOption/نوع الوظيفة',
+    'employmentType': '/selectoption/نوع التوظيف',
+    'employeeCategory': '/selectoption/فئة الموظف',
+    'classification': '/selectoption/التصنيف',
+    'status': '/selectoption/الحالة الوظيفية',
+    'currentPosition': '/selectoption/المنصب الحالي',
+    'educationLevel': '/selectoption/التحصيل الدراسي',
   };
 
   final labels = const <String, String>{
