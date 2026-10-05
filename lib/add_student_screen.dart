@@ -174,17 +174,34 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     super.dispose();
   }
 
-  Map<String, List<String>> _liveAliases() => {
-        for (final entry in labels.entries)
-          entry.key: <String>[entry.key, entry.value],
-        'stageId': ['stageId', 'الصف الدراسي'],
-        'classRoomId': ['classRoomId', 'الشعبة'],
-        'addressCountry': ['addressCountry', 'الدولة', 'country'],
-        'addressGovernorate': ['addressGovernorate', 'المحافظة', 'governorate'],
-        'addressDistrict': ['addressDistrict', 'القضاء', 'district'],
-        'countryStructureId': ['countryStructureId', 'الموقع الجغرافي'],
-        'isCoveredBySocialWelfare': ['isCoveredBySocialWelfare', 'مشمول بمنحة الرعاية الاجتماعية'],
-      };
+  Map<String, List<String>> _liveAliases() {
+    final aliases = <String, List<String>>{
+      for (final entry in labels.entries)
+        entry.key: <String>[entry.key, entry.value],
+      'stageId': ['stageId', 'الصف الدراسي'],
+      'classRoomId': ['classRoomId', 'الشعبة'],
+      'addressCountry': ['addressCountry', 'الدولة', 'country'],
+      'addressGovernorate': ['addressGovernorate', 'المحافظة', 'governorate'],
+      'addressDistrict': ['addressDistrict', 'القضاء', 'district'],
+      'countryStructureId': ['countryStructureId', 'الموقع الجغرافي'],
+      'isCoveredBySocialWelfare': [
+        'isCoveredBySocialWelfare',
+        'مشمول بمنحة الرعاية الاجتماعية',
+      ],
+    };
+
+    // EMIS الحقيقي يستخدم هذا الـ DOM id لحقل البطاقة الوطنية الموحدة.
+    // نُبقي nationalId كمفتاح Flutter/API ولا نستبدله بالـ DOM id.
+    aliases['nationalId'] = <String>[
+      'nationalId',
+      'رقم البطاقة الوطنية الموحدة',
+      'رقم البطاقة الوطنية الموحدة *',
+      'base-input-رقم-البطاقة-الوطنية-الموحدة',
+      '#base-input-رقم-البطاقة-الوطنية-الموحدة',
+    ];
+
+    return aliases;
+  }
 
   Map<String, String> _liveValues() => {
         for (final entry in c.entries) entry.key: entry.value.text,
