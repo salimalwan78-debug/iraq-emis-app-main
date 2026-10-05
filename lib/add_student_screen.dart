@@ -48,7 +48,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     'idType': '/selectoption/IdentificationType',
     'issuingCountry': '/selectoption/بلد الإصدار',
     'motherTongue': '/selectoption/لغة',
-    'maritalStatus': '/selectoption/الحالة الاجتماعية',
     'bloodGroup': '/selectoption/فصيلة الدم',
     'religion': '/selectoption/الديانة',
     'specialNeeds': '/selectoption/ذوي الإحتياجات الخاصة',
@@ -95,10 +94,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     'address1': 'عنوان 1',
     'address2': 'عنوان 2',
     'closestLocation': 'أقرب نقطة دالة',
-    'mobilePhoneNumber': 'رقم الهاتف',
+    'homePhoneNumber': 'رقم الهاتف',
     'addressCountry': 'الدولة',
     'addressGovernorate': 'المحافظة',
     'addressDistrict': 'القضاء',
+    'censusNumber': 'رقم الإحصاء',
   };
 
   Map<String, String> get h => {
@@ -151,6 +151,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       'address1',
       'address2',
       'closestLocation',
+      'homePhoneNumber',
+      'censusNumber',
     ]) {
       c[key] = TextEditingController();
     }
@@ -181,6 +183,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'addressGovernorate': ['addressGovernorate', 'المحافظة', 'governorate'],
         'addressDistrict': ['addressDistrict', 'القضاء', 'district'],
         'countryStructureId': ['countryStructureId', 'الموقع الجغرافي'],
+        'isCoveredBySocialWelfare': ['isCoveredBySocialWelfare', 'مشمول بمنحة الرعاية الاجتماعية'],
       };
 
   Map<String, String> _liveValues() => {
@@ -191,6 +194,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'addressGovernorate': _addressGovernorateId ?? '',
         'addressDistrict': _addressDistrictId ?? '',
         'countryStructureId': _addressDistrictId ?? '',
+        'isCoveredBySocialWelfare': _socialWelfare ? 'true' : 'false',
       };
 
   void _pushLive() {
@@ -245,6 +249,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       if (match.isNotEmpty) {
         _addressGovernorateId = _value(match.first);
         _setAddressDistricts(match.first);
+        changed = true;
+      }
+    }
+    if (values.containsKey('isCoveredBySocialWelfare')) {
+      final v = values['isCoveredBySocialWelfare']!.trim().toLowerCase();
+      final next = v == 'true' || v == 'نعم' || v == 'yes';
+      if (_socialWelfare != next) {
+        _socialWelfare = next;
         changed = true;
       }
     }
@@ -547,6 +559,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       );
 
   Future<void> _save() async {
+    if (saving) return;
+
+    FocusScope.of(context).unfocus();
+
+    final validationError = _validateBeforeSave();
+    if (validationError != null) {
+      setState(() => error = validationError);
+      return;
+    }
 
     setState(() {
       saving = true;
@@ -554,71 +575,78 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     });
 
     try {
-      final idType = int.tryParse(c['idType']!.text) ?? 12;
-      final nationalId = _isNationalId ? (_n('nationalId') ?? '') : (_n('idNumber') ?? '');
-      if (_isNationalId && nationalId.isNotEmpty) {
-        final check = await _get('/student/checknationalidnumber?value=${Uri.encodeQueryComponent(nationalId)}');
-        if (check is Map && check['isUnique'] == false) throw Exception('رقم البطاقة الوطنية مستخدم مسبقاً في EMIS');
+      final idType = int.parse(c['idType']!.text);
+      final identificationNumber =
+          (_isNationalId || _isCivilId || _isBirthCertificate || _isOtherId)
+              ? (_n('idNumber') ?? '')
+              : '';
+
+      // EMIS performs this check before submitting a national ID.
+      if (_isNationalId && identificationNumber.isNotEmpty) {
+        final check = await _get(
+          '/student/checknationalidnumber?value=${Uri.encodeQueryComponent(identificationNumber)}',
+        );
+        if (check is Map && check['isUnique'] == false) {
+          throw Exception('رقم البطاقة الوطنية مستخدم مسبقاً في EMIS');
+        }
       }
 
-      final identification = <String, dynamic>{
-        'id': 0,
-        'idNumber': nationalId,
-        'issuingCountry': _isNationalId ? 'العراق' : (_n('issuingCountry') ?? 'العراق'),
-        'idType': idType,
-        'jinsiyaIdNumber': _isCivilId ? _n('jinsiyaIdNumber') : null,
-        'issuer': _n('issuer'),
-        'recordNumber': _isCivilId ? _n('recordNumber') : null,
-        'pageNumber': _isCivilId ? _n('pageNumber') : null,
-        'issuingDate': _n('issuingDate'),
-        'nameOfDocument': _n('nameOfDocument'),
-        'birthCertificateNumber': _isBirthCertificate ? _n('birthCertificateNumber') : null,
-        'otherIdNumber': _isOtherId ? _n('otherIdNumber') : null,
-      };
+      final selectedSpecialNeeds = _n('specialNeeds');
 
+      // This structure mirrors the payload built by EMIS itself
+      // (StudentFormPage -> addStudent).
       final payload = <String, dynamic>{
-        'id': 0,
         'name': _n('name') ?? '',
         'fatherName': _n('fatherName') ?? '',
         'grandFatherName': _n('grandFatherName') ?? '',
         'fathersGrandFatherName': _n('fathersGrandFatherName') ?? '',
-        'surName': _n('surName'),
-        'motherName': _n('motherName'),
-        'mothersFatherName': _n('mothersFatherName'),
-        'mothersGrandFatherName': _n('mothersGrandFatherName'),
-        'dateOfBirth': _n('dateOfBirth'),
-        'gender': int.tryParse(c['gender']!.text),
+        'surName': _n('surName') ?? '',
+        'motherName': _n('motherName') ?? '',
+        'mothersFatherName': _n('mothersFatherName') ?? '',
+        'mothersGrandFatherName': _n('mothersGrandFatherName') ?? '',
+        'imageUrl': '',
+        'dateOfBirth': _n('dateOfBirth') ?? '',
+        'gender': int.parse(c['gender']!.text),
         'nationality': _n('nationality') ?? 'العراق',
         'countryOfBirth': _n('countryOfBirth') ?? 'العراق',
-        'homeTown': _n('homeTown'),
-        'identificationId': 0,
-        'identification': identification,
-        'fatherIdentificationId': null,
+        'homeTown': _n('homeTown') ?? '',
         'motherTongue': _n('motherTongue') ?? 'العربية',
-        'maritalStatus': _n('maritalStatus') ?? 'أعزب',
+        'maritalStatus': _n('maritalStatus') ?? '',
         'bloodGroup': _n('bloodGroup') ?? 'غير معروف',
         'religion': _n('religion') ?? 'الإسلام',
-        'homePhoneNumber': '',
+        'homePhoneNumber': _n('homePhoneNumber') ?? '',
         'notes': _n('notes') ?? '',
-        'specialNeeds': _n('specialNeeds') == null
-            ? <String>['']
-            : <String>[_n('specialNeeds')!],
+        'censusNumber': _n('censusNumber') ?? '',
+        'isDisabled': false,
+        'identification': {
+          'idNumber': identificationNumber,
+          'issuingCountry': _n('issuingCountry') ?? 'العراق',
+          'idType': idType,
+          'nameOfDocument': _n('nameOfDocument') ?? '',
+          'recordNumber': _n('recordNumber') ?? '',
+          'pageNumber': _n('pageNumber') ?? '',
+          'issuer': _n('issuer') ?? '',
+          'issuingDate': _n('issuingDate'),
+        },
+        'fatherIdentification': null,
+        'specialNeeds': selectedSpecialNeeds == null
+            ? null
+            : <String>[selectedSpecialNeeds],
         'studyLanguage': _n('studyLanguage') ?? 'العربية',
         'economicLevel': _n('economicLevel') ?? '',
-        'isCoveredBySocialWelfare': false,
+        'isCoveredBySocialWelfare': _socialWelfare,
         'isDroppedOutFromSchool': false,
-        'lastYearResult': null,
-        'lastAcademicYearId': null,
-        'lastCompletedStageId': null,
-        'lastSchoolId': null,
-        'academicYearId': null,
-        'stageId': stageId == null ? null : int.tryParse(stageId!),
-        'schoolId': int.tryParse(widget.schoolId),
-        'classRoomId': roomId == null ? null : int.tryParse(roomId!),
-        'studentStatus': 0,
-        'addressId': 0,
+        // This is intentionally 3 because this is what the current
+        // EMIS StudentFormPage sends when adding a student.
+        'lastYearResult': 3,
+        'schoolId': int.parse(widget.schoolId),
+        'stageId': int.parse(stageId!),
+        'classRoomId': int.parse(roomId!),
+        'ageExceptionReason': null,
+        'genderExceptionReason': null,
         'address': {
-          'id': 0,
+          'addressType': 1,
+          'countryStructureId': int.parse(_addressDistrictId!),
           'town': _n('town') ?? '',
           'area': _n('area') ?? '',
           'quarter': _n('quarter') ?? '',
@@ -631,10 +659,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           'latitude': 0,
           'longitude': 0,
           'schoolPhoneNumber': '',
-          'mobilePhoneNumber': _n('mobilePhoneNumber') ?? '',
+          'mobilePhoneNumber': '',
           'email': '',
           'website': '',
-          'countryStructureId': _addressDistrictId == null ? null : int.tryParse(_addressDistrictId!),
         },
       };
 
@@ -644,25 +671,107 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         body: jsonEncode(payload),
       );
 
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception(
-          'HTTP ${response.statusCode}: ${utf8.decode(response.bodyBytes)}',
-        );
+      final responseText = utf8.decode(response.bodyBytes);
+      dynamic responseJson;
+      try {
+        responseJson = jsonDecode(responseText);
+      } catch (_) {
+        responseJson = null;
       }
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final serverMessage = responseJson is Map
+            ? '${responseJson['message'] ?? responseJson['error'] ?? responseText}'
+            : responseText;
+        throw Exception('HTTP ${response.statusCode}: $serverMessage');
+      }
+
+      final successMessage = responseJson is Map &&
+              '${responseJson['message'] ?? ''}'.trim().isNotEmpty
+          ? '${responseJson['message']}'
+          : 'تمت إضافة الطالب بنجاح';
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تمت إضافة الطالب بنجاح'),
+        SnackBar(
+          content: Text(
+            successMessage,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
           backgroundColor: Colors.green,
         ),
       );
       Navigator.pop(context, true);
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) {
+        setState(() => error = _friendlyError(e));
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }
+  }
+
+  bool _socialWelfare = false;
+
+  String? _validateBeforeSave() {
+    final requiredFields = <String, String>{
+      'name': 'الإسم',
+      'fatherName': 'إسم الأب',
+      'grandFatherName': 'اسم والد الأب',
+      'surName': 'اللقب',
+      'motherName': 'إسم الأم',
+      'mothersFatherName': 'اسم والد الأم',
+      'mothersGrandFatherName': 'اسم جد الأم',
+      'dateOfBirth': 'تاريخ التولد',
+      'gender': 'الجنس',
+      'idType': 'نوع الهوية',
+      'issuingCountry': 'بلد الإصدار',
+      'studyLanguage': 'لغة الدراسة',
+      'economicLevel': 'المستوى المعيشي',
+      'homePhoneNumber': 'رقم الهاتف',
+    };
+
+    for (final entry in requiredFields.entries) {
+      if ((_n(entry.key) ?? '').isEmpty) {
+        return 'يرجى إدخال ${entry.value}';
+      }
+    }
+
+    if (stageId == null || stageId!.isEmpty) {
+      return 'يرجى اختيار الصف الدراسي';
+    }
+    if (roomId == null || roomId!.isEmpty) {
+      return 'يرجى اختيار الشعبة';
+    }
+    if (_addressDistrictId == null || _addressDistrictId!.isEmpty) {
+      return 'يرجى اختيار القضاء في العنوان';
+    }
+
+    final idNumber = _n('idNumber') ?? '';
+    if (_isNationalId) {
+      if (!RegExp(r'^\d{12}$').hasMatch(idNumber)) {
+        return 'رقم البطاقة الوطنية الموحدة يجب أن يكون 12 رقماً';
+      }
+    } else if (idNumber.isEmpty) {
+      return 'يرجى إدخال رقم الوثيقة';
+    }
+
+    final phone = _n('homePhoneNumber')!;
+    if (!RegExp(r'^[0-9٠-٩+\\- ]{7,20}$').hasMatch(phone)) {
+      return 'رقم الهاتف غير صالح';
+    }
+
+    return null;
+  }
+
+  String _friendlyError(Object error) {
+    final message = '$error';
+    if (message.contains('SocketException')) {
+      return 'تعذر الاتصال بخادم EMIS. تحقق من اتصال الإنترنت ثم حاول مرة أخرى.';
+    }
+    return message.startsWith('Exception: ')
+        ? message.substring('Exception: '.length)
+        : message;
   }
 
   @override
@@ -819,7 +928,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                       const SizedBox(height: 10),
                       _select('specialNeeds'),
                       const SizedBox(height: 10),
-                      _textField('mobilePhoneNumber', keyboard: TextInputType.phone),
+                      _socialWelfareSelect(),
+                      const SizedBox(height: 10),
+                      _textField('homePhoneNumber', required: true, keyboard: TextInputType.phone),
                       const SizedBox(height: 10),
                       _textField('notes', maxLines: 3),
                     ]),
@@ -941,6 +1052,33 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     );
   }
 
+  Widget _socialWelfareSelect() {
+    return DropdownButtonFormField<bool>(
+      value: _socialWelfare,
+      isExpanded: true,
+      decoration: _decoration('مشمول بمنحة الرعاية الاجتماعية؟'),
+      style: const TextStyle(
+        fontWeight: FontWeight.bold,
+        color: Colors.black87,
+      ),
+      items: const [
+        DropdownMenuItem<bool>(
+          value: false,
+          child: Text('لا', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+        DropdownMenuItem<bool>(
+          value: true,
+          child: Text('نعم', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+      ],
+      onChanged: (value) {
+        if (value == null) return;
+        setState(() => _socialWelfare = value);
+        _focusLive('isCoveredBySocialWelfare');
+      },
+    );
+  }
+
   Widget _addressDropdown({
     required String label,
     required String? value,
@@ -978,7 +1116,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             )
             .where((x) => x.value != null && x.value!.isNotEmpty)
             .toList(),
-        onChanged: _stageChanged,
+        onChanged: (v) { _stageChanged(v); _focusLive('stageId'); },
         validator: null,
       );
 
@@ -995,7 +1133,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             )
             .where((x) => x.value != null && x.value!.isNotEmpty)
             .toList(),
-        onChanged: (v) => setState(() => roomId = v),
+        onChanged: (v) { setState(() => roomId = v); _focusLive('classRoomId'); },
         validator: null,
       );
 
