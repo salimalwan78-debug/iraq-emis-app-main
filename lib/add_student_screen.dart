@@ -26,6 +26,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   bool loading = true, saving = false;
   String? error;
+  String? _saveStatus;
+  bool _saveStatusIsError = false;
   final GlobalKey<EmisLiveSyncState> _liveSyncKey = GlobalKey<EmisLiveSyncState>();
   Timer? _liveTimer;
   bool _liveSnapshotSeen = false;
@@ -174,34 +176,17 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     super.dispose();
   }
 
-  Map<String, List<String>> _liveAliases() {
-    final aliases = <String, List<String>>{
-      for (final entry in labels.entries)
-        entry.key: <String>[entry.key, entry.value],
-      'stageId': ['stageId', 'الصف الدراسي'],
-      'classRoomId': ['classRoomId', 'الشعبة'],
-      'addressCountry': ['addressCountry', 'الدولة', 'country'],
-      'addressGovernorate': ['addressGovernorate', 'المحافظة', 'governorate'],
-      'addressDistrict': ['addressDistrict', 'القضاء', 'district'],
-      'countryStructureId': ['countryStructureId', 'الموقع الجغرافي'],
-      'isCoveredBySocialWelfare': [
-        'isCoveredBySocialWelfare',
-        'مشمول بمنحة الرعاية الاجتماعية',
-      ],
-    };
-
-    // EMIS الحقيقي يستخدم هذا الـ DOM id لحقل البطاقة الوطنية الموحدة.
-    // نُبقي nationalId كمفتاح Flutter/API ولا نستبدله بالـ DOM id.
-    aliases['nationalId'] = <String>[
-      'nationalId',
-      'رقم البطاقة الوطنية الموحدة',
-      'رقم البطاقة الوطنية الموحدة *',
-      'base-input-رقم-البطاقة-الوطنية-الموحدة',
-      '#base-input-رقم-البطاقة-الوطنية-الموحدة',
-    ];
-
-    return aliases;
-  }
+  Map<String, List<String>> _liveAliases() => {
+        for (final entry in labels.entries)
+          entry.key: <String>[entry.key, entry.value],
+        'stageId': ['stageId', 'الصف الدراسي'],
+        'classRoomId': ['classRoomId', 'الشعبة'],
+        'addressCountry': ['addressCountry', 'الدولة', 'country'],
+        'addressGovernorate': ['addressGovernorate', 'المحافظة', 'governorate'],
+        'addressDistrict': ['addressDistrict', 'القضاء', 'district'],
+        'countryStructureId': ['countryStructureId', 'الموقع الجغرافي'],
+        'isCoveredBySocialWelfare': ['isCoveredBySocialWelfare', 'مشمول بمنحة الرعاية الاجتماعية'],
+      };
 
   Map<String, String> _liveValues() => {
         for (final entry in c.entries) entry.key: entry.value.text,
@@ -215,6 +200,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       };
 
   void _pushLive() {
+    // أثناء الحفظ نوقف المزامنة العكسية مؤقتاً حتى لا تقوم صفحة EMIS
+    // بإعادة قيمة قديمة إلى الحقول أثناء تنفيذ طلب addstudent.
+    if (saving) return;
     _liveSyncKey.currentState?.pushValues(_liveValues());
   }
 
@@ -224,6 +212,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   void _applyLiveSnapshot(Map<String, String> values) {
+    // لا نسمح للمزامنة الحية بتغيير بيانات الطالب أثناء عملية الحفظ.
+    if (saving) return;
     bool changed = false;
     for (final entry in values.entries) {
       final controller = c[entry.key];
@@ -457,6 +447,27 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     return v.isEmpty ? null : v;
   }
 
+  String _normalizeDigits(String value) {
+    const arabicIndic = '٠١٢٣٤٥٦٧٨٩';
+    const easternArabicIndic = '۰۱۲۳۴۵۶۷۸۹';
+    final out = StringBuffer();
+    for (final ch in value.runes) {
+      final c = String.fromCharCode(ch);
+      final a = arabicIndic.indexOf(c);
+      if (a >= 0) {
+        out.write(a);
+        continue;
+      }
+      final e = easternArabicIndic.indexOf(c);
+      if (e >= 0) {
+        out.write(e);
+        continue;
+      }
+      out.write(c);
+    }
+    return out.toString();
+  }
+
   bool get _isNationalId => c['idType']!.text == '12';
   bool get _isCivilId => c['idType']!.text == '3';
   bool get _isBirthCertificate => c['idType']!.text == '22';
@@ -575,40 +586,70 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         ),
       );
 
+  void _setSaveStatus(String message, {bool isError = false}) {
+    if (!mounted) return;
+    setState(() {
+      _saveStatus = message;
+      _saveStatusIsError = isError;
+    });
+  }
+
+  void _showSaveMessage(String message, {required bool isError}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          textDirection: TextDirection.rtl,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade700,
+        duration: Duration(seconds: isError ? 5 : 3),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Future<void> _save() async {
     if (saving) return;
 
+    // هذه أول نقطة تنفيذ للحفظ، لذلك نظهرها داخل الصفحة وليس عبر SnackBar فقط.
+    _setSaveStatus('بدأت عملية حفظ الطالب...', isError: false);
     FocusScope.of(context).unfocus();
 
     final validationError = _validateBeforeSave();
     if (validationError != null) {
-      if (mounted) {
-        setState(() => error = validationError);
-        _showSaveMessage(validationError, isError: true);
-      }
+      if (mounted) setState(() => error = validationError);
+      _setSaveStatus(validationError, isError: true);
+      _showSaveMessage(validationError, isError: true);
       return;
     }
 
     setState(() {
       saving = true;
       error = null;
+      _saveStatus = 'جاري التحقق من البيانات...';
+      _saveStatusIsError = false;
     });
     _showSaveMessage('جاري التحقق من البيانات وإرسال الطالب إلى EMIS...', isError: false);
 
     try {
       final idType = int.parse(c['idType']!.text);
-      // رقم البطاقة الوطنية موجود في nationalId داخل واجهة التطبيق.
-      // لا نقرأ idNumber عند اختيار البطاقة الوطنية، لأن idNumber حقل
-      // مستقل للهوية المدنية/الأنواع الأخرى.
-      final identificationNumber = _isNationalId
-          ? (_n('nationalId') ?? '')
-          : ((_isCivilId || _isBirthCertificate || _isOtherId)
-              ? (_n('idNumber') ?? '')
-              : '');
 
-      // EMIS performs this check before submitting a national ID.
-      if (_isNationalId && identificationNumber.isNotEmpty) {
-        _showSaveMessage('جاري التحقق من رقم البطاقة الوطنية الموحدة...', isError: false);
+      // مهم جداً: حقل البطاقة الوطنية في واجهة Flutter اسمه nationalId.
+      // idNumber ليس هو الحقل المستخدم عند اختيار نوع الهوية 12.
+      final identificationNumber = _isNationalId
+          ? _normalizeDigits(_n('nationalId') ?? '')
+          : (_isCivilId
+              ? (_n('idNumber') ?? '')
+              : (_isBirthCertificate
+                  ? (_n('birthCertificateNumber') ?? '')
+                  : (_isOtherId ? (_n('otherIdNumber') ?? '') : '')));
+
+      if (_isNationalId) {
+        _setSaveStatus('جاري التحقق من رقم البطاقة الوطنية الموحدة...', isError: false);
         final check = await _get(
           '/student/checknationalidnumber?value=${Uri.encodeQueryComponent(identificationNumber)}',
         );
@@ -617,10 +658,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         }
       }
 
+      _setSaveStatus('تم التحقق من رقم الهوية. جاري تجهيز بيانات الطالب...', isError: false);
       final selectedSpecialNeeds = _n('specialNeeds');
 
-      // This structure mirrors the payload built by EMIS itself
-      // (StudentFormPage -> addStudent).
       final payload = <String, dynamic>{
         'name': _n('name') ?? '',
         'fatherName': _n('fatherName') ?? '',
@@ -662,8 +702,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'economicLevel': _n('economicLevel') ?? '',
         'isCoveredBySocialWelfare': _socialWelfare,
         'isDroppedOutFromSchool': false,
-        // This is intentionally 3 because this is what the current
-        // EMIS StudentFormPage sends when adding a student.
         'lastYearResult': 3,
         'schoolId': int.parse(widget.schoolId),
         'stageId': int.parse(stageId!),
@@ -691,7 +729,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         },
       };
 
-      _showSaveMessage('جاري إرسال بيانات الطالب إلى EMIS...', isError: false);
+      _setSaveStatus('جاري إرسال بيانات الطالب إلى EMIS...', isError: false);
       final encodedPayload = jsonEncode(payload);
       debugPrint('EMIS addstudent payload: $encodedPayload');
 
@@ -703,6 +741,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
       final responseText = utf8.decode(response.bodyBytes);
       debugPrint('EMIS addstudent response ${response.statusCode}: $responseText');
+
       dynamic responseJson;
       try {
         responseJson = jsonDecode(responseText);
@@ -723,15 +762,25 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           : 'تمت إضافة الطالب بنجاح';
 
       if (!mounted) return;
-      setState(() => error = null);
+      setState(() {
+        error = null;
+        _saveStatus = successMessage;
+        _saveStatusIsError = false;
+      });
       _showSaveMessage(successMessage, isError: false);
-      await Future<void>.delayed(const Duration(milliseconds: 700));
+
+      // نعطي المستخدم وقتاً كافياً لرؤية رسالة النجاح قبل الرجوع للقائمة.
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       final friendly = _friendlyError(e);
       debugPrint('EMIS add student error: $friendly');
       if (mounted) {
-        setState(() => error = friendly);
+        setState(() {
+          error = friendly;
+          _saveStatus = friendly;
+          _saveStatusIsError = true;
+        });
         _showSaveMessage(friendly, isError: true);
       }
     } finally {
@@ -775,12 +824,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       return 'يرجى اختيار القضاء في العنوان';
     }
 
-    // عند اختيار البطاقة الوطنية الموحدة، الحقل الفعلي في الشاشة هو
-    // nationalId. كان الكود السابق يفحص idNumber، ولذلك كان يعتبر
-    // الحقل فارغاً رغم أن المستخدم أدخل 12 رقماً في nationalId.
     final idNumber = _isNationalId
-        ? (_n('nationalId') ?? '')
-        : (_n('idNumber') ?? '');
+        ? _normalizeDigits(_n('nationalId') ?? '')
+        : (_isCivilId
+            ? (_n('idNumber') ?? '')
+            : (_isBirthCertificate
+                ? (_n('birthCertificateNumber') ?? '')
+                : (_isOtherId ? (_n('otherIdNumber') ?? '') : '')));
     if (_isNationalId) {
       if (!RegExp(r'^\d{12}$').hasMatch(idNumber)) {
         return 'رقم البطاقة الوطنية الموحدة يجب أن يكون 12 رقماً';
@@ -795,24 +845,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
 
     return null;
-  }
-
-  void _showSaveMessage(String message, {required bool isError}) {
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          textDirection: TextDirection.rtl,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade700,
-        duration: Duration(seconds: isError ? 5 : 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   String _friendlyError(Object error) {
@@ -1059,6 +1091,54 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                       const SizedBox(height: 10),
                       _textField('closestLocation'),
                     ]),
+                    if (_saveStatus != null) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _saveStatusIsError
+                              ? Colors.red.shade50
+                              : Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: _saveStatusIsError
+                                ? Colors.red.shade200
+                                : Colors.green.shade200,
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              _saveStatusIsError
+                                  ? Icons.error_outline_rounded
+                                  : (saving
+                                      ? Icons.sync_rounded
+                                      : Icons.check_circle_outline_rounded),
+                              color: _saveStatusIsError
+                                  ? Colors.red.shade700
+                                  : Colors.green.shade700,
+                            ),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Text(
+                                _saveStatus!,
+                                textDirection: TextDirection.rtl,
+                                textAlign: TextAlign.right,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: _saveStatusIsError
+                                      ? Colors.red.shade800
+                                      : Colors.green.shade800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                     const SizedBox(height: 2),
                     SizedBox(
                       height: 55,
