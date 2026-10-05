@@ -593,10 +593,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
     try {
       final idType = int.parse(c['idType']!.text);
-      final identificationNumber =
-          (_isNationalId || _isCivilId || _isBirthCertificate || _isOtherId)
+      // رقم البطاقة الوطنية موجود في nationalId داخل واجهة التطبيق.
+      // لا نقرأ idNumber عند اختيار البطاقة الوطنية، لأن idNumber حقل
+      // مستقل للهوية المدنية/الأنواع الأخرى.
+      final identificationNumber = _isNationalId
+          ? (_n('nationalId') ?? '')
+          : ((_isCivilId || _isBirthCertificate || _isOtherId)
               ? (_n('idNumber') ?? '')
-              : '';
+              : '');
 
       // EMIS performs this check before submitting a national ID.
       if (_isNationalId && identificationNumber.isNotEmpty) {
@@ -764,7 +768,12 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       return 'يرجى اختيار القضاء في العنوان';
     }
 
-    final idNumber = _n('idNumber') ?? '';
+    // عند اختيار البطاقة الوطنية الموحدة، الحقل الفعلي في الشاشة هو
+    // nationalId. كان الكود السابق يفحص idNumber، ولذلك كان يعتبر
+    // الحقل فارغاً رغم أن المستخدم أدخل 12 رقماً في nationalId.
+    final idNumber = _isNationalId
+        ? (_n('nationalId') ?? '')
+        : (_n('idNumber') ?? '');
     if (_isNationalId) {
       if (!RegExp(r'^\d{12}$').hasMatch(idNumber)) {
         return 'رقم البطاقة الوطنية الموحدة يجب أن يكون 12 رقماً';
