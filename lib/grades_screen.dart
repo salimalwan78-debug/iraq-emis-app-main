@@ -6,11 +6,17 @@ import 'app_core.dart';
 class GradesScreen extends StatelessWidget {
   final String token;
   final String schoolId;
+  final List<Map<String, dynamic>> stages;
+  final Map<String, List<Map<String, dynamic>>> subjectsByStage;
+  final Map<String, List<Map<String, dynamic>>> examsBySubject;
 
   const GradesScreen({
     super.key,
     required this.token,
     required this.schoolId,
+    required this.stages,
+    required this.subjectsByStage,
+    required this.examsBySubject,
   });
 
   @override
@@ -81,6 +87,9 @@ class GradesScreen extends StatelessWidget {
                       builder: (_) => GradeSmartToolsScreen(
                         token: token,
                         schoolId: schoolId,
+                        stages: stages,
+                        subjectsByStage: subjectsByStage,
+                        examsBySubject: examsBySubject,
                       ),
                     ),
                   ),

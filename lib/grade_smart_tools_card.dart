@@ -6,11 +6,17 @@ import 'package:http/http.dart' as http;
 class GradeSmartToolsCard extends StatefulWidget {
   final String token;
   final String schoolId;
+  final List<Map<String, dynamic>> stages;
+  final Map<String, List<Map<String, dynamic>>> subjectsByStage;
+  final Map<String, List<Map<String, dynamic>>> examsBySubject;
 
   const GradeSmartToolsCard({
     super.key,
     required this.token,
     required this.schoolId,
+    required this.stages,
+    required this.subjectsByStage,
+    required this.examsBySubject,
   });
 
   @override
@@ -18,20 +24,19 @@ class GradeSmartToolsCard extends StatefulWidget {
 }
 
 class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
-  List<Map<String, dynamic>> stages = [];
-  final Map<String, List<Map<String, dynamic>>> subjectsByStage = {};
-  final Map<String, List<Map<String, dynamic>>> examsBySubject = {};
+  late List<Map<String, dynamic>> stages;
+  late Map<String, List<Map<String, dynamic>>> subjectsByStage;
+  late Map<String, List<Map<String, dynamic>>> examsBySubject;
 
   final Set<String> selectedTerms = {};
   final Set<String> selectedStages = {};
   final Set<String> selectedSubjects = {};
 
-  bool loadingCatalog = true;
-  bool loadingTerms = false;
+  bool loadingCatalog = false;
   bool allStagesAndSubjects = false;
   bool running = false;
   String? error;
-  String status = 'جاري قراءة الفصول والمواد من EMIS...';
+  String status = 'تم استيراد بيانات الصفوف والمواد والفصول الدراسية مسبقاً.';
 
   Map<String, String> get _headers => {
         'Authorization': widget.token.toLowerCase().startsWith('bearer ')
@@ -75,138 +80,49 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
   @override
   void initState() {
     super.initState();
-    _loadCatalog();
-  }
-
-  Future<void> _loadCatalog() async {
-    try {
-      final rawStages = await _get('/selectoption/getschoolstages/${widget.schoolId}');
-      stages = _maps(rawStages);
-      if (!mounted) return;
-      setState(() {
-        loadingCatalog = false;
-        status = 'تم تحميل الصفوف الدراسية. اختر الصفوف المطلوبة لتحميل موادها فقط.';
-        error = null;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        loadingCatalog = false;
-        error = '$e';
-        status = 'تعذر قراءة الصفوف الدراسية من EMIS.';
-      });
-    }
+    stages = [
+      for (final stage in widget.stages) Map<String, dynamic>.from(stage),
+    ];
+    subjectsByStage = {
+      for (final entry in widget.subjectsByStage.entries)
+        entry.key: [for (final item in entry.value) Map<String, dynamic>.from(item)],
+    };
+    examsBySubject = {
+      for (final entry in widget.examsBySubject.entries)
+        entry.key: [for (final item in entry.value) Map<String, dynamic>.from(item)],
+    };
   }
 
   Future<void> _loadSubjectsForStages(Iterable<String> stageIds) async {
     final ids = stageIds.where((x) => x.isNotEmpty).toSet();
     if (ids.isEmpty) return;
-
-    if (mounted) {
-      setState(() {
-        status = 'جاري تحميل مواد الصفوف المختارة...';
-        error = null;
-      });
-    }
-
-    final results = await Future.wait(
-      ids.map((stageId) async {
-        try {
-          final raw = await _get(
-            '/subject/getsubjectsselect?stageId=$stageId&schoolId=${widget.schoolId}',
-          );
-          return MapEntry(stageId, _maps(raw));
-        } catch (e) {
-          return MapEntry<String, List<Map<String, dynamic>>>(
-            stageId,
-            <Map<String, dynamic>>[],
-          );
-        }
-      }),
-    );
-
-    String? firstError;
-    for (final entry in results) {
-      subjectsByStage[entry.key] = entry.value;
-      if (entry.value.isEmpty) {
-        // Do not treat an empty successful response as an error. The endpoint
-        // may legitimately return no subjects for a stage.
-        continue;
+    setState(() { status = 'جاري تحميل مواد الصفوف المختارة فقط...'; });
+    for (final stageId in ids) {
+      if (subjectsByStage.containsKey(stageId)) continue;
+      try {
+        final raw = await _get('/subject/getsubjectsselect?stageId=$stageId&schoolId=${widget.schoolId}');
+        subjectsByStage[stageId] = _maps(raw);
+      } catch (e) {
+        error = '$e';
       }
     }
-
-    // If every requested stage returned no subjects, surface a useful status.
-    if (ids.isNotEmpty && results.every((e) => e.value.isEmpty)) {
-      firstError = 'لم تُرجع EMIS مواد للصفوف المحددة.';
-    }
-
-    if (!mounted) return;
-    setState(() {
-      status = firstError ?? 'تم تحميل مواد الصفوف المختارة.';
-      error = firstError;
-    });
+    if (mounted) setState(() { status = 'تم تحميل مواد الصفوف المختارة.'; });
   }
 
   Future<void> _loadExamsForSubjects(Iterable<String> subjectKeys) async {
-    final keys = subjectKeys.toSet();
-    if (keys.isEmpty) return;
-
-    if (mounted) {
-      setState(() {
-        loadingTerms = true;
-        status = 'جاري تحميل الفصول الدراسية من EMIS...';
-        error = null;
-      });
+    for (final key in subjectKeys.toSet()) {
+      if (examsBySubject.containsKey(key)) continue;
+      final parts = key.split(':');
+      if (parts.length != 2) continue;
+      final stageId = parts[0], subjectId = parts[1];
+      try {
+        final raw = await _get('/examscore/getexamsformarks?schoolId=${widget.schoolId}&stageId=$stageId&subjectId=$subjectId');
+        examsBySubject[key] = _maps(raw is Map ? raw['exams'] : raw);
+      } catch (e) {
+        error = '$e';
+      }
     }
-
-    final results = await Future.wait(
-      keys.map((key) async {
-        final parts = key.split(':');
-        if (parts.length != 2) {
-          return MapEntry<String, List<Map<String, dynamic>>>(
-            key,
-            <Map<String, dynamic>>[],
-          );
-        }
-
-        final stageId = parts[0];
-        final subjectId = parts[1];
-
-        try {
-          final raw = await _get(
-            '/examscore/getexamsformarks'
-            '?schoolId=${widget.schoolId}'
-            '&stageId=$stageId'
-            '&subjectId=$subjectId',
-          );
-
-          final rawExams = raw is Map ? raw['exams'] : raw;
-          return MapEntry(key, _maps(rawExams));
-        } catch (_) {
-          return MapEntry<String, List<Map<String, dynamic>>>(
-            key,
-            <Map<String, dynamic>>[],
-          );
-        }
-      }),
-    );
-
-    for (final entry in results) {
-      examsBySubject[entry.key] = entry.value;
-    }
-
-    // Keep a term selected if it still exists for at least one selected
-    // subject. Never clear the user's term selection merely because the
-    // stage/material dialog was opened.
-    final available = _termLabels.toSet();
-    selectedTerms.removeWhere((term) => !available.contains(term));
-
-    if (!mounted) return;
-    setState(() {
-      loadingTerms = false;
-      status = 'تم تحميل ${_termLabels.length} فصلاً دراسياً.';
-      error = null;
-    });
+    if (mounted) setState(() {});
   }
 
   List<Map<String, dynamic>> get _selectedStageSubjects {
@@ -226,12 +142,8 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
   List<String> get _termLabels {
     final result = <String>[];
     final seen = <String>{};
-
-    // Only terms belonging to the CURRENTLY selected stage/material pairs
-    // are shown. Cached exams from a previously selected material must not
-    // leak into the new selection.
-    for (final key in selectedSubjects) {
-      for (final exam in examsBySubject[key] ?? const <Map<String, dynamic>>[]) {
+    for (final exams in examsBySubject.values) {
+      for (final exam in exams) {
         final label = _label(exam).trim();
         if (label.isNotEmpty && seen.add(label)) result.add(label);
       }
@@ -260,8 +172,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
         allStagesAndSubjects = false;
         selectedStages.clear();
         selectedSubjects.clear();
-        // Keep the user's term choice. It is harmless until new subjects
-        // are selected, and _loadExamsForSubjects prunes only unavailable terms.
+        selectedTerms.clear();
       });
       return;
     }
@@ -313,8 +224,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
             ..clear()
             ..addAll(ids);
           selectedSubjects.removeWhere((key) => !ids.contains(key.split(':').first));
-          // IMPORTANT: do not clear selectedTerms here. The previous version
-          // erased the chosen term whenever the stage selector was opened.
+          selectedTerms.removeWhere((term) => !_termLabels.contains(term));
         });
         await _loadSubjectsForStages(ids);
       },
@@ -348,7 +258,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
           selectedSubjects
             ..clear()
             ..addAll(keys);
-          // IMPORTANT: keep selectedTerms while the selected subjects change.
+          selectedTerms.removeWhere((term) => !_termLabels.contains(term));
         });
         await _loadExamsForSubjects(keys);
       },
@@ -440,7 +350,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
 
   Future<void> _run(bool ignore) async {
     if (selectedTerms.isEmpty || selectedStages.isEmpty || selectedSubjects.isEmpty) {
-      _show('اختر الصفوف والمواد ثم انتظر اكتمال تحميل الفصول الدراسية، وبعدها اختر الفصل المطلوب.', Colors.orange);
+      _show('اختر الفصول والصفوف والمواد أولاً.', Colors.orange);
       return;
     }
 
@@ -599,6 +509,14 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
                 Text(error!, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.red, fontSize: 12)),
               ],
               const SizedBox(height: 12),
+              _choiceButton(
+                label: 'الفصول',
+                value: selectedTerms.isEmpty ? 'اختر فصلاً أو عدة فصول' : selectedTerms.join('، '),
+                icon: Icons.event_note_rounded,
+                enabled: !loadingCatalog && _termLabels.isNotEmpty,
+                onTap: _chooseTerms,
+              ),
+              const SizedBox(height: 2),
               Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 decoration: BoxDecoration(
@@ -634,25 +552,15 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
                 label: 'المادة الدراسية',
                 value: selectedSubjects.isEmpty ? 'اختر مادة أو عدة مواد' : '${selectedSubjects.length} مادة/صف',
                 icon: Icons.menu_book_rounded,
-                enabled: selectedStages.isNotEmpty && !loadingTerms,
+                enabled: selectedStages.isNotEmpty,
                 onTap: _chooseSubjects,
-              ),
-              const SizedBox(height: 10),
-              _choiceButton(
-                label: 'الفصول الدراسية',
-                value: selectedTerms.isEmpty
-                    ? (loadingTerms ? 'جاري تحميل الفصول الدراسية...' : 'اختر فصلاً أو عدة فصول')
-                    : selectedTerms.join('، '),
-                icon: Icons.event_note_rounded,
-                enabled: !loadingCatalog && !loadingTerms && _termLabels.isNotEmpty,
-                onTap: _chooseTerms,
               ),
               const SizedBox(height: 14),
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: running || loadingTerms ? null : () => _run(true),
+                      onPressed: running ? null : () => _run(true),
                       icon: const Icon(Icons.visibility_off_rounded),
                       label: const Text('إهمال الامتحان'),
                     ),
@@ -660,7 +568,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: running || loadingTerms ? null : () => _run(false),
+                      onPressed: running ? null : () => _run(false),
                       icon: const Icon(Icons.visibility_rounded),
                       label: const Text('إلغاء الإهمال'),
                     ),

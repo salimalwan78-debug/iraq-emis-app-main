@@ -4,11 +4,17 @@ import 'grade_smart_tools_card.dart';
 class GradeSmartToolsScreen extends StatelessWidget {
   final String token;
   final String schoolId;
+  final List<Map<String, dynamic>> stages;
+  final Map<String, List<Map<String, dynamic>>> subjectsByStage;
+  final Map<String, List<Map<String, dynamic>>> examsBySubject;
 
   const GradeSmartToolsScreen({
     super.key,
     required this.token,
     required this.schoolId,
+    required this.stages,
+    required this.subjectsByStage,
+    required this.examsBySubject,
   });
 
   @override
@@ -37,6 +43,9 @@ class GradeSmartToolsScreen extends StatelessWidget {
             GradeSmartToolsCard(
               token: token,
               schoolId: schoolId,
+              stages: stages,
+              subjectsByStage: subjectsByStage,
+              examsBySubject: examsBySubject,
             ),
           ],
         ),

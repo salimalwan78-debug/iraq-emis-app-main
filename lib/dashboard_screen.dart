@@ -12,11 +12,15 @@ class DashboardScreen extends StatelessWidget {
   final String userName;
   final List<dynamic> allStudents;
   final List<dynamic> allTeachers;
+  final List<Map<String, dynamic>> stages;
+  final Map<String, List<Map<String, dynamic>>> subjectsByStage;
+  final Map<String, List<Map<String, dynamic>>> examsBySubject;
 
   const DashboardScreen({
     super.key, required this.token, required this.schoolId,
     required this.schoolName, required this.userName,
     required this.allStudents, required this.allTeachers,
+    required this.stages, required this.subjectsByStage, required this.examsBySubject,
   });
 
   @override
@@ -108,7 +112,13 @@ class DashboardScreen extends StatelessWidget {
                     _buildMenuCard(title: 'إدارة المعلمين', icon: Icons.work_rounded, color: Colors.deepPurple, cardColor: cardColor, textColor: textColor, onTap: () {
                       Navigator.push(context, MaterialPageRoute(builder: (context) => TeachersListScreen(token: token, schoolId: schoolId, initialTeachers: allTeachers)));
                     }),
-                    _buildMenuCard(title: 'الدرجات', icon: Icons.bar_chart_rounded, color: Colors.orange, cardColor: cardColor, textColor: textColor, onTap: () { Navigator.push(context, MaterialPageRoute(builder: (_) => GradesScreen(token: token, schoolId: schoolId))); }),
+                    _buildMenuCard(title: 'الدرجات', icon: Icons.bar_chart_rounded, color: Colors.orange, cardColor: cardColor, textColor: textColor, onTap: () { Navigator.push(context, MaterialPageRoute(builder: (_) => GradesScreen(
+                        token: token,
+                        schoolId: schoolId,
+                        stages: stages,
+                        subjectsByStage: subjectsByStage,
+                        examsBySubject: examsBySubject,
+                      ))); }),
                     _buildMenuCard(title: 'إرسال البيانات', icon: Icons.cloud_upload_rounded, color: Colors.green, cardColor: cardColor, textColor: textColor, onTap: () {}),
                   ],
                 ),

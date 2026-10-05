@@ -31,6 +31,10 @@ class _LoadingDataScreenState extends State<LoadingDataScreen>
   late String _activeToken;
   late final AnimationController _pulse;
 
+  List<Map<String, dynamic>> _stages = [];
+  final Map<String, List<Map<String, dynamic>>> _subjectsByStage = {};
+  final Map<String, List<Map<String, dynamic>>> _examsBySubject = {};
+
   @override
   void initState() {
     super.initState();
@@ -124,6 +128,108 @@ class _LoadingDataScreenState extends State<LoadingDataScreen>
     throw Exception('استجابة $label من EMIS غير متوقعة');
   }
 
+  Future<void> _runConcurrent<T>(
+    List<T> items,
+    Future<void> Function(T item) task, {
+    int maxConcurrent = 5,
+  }) async {
+    if (items.isEmpty) return;
+    var nextIndex = 0;
+    final workerCount = items.length < maxConcurrent ? items.length : maxConcurrent;
+
+    Future<void> worker() async {
+      while (true) {
+        final index = nextIndex++;
+        if (index >= items.length) return;
+        await task(items[index]);
+      }
+    }
+
+    await Future.wait(List.generate(workerCount, (_) => worker()));
+  }
+
+  List<Map<String, dynamic>> _maps(dynamic value) {
+    final raw = value is Map && value['data'] != null ? value['data'] : value;
+    if (raw is! List) return <Map<String, dynamic>>[];
+    return [
+      for (final item in raw)
+        if (item is Map) Map<String, dynamic>.from(item),
+    ];
+  }
+
+  String _catalogId(Map<String, dynamic> item) =>
+      '${item['value'] ?? item['id'] ?? item['stageId'] ?? ''}';
+
+  Future<void> _loadAcademicCatalog() async {
+    setState(() {
+      _statusText = 'جاري استيراد الصفوف الدراسية...';
+      _progressValue = .46;
+    });
+
+    final stagesResponse = await _get(
+      Uri.parse(
+        'https://emis.moedu.gov.iq/api/selectoption/getschoolstages/${widget.schoolId}',
+      ),
+    );
+    _stages = _maps(_decode(stagesResponse));
+    if (_stages.isEmpty) {
+      throw Exception('لم تُرجع EMIS أي صفوف دراسية للمدرسة');
+    }
+
+    setState(() {
+      _statusText = 'جاري استيراد المواد الدراسية...';
+      _progressValue = .50;
+    });
+
+    final stageIds = _stages
+        .map(_catalogId)
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
+    await _runConcurrent(stageIds, (stageId) async {
+      final response = await _get(
+        Uri.parse(
+          'https://emis.moedu.gov.iq/api/subject/getsubjectsselect?stageId=$stageId&schoolId=${widget.schoolId}',
+        ),
+      );
+      _subjectsByStage[stageId] = _maps(_decode(response));
+    });
+
+    final subjectKeys = <String>[];
+    for (final entry in _subjectsByStage.entries) {
+      for (final subject in entry.value) {
+        final subjectId = _catalogId(subject);
+        if (subjectId.isNotEmpty) subjectKeys.add('${entry.key}:$subjectId');
+      }
+    }
+
+    setState(() {
+      _statusText = 'جاري استيراد الفصول الدراسية من EMIS...';
+      _progressValue = .56;
+    });
+
+    await _runConcurrent(subjectKeys, (key) async {
+      final parts = key.split(':');
+      if (parts.length != 2) return;
+      final stageId = parts[0];
+      final subjectId = parts[1];
+      final response = await _get(
+        Uri.parse(
+          'https://emis.moedu.gov.iq/api/examscore/getexamsformarks?schoolId=${widget.schoolId}&stageId=$stageId&subjectId=$subjectId',
+        ),
+      );
+      final decoded = _decode(response);
+      final rawExams = decoded is Map ? decoded['exams'] : decoded;
+      _examsBySubject[key] = _maps(rawExams);
+    });
+
+    setState(() {
+      _statusText = 'اكتمل استيراد الفصول الدراسية والمواد...';
+      _progressValue = .60;
+    });
+  }
+
   Future<void> _startFetchingData() async {
     try {
       setState(() {
@@ -158,9 +264,11 @@ class _LoadingDataScreenState extends State<LoadingDataScreen>
         throw Exception('تعذر قراءة بيانات المدرسة من EMIS');
       }
 
+      await _loadAcademicCatalog();
+
       setState(() {
         _statusText = 'جاري تحميل سجلات الطلاب...';
-        _progressValue = .63;
+        _progressValue = .68;
       });
       final studentsRes = await _get(
         Uri.parse(
@@ -171,7 +279,7 @@ class _LoadingDataScreenState extends State<LoadingDataScreen>
 
       setState(() {
         _statusText = 'جاري تحميل سجلات المعلمين...';
-        _progressValue = .82;
+        _progressValue = .88;
       });
       final teachersRes = await _get(
         Uri.parse(
@@ -198,6 +306,9 @@ class _LoadingDataScreenState extends State<LoadingDataScreen>
             userName: realUserName,
             allStudents: studentsData,
             allTeachers: teachersData,
+            stages: _stages,
+            subjectsByStage: _subjectsByStage,
+            examsBySubject: _examsBySubject,
           ),
         ),
       );
