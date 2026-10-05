@@ -282,10 +282,17 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       value is Map && value['data'] != null ? value['data'] : value;
 
   Future<dynamic> _get(String endpoint) async {
-    final response = await http.get(
-      Uri.parse('https://emis.moedu.gov.iq/api$endpoint'),
-      headers: h,
-    );
+    final response = await http
+        .get(
+          Uri.parse('https://emis.moedu.gov.iq/api$endpoint'),
+          headers: h,
+        )
+        .timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => throw TimeoutException(
+            'انتهت مهلة الاتصال بخادم EMIS.',
+          ),
+        );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         'HTTP ${response.statusCode}: ${utf8.decode(response.bodyBytes)}',
@@ -615,31 +622,31 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   Future<void> _save() async {
     if (saving) return;
 
-    // هذه أول نقطة تنفيذ للحفظ، لذلك نظهرها داخل الصفحة وليس عبر SnackBar فقط.
-    _setSaveStatus('بدأت عملية حفظ الطالب...', isError: false);
-    FocusScope.of(context).unfocus();
-
-    final validationError = _validateBeforeSave();
-    if (validationError != null) {
-      if (mounted) setState(() => error = validationError);
-      _setSaveStatus(validationError, isError: true);
-      _showSaveMessage(validationError, isError: true);
-      return;
-    }
-
-    setState(() {
-      saving = true;
-      error = null;
-      _saveStatus = 'جاري التحقق من البيانات...';
-      _saveStatusIsError = false;
-    });
-    _showSaveMessage('جاري التحقق من البيانات وإرسال الطالب إلى EMIS...', isError: false);
-
+    // كل مراحل الحفظ أصبحت داخل try/catch حتى لا تبقى رسالة
+    // "بدأت عملية حفظ الطالب..." ظاهرة إذا حدث استثناء قبل إرسال الطلب.
     try {
+      if (!mounted) return;
+
+      setState(() {
+        saving = true;
+        error = null;
+        _saveStatus = 'بدأت عملية حفظ الطالب...';
+        _saveStatusIsError = false;
+      });
+      FocusScope.of(context).unfocus();
+
+      final validationError = _validateBeforeSave();
+      if (validationError != null) {
+        throw Exception(validationError);
+      }
+
+      _setSaveStatus('جاري التحقق من البيانات...', isError: false);
+      _showSaveMessage('جاري التحقق من البيانات وإرسال الطالب إلى EMIS...', isError: false);
+
       final idType = int.parse(c['idType']!.text);
 
-      // مهم جداً: حقل البطاقة الوطنية في واجهة Flutter اسمه nationalId.
-      // idNumber ليس هو الحقل المستخدم عند اختيار نوع الهوية 12.
+      // مهم جداً: عند اختيار نوع الهوية 12، الحقل الصحيح هو nationalId
+      // وليس idNumber.
       final identificationNumber = _isNationalId
           ? _normalizeDigits(_n('nationalId') ?? '')
           : (_isCivilId
@@ -649,16 +656,25 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   : (_isOtherId ? (_n('otherIdNumber') ?? '') : '')));
 
       if (_isNationalId) {
-        _setSaveStatus('جاري التحقق من رقم البطاقة الوطنية الموحدة...', isError: false);
+        _setSaveStatus(
+          'جاري التحقق من رقم البطاقة الوطنية الموحدة...',
+          isError: false,
+        );
+
         final check = await _get(
           '/student/checknationalidnumber?value=${Uri.encodeQueryComponent(identificationNumber)}',
         );
+
         if (check is Map && check['isUnique'] == false) {
           throw Exception('رقم البطاقة الوطنية مستخدم مسبقاً في EMIS');
         }
       }
 
-      _setSaveStatus('تم التحقق من رقم الهوية. جاري تجهيز بيانات الطالب...', isError: false);
+      _setSaveStatus(
+        'تم التحقق من رقم الهوية. جاري تجهيز بيانات الطالب...',
+        isError: false,
+      );
+
       final selectedSpecialNeeds = _n('specialNeeds');
 
       final payload = <String, dynamic>{
@@ -730,17 +746,27 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       };
 
       _setSaveStatus('جاري إرسال بيانات الطالب إلى EMIS...', isError: false);
+
       final encodedPayload = jsonEncode(payload);
       debugPrint('EMIS addstudent payload: $encodedPayload');
 
-      final response = await http.post(
-        Uri.parse('https://emis.moedu.gov.iq/api/student/addstudent'),
-        headers: h,
-        body: encodedPayload,
-      );
+      final response = await http
+          .post(
+            Uri.parse('https://emis.moedu.gov.iq/api/student/addstudent'),
+            headers: h,
+            body: encodedPayload,
+          )
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => throw TimeoutException(
+              'انتهت مهلة الاتصال بخادم EMIS أثناء حفظ الطالب.',
+            ),
+          );
 
       final responseText = utf8.decode(response.bodyBytes);
-      debugPrint('EMIS addstudent response ${response.statusCode}: $responseText');
+      debugPrint(
+        'EMIS addstudent response ${response.statusCode}: $responseText',
+      );
 
       dynamic responseJson;
       try {
@@ -753,7 +779,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         final serverMessage = responseJson is Map
             ? '${responseJson['message'] ?? responseJson['error'] ?? responseJson['errors'] ?? responseText}'
             : responseText;
-        throw Exception('رفض EMIS الطلب (HTTP ${response.statusCode}): $serverMessage');
+        throw Exception(
+          'رفض EMIS الطلب (HTTP ${response.statusCode}): $serverMessage',
+        );
       }
 
       final successMessage = responseJson is Map &&
@@ -762,6 +790,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           : 'تمت إضافة الطالب بنجاح';
 
       if (!mounted) return;
+
       setState(() {
         error = null;
         _saveStatus = successMessage;
@@ -769,12 +798,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       });
       _showSaveMessage(successMessage, isError: false);
 
-      // نعطي المستخدم وقتاً كافياً لرؤية رسالة النجاح قبل الرجوع للقائمة.
+      // إبقاء رسالة النجاح ظاهرة قليلاً قبل العودة إلى قائمة الطلاب.
       await Future<void>.delayed(const Duration(milliseconds: 1200));
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       final friendly = _friendlyError(e);
       debugPrint('EMIS add student error: $friendly');
+
       if (mounted) {
         setState(() {
           error = friendly;
@@ -825,7 +855,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
 
     final idNumber = _isNationalId
-        ? _normalizeDigits(_n('nationalId') ?? '')
+        ? _normalizeDigits(c['nationalId']?.text.trim() ?? '')
         : (_isCivilId
             ? (_n('idNumber') ?? '')
             : (_isBirthCertificate
