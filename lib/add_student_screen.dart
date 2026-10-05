@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_recognition_error.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 import 'package:http/http.dart' as http;
 import 'app_core.dart';
 import 'emis_live_sync.dart';
@@ -25,6 +28,16 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   final Map<String, List<Map<String, dynamic>>> options = {};
 
   bool loading = true, saving = false;
+  final SpeechToText _speech = SpeechToText();
+  bool _speechInitialized = false;
+  bool _speechAvailable = false;
+  bool _speechListening = false;
+  String? _speechLocaleId;
+  String? _speechError;
+  String? _activeVoiceField;
+  String? _pendingVoiceField;
+  bool _speechStopRequested = false;
+  Future<void>? _pendingSpeechStop;
   String? error;
   String? _saveStatus;
   bool _saveStatusIsError = false;
@@ -54,6 +67,31 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     'religion': '/selectoption/الديانة',
     'specialNeeds': '/selectoption/ذوي الإحتياجات الخاصة',
     'economicLevel': '/selectoption/حالة الاقتصادية',
+  };
+
+  // حقول النص العربي التي نسمح لها بالإدخال الصوتي.
+  // الحقول الرقمية والتواريخ تبقى إدخالاً يدوياً حتى لا تتحول الأرقام
+  // إلى كلمات أو أرقام عربية بحسب خدمة التعرف في الجهاز.
+  static const Set<String> _voiceFields = {
+    'name',
+    'fatherName',
+    'grandFatherName',
+    'fathersGrandFatherName',
+    'surName',
+    'motherName',
+    'mothersFatherName',
+    'mothersGrandFatherName',
+    'homeTown',
+    'issuer',
+    'nameOfDocument',
+    'town',
+    'area',
+    'quarter',
+    'street',
+    'address1',
+    'address2',
+    'closestLocation',
+    'notes',
   };
 
   final labels = const <String, String>{
@@ -170,6 +208,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   @override
   void dispose() {
     _liveTimer?.cancel();
+    _speech.stop();
     for (final controller in c.values) {
       controller.dispose();
     }
@@ -480,6 +519,208 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   bool get _isBirthCertificate => c['idType']!.text == '22';
   bool get _isOtherId => c['idType']!.text == '16';
 
+  Future<void> _initSpeech() async {
+    if (_speechInitialized) return;
+
+    final available = await _speech.initialize(
+      onStatus: (status) {
+        if (!mounted) return;
+        final listening = status == 'listening';
+        setState(() {
+          _speechListening = listening;
+          if (!listening && !_speechStopRequested && _pendingVoiceField == null) {
+            _activeVoiceField = null;
+          }
+        });
+
+        // لا ننتظر هنا داخل واجهة المستخدم. إذا كان المستخدم ضغط ميكروفون
+        // حقلاً جديداً أثناء إغلاق الجلسة السابقة، نبدأه فور انتهاء الجلسة.
+        if (!listening && _pendingVoiceField != null) {
+          _startPendingVoiceField();
+        }
+      },
+      onError: (SpeechRecognitionError error) {
+        if (!mounted) return;
+        final pending = _pendingVoiceField;
+        setState(() {
+          _speechListening = false;
+          _speechStopRequested = false;
+          _activeVoiceField = null;
+          _speechError = error.errorMsg;
+        });
+        if (pending != null) {
+          _startPendingVoiceField();
+        }
+      },
+      debugLogging: false,
+    );
+
+    _speechInitialized = true;
+    _speechAvailable = available;
+
+    if (!available) {
+      if (mounted) {
+        setState(() {
+          _speechError = 'خدمة التعرف الصوتي غير متاحة على هذا الجهاز';
+        });
+      }
+      return;
+    }
+
+    final locales = await _speech.locales();
+    LocaleName? arabic;
+    for (final locale in locales) {
+      if (locale.localeId.toLowerCase() == 'ar-iq') {
+        arabic = locale;
+        break;
+      }
+      if (arabic == null && locale.localeId.toLowerCase().startsWith('ar')) {
+        arabic = locale;
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _speechLocaleId = arabic?.localeId;
+        _speechError = arabic == null
+            ? 'خدمة التعرف الصوتي متاحة، لكن اللغة العربية غير متاحة على هذا الجهاز'
+            : null;
+      });
+    }
+  }
+
+  String _cleanArabicSpeech(String value) {
+    var out = value.replaceAll(RegExp(r'[A-Za-z]'), '');
+    out = out.replaceAll(RegExp(r'[\u0000-\u001F]'), '');
+    out = out.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return out;
+  }
+
+  void _requestSpeechStop({String? nextField}) {
+    if (!_speechListening && _activeVoiceField == null) {
+      if (nextField != null) {
+        _pendingVoiceField = nextField;
+        _startPendingVoiceField();
+      }
+      return;
+    }
+
+    if (nextField != null) {
+      _pendingVoiceField = nextField;
+    }
+
+    if (_speechStopRequested) return;
+
+    _speechStopRequested = true;
+    final stopFuture = _speech.stop();
+    _pendingSpeechStop = stopFuture;
+
+    // الإيقاف يعمل في الخلفية. لا نستخدم await هنا، لذلك لا يتوقف المستخدم
+    // عن الانتقال بين الحقول. عند انتهاء الجلسة نبدأ الحقل المعلّق تلقائياً.
+    stopFuture.whenComplete(() {
+      if (identical(_pendingSpeechStop, stopFuture)) {
+        _pendingSpeechStop = null;
+      }
+      if (!mounted) return;
+      _speechListening = false;
+      _speechStopRequested = false;
+      _startPendingVoiceField();
+    });
+
+    if (mounted) {
+      setState(() {
+        _speechListening = false;
+      });
+    }
+  }
+
+  void _stopVoiceFromPointer() {
+    if (!_speechListening && _activeVoiceField == null) return;
+
+    // الضغط في أي مكان آخر يطلب إيقاف التسجيل فوراً، لكن لا ننتظر نتيجته هنا.
+    // إذا كان الضغط التالي على ميكروفون آخر، يضع _toggleVoiceInput ذلك الحقل
+    // في _pendingVoiceField، وعند وصول نتيجة الجلسة السابقة يبدأ الجديد تلقائياً.
+    _requestSpeechStop();
+  }
+
+  Future<void> _startPendingVoiceField() async {
+    final key = _pendingVoiceField;
+    if (key == null || !mounted) return;
+    if (_speechListening || _speechStopRequested) return;
+
+    _pendingVoiceField = null;
+    await _startVoiceSession(key);
+  }
+
+  Future<void> _startVoiceSession(String key) async {
+    if (!mounted || saving || key == 'dateOfBirth') return;
+
+    await _initSpeech();
+    if (!_speechAvailable || _speechLocaleId == null || !mounted) return;
+
+    final existing = c[key]?.text.trim() ?? '';
+    setState(() {
+      _speechError = null;
+      _activeVoiceField = key;
+      _speechListening = true;
+      _speechStopRequested = false;
+    });
+
+    await _speech.listen(
+      onResult: (SpeechRecognitionResult result) {
+        final text = _cleanArabicSpeech(result.recognizedWords);
+        if (text.isEmpty || !mounted) return;
+        final controller = c[key];
+        if (controller == null) return;
+        controller.value = TextEditingValue(
+          text: text,
+          selection: TextSelection.collapsed(offset: text.length),
+        );
+        _liveSyncKey.currentState?.pushValues(_liveValues());
+        setState(() {});
+      },
+      localeId: _speechLocaleId,
+      listenFor: const Duration(seconds: 20),
+      // لا نعتمد على الصمت لإدارة الانتقال بين الحقول؛ الانتقال يتم بالنقر.
+      pauseFor: const Duration(seconds: 20),
+      partialResults: true,
+      onDevice: false,
+      cancelOnError: true,
+    );
+
+    if (existing.isNotEmpty && mounted && c[key]!.text.isEmpty) {
+      c[key]!.text = existing;
+    }
+  }
+
+  Future<void> _toggleVoiceInput(String key) async {
+    if (saving || key == 'dateOfBirth') return;
+
+    // Listener onPointerDown يطلب الإيقاف أولاً. إذا كان هذا الضغط على
+    // ميكروفون حقل آخر، نضع الحقل الجديد في الذاكرة ونترك الإيقاف السابق
+    // يعمل في الخلفية. لا يوجد await هنا، لذلك الانتقال فوري من منظور المستخدم.
+    if (_speechStopRequested || _speechListening || _activeVoiceField != null) {
+      final current = _activeVoiceField;
+
+      // الضغط على نفس الميكروفون: إيقاف فقط.
+      if (current == key && (_speechListening || _speechStopRequested)) {
+        _pendingVoiceField = null;
+        _requestSpeechStop();
+        return;
+      }
+
+      // الضغط على ميكروفون آخر: أوقف الحالي وضع الجديد في طابور واحد.
+      if (current != null && current != key) {
+        _pendingVoiceField = key;
+        _requestSpeechStop(nextField: key);
+        return;
+      }
+    }
+
+    _pendingVoiceField = key;
+    _startPendingVoiceField();
+  }
+
   Widget _textField(
     String key, {
     bool required = false,
@@ -506,6 +747,22 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
+        suffixIcon: _voiceFields.contains(key)
+            ? IconButton(
+                tooltip: _speechListening && _activeVoiceField == key
+                    ? 'إيقاف التسجيل'
+                    : 'الإدخال الصوتي بالعربية',
+                onPressed: () => _toggleVoiceInput(key),
+                icon: Icon(
+                  _speechListening && _activeVoiceField == key
+                      ? Icons.mic_rounded
+                      : Icons.mic_none_rounded,
+                  color: _speechListening && _activeVoiceField == key
+                      ? Colors.red
+                      : null,
+                ),
+              )
+            : null,
       ),
       validator: null,
       onChanged: (_) => _liveSyncKey.currentState?.pushValues(_liveValues()),
@@ -889,7 +1146,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => _stopVoiceFromPointer(),
+      child: Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         title: const Text(
@@ -918,6 +1178,29 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   padding: const EdgeInsets.all(17),
                   children: [
                     _intro(),
+                    if (_speechError != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.mic_off_outlined, color: Colors.orange),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _speechError!,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     if (error != null) ...[
                       const SizedBox(height: 12),
                       _error(error!),
@@ -1211,6 +1494,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         ],
       ),
     );
+      );
   }
 
   Widget _socialWelfareSelect() {
