@@ -870,7 +870,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
 
     final phone = _n('homePhoneNumber')!;
-    if (!RegExp(r'^[0-9٠-٩+\\- ]{7,20}$').hasMatch(phone)) {
+    if (!RegExp(r'^[0-9٠-٩+ -]{7,20}$').hasMatch(phone)) {
+).hasMatch(phone)) {
       return 'رقم الهاتف غير صالح';
     }
 
