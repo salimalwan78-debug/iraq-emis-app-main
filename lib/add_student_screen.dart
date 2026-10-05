@@ -1493,8 +1493,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             ),
         ],
       ),
+      ),
     );
-      );
   }
 
   Widget _socialWelfareSelect() {
