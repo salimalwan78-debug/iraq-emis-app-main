@@ -582,7 +582,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
     final validationError = _validateBeforeSave();
     if (validationError != null) {
-      setState(() => error = validationError);
+      if (mounted) {
+        setState(() => error = validationError);
+        _showSaveMessage(validationError, isError: true);
+      }
       return;
     }
 
@@ -590,6 +593,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       saving = true;
       error = null;
     });
+    _showSaveMessage('جاري التحقق من البيانات وإرسال الطالب إلى EMIS...', isError: false);
 
     try {
       final idType = int.parse(c['idType']!.text);
@@ -604,6 +608,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
       // EMIS performs this check before submitting a national ID.
       if (_isNationalId && identificationNumber.isNotEmpty) {
+        _showSaveMessage('جاري التحقق من رقم البطاقة الوطنية الموحدة...', isError: false);
         final check = await _get(
           '/student/checknationalidnumber?value=${Uri.encodeQueryComponent(identificationNumber)}',
         );
@@ -686,13 +691,18 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         },
       };
 
+      _showSaveMessage('جاري إرسال بيانات الطالب إلى EMIS...', isError: false);
+      final encodedPayload = jsonEncode(payload);
+      debugPrint('EMIS addstudent payload: $encodedPayload');
+
       final response = await http.post(
         Uri.parse('https://emis.moedu.gov.iq/api/student/addstudent'),
         headers: h,
-        body: jsonEncode(payload),
+        body: encodedPayload,
       );
 
       final responseText = utf8.decode(response.bodyBytes);
+      debugPrint('EMIS addstudent response ${response.statusCode}: $responseText');
       dynamic responseJson;
       try {
         responseJson = jsonDecode(responseText);
@@ -702,9 +712,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final serverMessage = responseJson is Map
-            ? '${responseJson['message'] ?? responseJson['error'] ?? responseText}'
+            ? '${responseJson['message'] ?? responseJson['error'] ?? responseJson['errors'] ?? responseText}'
             : responseText;
-        throw Exception('HTTP ${response.statusCode}: $serverMessage');
+        throw Exception('رفض EMIS الطلب (HTTP ${response.statusCode}): $serverMessage');
       }
 
       final successMessage = responseJson is Map &&
@@ -713,19 +723,16 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           : 'تمت إضافة الطالب بنجاح';
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            successMessage,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.green,
-        ),
-      );
-      Navigator.pop(context, true);
+      setState(() => error = null);
+      _showSaveMessage(successMessage, isError: false);
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
+      final friendly = _friendlyError(e);
+      debugPrint('EMIS add student error: $friendly');
       if (mounted) {
-        setState(() => error = _friendlyError(e));
+        setState(() => error = friendly);
+        _showSaveMessage(friendly, isError: true);
       }
     } finally {
       if (mounted) setState(() => saving = false);
@@ -788,6 +795,24 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
 
     return null;
+  }
+
+  void _showSaveMessage(String message, {required bool isError}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          textDirection: TextDirection.rtl,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade700,
+        duration: Duration(seconds: isError ? 5 : 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   String _friendlyError(Object error) {
