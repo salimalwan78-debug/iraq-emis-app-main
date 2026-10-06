@@ -74,7 +74,7 @@ class MainActivity : FlutterActivity() {
 
     /**
      * Android itself decides which service is the default SpeechRecognizer through
-     * "voice_recognition_service". On some Samsung/Android builds the
+     * Settings.Secure.VOICE_RECOGNITION_SERVICE. On some Samsung/Android builds the
      * Google app is installed and works perfectly, but it does NOT publish the
      * recognition service under com.google.android.googlequicksearchbox. Therefore
      * requiring that exact package was the reason the previous build reported
@@ -84,7 +84,7 @@ class MainActivity : FlutterActivity() {
         val flattened = try {
             Settings.Secure.getString(
                 contentResolver,
-                "voice_recognition_service"
+                Settings.Secure.VOICE_RECOGNITION_SERVICE
             )
         } catch (_: Exception) {
             null
@@ -244,14 +244,24 @@ class MainActivity : FlutterActivity() {
         if (!active || explicitStop) return
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
+            // نستخدم نموذج web_search لأن خدمة Google التي يستخدمها تطبيق Google
+            // نفسه محسّنة لعدد أكبر من اللغات من free_form، وهو مهم للعربية.
+            // نُبقي ar-IQ كلغة مطلوبة حتى يفهم أسماء الطلاب والألفاظ العراقية.
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, currentLocale)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, currentLocale)
+            putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, false)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 12000)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 10000)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 800)
+            // لا نطلب التعرف دون اتصال قسراً. إذا كانت خدمة Google تستطيع
+            // استخدام التعرف الشبكي فلتستخدمه، لأن ذلك غالباً أفضل للعبارات
+            // العربية الضعيفة والأسماء.
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+            // نمنح الخدمة زمناً أطول قبل اعتبار الكلام منتهياً. بعض الخدمات
+            // قد تتجاهل هذه القيم، لكن لا توجد هنا قيمة قصيرة تفرض الإغلاق.
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 15000)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 12000)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 250)
         }
         try {
             recognizer?.startListening(intent)
@@ -338,16 +348,31 @@ class MainActivity : FlutterActivity() {
         }
 
         override fun onResults(results: Bundle?) {
-            val values = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            val text = values?.firstOrNull()?.trim().orEmpty()
-            emit("result", currentSessionId, mapOf("text" to text))
+            val values = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
+            val confidences = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+            val text = values.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+            emit(
+                "result",
+                currentSessionId,
+                mapOf(
+                    "text" to text,
+                    "alternates" to values,
+                    "confidences" to (confidences?.toList() ?: emptyList<Float>())
+                )
+            )
             if (active && !explicitStop) scheduleRestart(120L)
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
-            val values = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            val text = values?.firstOrNull()?.trim().orEmpty()
-            if (text.isNotEmpty()) emit("partial", currentSessionId, mapOf("text" to text))
+            val values = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
+            val text = values.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+            if (text.isNotEmpty()) {
+                emit(
+                    "partial",
+                    currentSessionId,
+                    mapOf("text" to text, "alternates" to values)
+                )
+            }
         }
 
         override fun onEvent(eventType: Int, params: Bundle?) {}
