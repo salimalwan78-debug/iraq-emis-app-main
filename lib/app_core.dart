@@ -8,6 +8,9 @@ class AppCore {
   static bool isAudioMuted = true; // اجعل القيمة الافتراضية صحيحة (موقف لحين قراءة التفضيلات)
   static double currentVolume = 0.5;
   static bool voiceInputEnabled = true;
+  /// google = Android SpeechRecognizer (يفضل خدمة Google/الخدمة الافتراضية)،
+  /// legacy = مسار speech_to_text القديم الذي كان يعمل سابقاً.
+  static String voiceRecognitionEngine = 'google';
 
   static Future<void> initPreferences() async {
     final prefs = await SharedPreferences.getInstance();
@@ -18,6 +21,7 @@ class AppCore {
     isAudioMuted = prefs.getBool('isAudioMuted') ?? true;
     currentVolume = prefs.getDouble('currentVolume') ?? 0.5;
     voiceInputEnabled = prefs.getBool('voiceInputEnabled') ?? true;
+    voiceRecognitionEngine = prefs.getString('voiceRecognitionEngine') ?? 'google';
     await audioPlayer.setVolume(currentVolume);
 
     if (!isAudioMuted) {
@@ -66,6 +70,13 @@ class AppCore {
     voiceInputEnabled = enabled;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('voiceInputEnabled', enabled);
+  }
+
+  static Future<void> setVoiceRecognitionEngine(String engine) async {
+    final value = engine == 'legacy' ? 'legacy' : 'google';
+    voiceRecognitionEngine = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('voiceRecognitionEngine', value);
   }
   static void toggleTheme() {
     bool isDark = themeNotifier.value == ThemeMode.dark;

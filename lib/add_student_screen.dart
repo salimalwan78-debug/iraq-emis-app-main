@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'app_core.dart';
 import 'emis_live_sync.dart';
 import 'google_speech_service.dart';
+import 'legacy_speech_service.dart';
+import 'package:speech_to_text/speech_recognition_error.dart';
 
 class AddStudentScreen extends StatefulWidget {
   final String token;
@@ -36,6 +38,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   bool _speechStopRequested = false;
   bool _micPointerDown = false;
   StreamSubscription<Map<String, dynamic>>? _googleSpeechSubscription;
+  bool _legacySpeechInitialized = false;
+  bool _legacySpeechAvailable = false;
+  Timer? _legacyFinalizationTimer;
+  Timer? _googleFinalizationTimer;
   String? error;
   String? _saveStatus;
   bool _saveStatusIsError = false;
@@ -222,6 +228,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _liveTimer?.cancel();
     unawaited(GoogleSpeechService.cancelListening());
     _googleSpeechSubscription?.cancel();
+    _legacyFinalizationTimer?.cancel();
+    _googleFinalizationTimer?.cancel();
+    unawaited(LegacySpeechService.cancel());
     for (final controller in c.values) {
       controller.dispose();
     }
@@ -637,6 +646,125 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     return false;
   }
 
+  bool get _usingLegacyVoice => AppCore.voiceRecognitionEngine == 'legacy';
+
+  Future<bool> _initLegacySpeech() async {
+    if (_legacySpeechInitialized) return _legacySpeechAvailable;
+    _legacySpeechAvailable = await LegacySpeechService.initialize(
+      onStatus: (status) {
+        if (!mounted || !_usingLegacyVoice) return;
+        final listening = status == 'listening';
+        setState(() => _speechListening = listening);
+        if (!listening && _activeVoiceSessionId != null && !_speechStopRequested) {
+          _scheduleLegacyFinalization();
+        }
+        if (!listening && _speechStopRequested) {
+          _scheduleLegacyFinalization();
+        }
+      },
+      onError: (SpeechRecognitionError error) {
+        if (!mounted || !_usingLegacyVoice) return;
+        setState(() {
+          _speechListening = false;
+          _speechError = error.errorMsg;
+        });
+        _scheduleLegacyFinalization();
+      },
+    );
+    _legacySpeechInitialized = true;
+    return _legacySpeechAvailable;
+  }
+
+  void _scheduleLegacyFinalization() {
+    _legacyFinalizationTimer?.cancel();
+    _legacyFinalizationTimer = Timer(const Duration(milliseconds: 450), () {
+      if (!mounted || !_usingLegacyVoice) return;
+      _finishLegacyVoiceSessionAndStartPending();
+    });
+  }
+
+  Future<void> _finishLegacyVoiceSessionAndStartPending() async {
+    _legacyFinalizationTimer?.cancel();
+    _legacyFinalizationTimer = null;
+    final pending = _pendingVoiceField;
+    _pendingVoiceField = null;
+    _speechStopRequested = false;
+    _activeVoiceSessionId = null;
+    _activeVoiceField = null;
+    if (mounted) setState(() => _speechListening = false);
+    if (pending != null && mounted && _usingLegacyVoice) {
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (mounted) await _startVoiceSession(pending);
+    }
+  }
+
+  Future<void> _startLegacyVoiceSession(String key) async {
+    if (!mounted || saving) return;
+    final available = await _initLegacySpeech();
+    if (!available || !mounted) {
+      _showVoiceMessage('التعرف الصوتي الاحتياطي غير متاح على الجهاز.');
+      return;
+    }
+
+    final sessionId = ++_nextVoiceSessionId;
+    _activeVoiceSessionId = sessionId;
+    _activeVoiceField = key;
+    _speechStopRequested = false;
+    if (mounted) {
+      setState(() {
+        _speechError = null;
+        _speechListening = true;
+      });
+    }
+
+    try {
+      await LegacySpeechService.listen(
+        onResult: (dynamic result) {
+          if (!mounted || !_usingLegacyVoice || _activeVoiceSessionId != sessionId) return;
+          final raw = '${result.recognizedWords ?? ''}'.trim();
+          if (raw.isEmpty) return;
+          final text = _numericVoiceFields.contains(key)
+              ? _cleanNumericSpeech(raw)
+              : _cleanArabicSpeech(raw);
+          if (text.isEmpty) return;
+          final controller = c[key];
+          if (controller == null) return;
+          controller.value = TextEditingValue(
+            text: text,
+            selection: TextSelection.collapsed(offset: text.length),
+          );
+          _liveSyncKey.currentState?.pushValues(_liveValues());
+          if (result.finalResult == true) {
+            _finishLegacyVoiceSessionAndStartPending();
+          }
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _speechError = '$e');
+      _scheduleLegacyFinalization();
+    }
+  }
+
+  void _requestLegacySpeechStop({String? nextField}) {
+    if (nextField != null) _pendingVoiceField = nextField;
+    if (_activeVoiceSessionId == null) return;
+    if (_speechStopRequested) return;
+    _speechStopRequested = true;
+    if (mounted) setState(() => _speechListening = false);
+    unawaited(LegacySpeechService.stop().whenComplete(_scheduleLegacyFinalization));
+  }
+
+  void _scheduleGoogleFinalizationFallback() {
+    _googleFinalizationTimer?.cancel();
+    _googleFinalizationTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (!mounted || _usingLegacyVoice) return;
+      if (_activeVoiceSessionId != null && _speechStopRequested) {
+        _finishVoiceSessionAndStartPending();
+      }
+    });
+  }
+
   void _handleGoogleSpeechEvent(Map<String, dynamic> event) {
     if (!mounted) return;
     final sessionId = int.tryParse('${event['sessionId'] ?? ''}');
@@ -696,6 +824,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   Future<void> _startVoiceSession(String key) async {
     if (!mounted || saving || key == 'dateOfBirth') return;
     if (!await _ensureMicrophoneAccess()) return;
+    if (_usingLegacyVoice) {
+      await _startLegacyVoiceSession(key);
+      return;
+    }
 
     final info = await GoogleSpeechService.getInfo();
     if (info['available'] != true) {
@@ -726,6 +858,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   void _requestSpeechStop({String? nextField}) {
+    if (_usingLegacyVoice) {
+      _requestLegacySpeechStop(nextField: nextField);
+      return;
+    }
     if (nextField != null) _pendingVoiceField = nextField;
     if (_activeVoiceSessionId == null) {
       final pending = _pendingVoiceField;
@@ -739,12 +875,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
     _speechStopRequested = true;
     setState(() => _speechListening = false);
+    _scheduleGoogleFinalizationFallback();
     // لا ننتظر هنا. Google يعيد النتيجة النهائية بعد stopListening، وبعدها
     // _handleGoogleSpeechEvent يربطها بنفس sessionId ثم يفتح الحقل التالي.
     unawaited(GoogleSpeechService.stopListening());
   }
 
   Future<void> _finishVoiceSessionAndStartPending() async {
+    _googleFinalizationTimer?.cancel();
+    _googleFinalizationTimer = null;
     final pending = _pendingVoiceField;
     _pendingVoiceField = null;
     _speechStopRequested = false;

@@ -25,22 +25,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final info = await GoogleSpeechService.getInfo();
       final available = info['available'] == true;
+      final googleAvailable = info['googleAvailable'] == true;
+      final provider = '${info['provider'] ?? ''}'.trim();
+      final defaultPackage = '${info['defaultPackage'] ?? ''}'.trim();
       if (!mounted) return;
       setState(() {
         _googleSpeechAvailable = available;
         _checkingGoogleSpeech = false;
-        _googleSpeechMessage = available
-            ? 'خدمة Google للتعرف على الكلام متوفرة على الجهاز.'
-            : 'خدمة Google للتعرف على الكلام غير متوفرة. تأكد من تثبيت أو تحديث تطبيق Google.';
+        if (!available) {
+          _googleSpeechMessage =
+              'لا توجد خدمة تعرف صوتي افتراضية متاحة في Android. افتح إعدادات إدخال الصوت وتأكد من تفعيل خدمة التعرف.';
+        } else if (googleAvailable) {
+          _googleSpeechMessage =
+              'Google متاحة مباشرة. مزود التعرف الحالي: ${provider.isEmpty ? 'Google' : provider}.';
+        } else {
+          _googleSpeechMessage =
+              'تطبيق Google مثبت، لكن Android لا يعرضه كخدمة مستقلة. سيتم استخدام خدمة التعرف الافتراضية${defaultPackage.isEmpty ? '' : ' ($defaultPackage)'}، وقد تكون Google.';
+        }
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _checkingGoogleSpeech = false;
         _googleSpeechAvailable = false;
-        _googleSpeechMessage = 'تعذر فحص خدمة Google للتعرف على الكلام.';
+        _googleSpeechMessage = 'تعذر فحص خدمات التعرف الصوتي في Android.';
       });
     }
+  }
+
+  Future<void> _setVoiceEngine(String? engine) async {
+    if (engine == null) return;
+    await AppCore.setVoiceRecognitionEngine(engine);
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _setVoiceEnabled(bool enabled) async {
@@ -185,12 +202,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 16),
                       ),
                       subtitle: Text(
-                        'استخدام خدمة Google للتعرف على الكلام في حقول إضافة الطالب',
+                        'اختيار محرك التعرف الصوتي المستخدم في حقول إضافة الطالب',
                         style: TextStyle(color: isDark ? Colors.white70 : Colors.grey[700], height: 1.35),
                       ),
                       value: AppCore.voiceInputEnabled,
                       activeColor: Colors.green,
                       onChanged: _setVoiceEnabled,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      child: DropdownButtonFormField<String>(
+                        value: AppCore.voiceRecognitionEngine,
+                        decoration: InputDecoration(
+                          labelText: 'محرك التعرف الصوتي',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          filled: true,
+                          fillColor: isDark ? Colors.black26 : const Color(0xFFF7F8FA),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'google',
+                            child: Text('Google / خدمة Android الافتراضية'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'legacy',
+                            child: Text('التعرف السابق (speech_to_text)'),
+                          ),
+                        ],
+                        onChanged: _setVoiceEngine,
+                      ),
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 15),
@@ -235,7 +275,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: const Padding(
                   padding: EdgeInsets.all(16),
                   child: Text(
-                    'عند تفعيل الميكروفون، يتم استخدام خدمة Android SpeechRecognizer الموجهة إلى خدمة Google الموجودة على الجهاز. عند إيقافه لن تعمل أزرار الميكروفون في صفحة إضافة الطالب حتى تعيد تفعيله من هنا.',
+                    'الخيار الأول يستخدم Android SpeechRecognizer مع خدمة Google عندما تكون متاحة مباشرة، وإذا لم تكن ظاهرة كخدمة مستقلة يستخدم مزود التعرف الافتراضي في Android. إذا بقي التعرف غير مناسب، اختر «التعرف السابق (speech_to_text)» للعودة إلى الطريقة التي كانت تعمل سابقاً. عند إيقاف الميكروفون لن تعمل أزراره في صفحة إضافة الطالب حتى تعيد تفعيله من هنا.',
                     textDirection: TextDirection.rtl,
                     style: TextStyle(fontWeight: FontWeight.w600, height: 1.5),
                   ),
