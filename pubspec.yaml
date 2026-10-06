@@ -25,6 +25,7 @@ dependencies:
   image_picker: ^1.0.7
 
   # صلاحيات الكاميرا والملفات وغيرها
+  speech_to_text: ^7.4.0
   permission_handler: ^11.3.0
 
   # التخزين المحلي
@@ -36,7 +37,7 @@ dependencies:
   # إزالة خلفية الشخص محليًا
   google_mlkit_selfie_segmentation: 0.12.1
 
-  # التعرف الصوتي يتم عبر Android SpeechRecognizer الموجه إلى خدمة Google مباشرة
+  # التعرف الصوتي الأساسي عبر Android SpeechRecognizer، مع مسار speech_to_text احتياطي.
 
 dev_dependencies:
   flutter_test:
