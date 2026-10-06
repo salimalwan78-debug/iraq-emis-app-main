@@ -26,6 +26,7 @@ class AddStudentScreen extends StatefulWidget {
 class _AddStudentScreenState extends State<AddStudentScreen> {
   final _form = GlobalKey<FormState>();
   final Map<String, TextEditingController> c = {};
+  final Map<String, GlobalKey> _voiceFieldKeys = {};
   final Map<String, List<Map<String, dynamic>>> options = {};
 
   bool loading = true, saving = false;
@@ -45,6 +46,46 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   bool _legacySpeechAvailable = false;
   Timer? _legacyFinalizationTimer;
   Timer? _googleFinalizationTimer;
+
+  GlobalKey _voiceFieldKey(String key) =>
+      _voiceFieldKeys.putIfAbsent(key, GlobalKey.new);
+
+  void _scrollVoiceFieldIntoView(String key) {
+    if (!mounted) return;
+    final fieldKey = _voiceFieldKeys[key];
+    final fieldContext = fieldKey?.currentContext;
+    if (fieldContext == null) {
+      // ListView يبني العناصر القريبة من الشاشة فقط؛ أعد المحاولة بعد اكتمال
+      // دورة البناء حتى يكون الحقل قد دخل شجرة العناصر.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final retryContext = _voiceFieldKeys[key]?.currentContext;
+        if (retryContext != null) {
+          Scrollable.ensureVisible(
+            retryContext,
+            duration: const Duration(milliseconds: 420),
+            curve: Curves.easeOutCubic,
+            alignment: 0.16,
+            alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+          );
+        }
+      });
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final context = _voiceFieldKeys[key]?.currentContext;
+      if (context == null) return;
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+        alignment: 0.16,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+      );
+    });
+  }
   String? error;
   String? _saveStatus;
   bool _saveStatusIsError = false;
@@ -787,6 +828,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final sessionId = ++_nextVoiceSessionId;
     _activeVoiceSessionId = sessionId;
     _activeVoiceField = key;
+    _scrollVoiceFieldIntoView(key);
     _speechStopRequested = false;
     if (mounted) {
       setState(() {
@@ -936,6 +978,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final sessionId = ++_nextVoiceSessionId;
     _activeVoiceSessionId = sessionId;
     _activeVoiceField = key;
+    _scrollVoiceFieldIntoView(key);
     _speechStopRequested = false;
     if (mounted) {
       setState(() {
@@ -1272,6 +1315,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     TextInputType? keyboard,
   }) {
     return TextFormField(
+      key: _voiceFieldKeys.containsKey(key) || _voiceFields.contains(key) || _numericVoiceFields.contains(key)
+          ? _voiceFieldKey(key)
+          : null,
       controller: c[key],
       maxLines: maxLines,
       keyboardType: keyboard,
@@ -1725,6 +1771,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
               child: Form(
                 key: _form,
                 child: ListView(
+                  cacheExtent: 5000,
                   padding: const EdgeInsets.all(17),
                   children: [
                     _intro(),
