@@ -37,6 +37,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   int _nextVoiceSessionId = 0;
   bool _speechStopRequested = false;
   bool _micPointerDown = false;
+  bool _voiceArrowPointerDown = false;
+  bool _voiceSequentialMode = false;
+  int _sequentialVoiceIndex = 0;
   StreamSubscription<Map<String, dynamic>>? _googleSpeechSubscription;
   bool _legacySpeechInitialized = false;
   bool _legacySpeechAvailable = false;
@@ -110,6 +113,39 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     'homePhoneNumber',
     'censusNumber',
   };
+
+  // ترتيب الحقول التي ينتقل بينها زر السهم الثابت. الحقول المخفية بحسب نوع
+  // الهوية لا تدخل في التسلسل، وكذلك أي حقل غير ظاهر فعلياً في الشاشة.
+  static const List<String> _voiceSequentialOrder = [
+    'name',
+    'fatherName',
+    'grandFatherName',
+    'fathersGrandFatherName',
+    'surName',
+    'motherName',
+    'mothersFatherName',
+    'mothersGrandFatherName',
+    'nationalId',
+    'idNumber',
+    'jinsiyaIdNumber',
+    'issuer',
+    'recordNumber',
+    'pageNumber',
+    'nameOfDocument',
+    'birthCertificateNumber',
+    'otherIdNumber',
+    'homeTown',
+    'homePhoneNumber',
+    'notes',
+    'town',
+    'area',
+    'quarter',
+    'street',
+    'address1',
+    'address2',
+    'closestLocation',
+    'censusNumber',
+  ];
 
   final labels = const <String, String>{
     'name': 'الإسم',
@@ -779,14 +815,32 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
 
     if (type == 'partial' || type == 'result') {
-      final raw = '${event['text'] ?? ''}'.trim();
-      if (raw.isNotEmpty) {
-        final text = _numericVoiceFields.contains(key)
+      final alternates = (event['alternates'] is List)
+          ? (event['alternates'] as List).map((e) => '$e').toList()
+          : <String>[];
+      final candidates = <String>[
+        '${event['text'] ?? ''}',
+        ...alternates,
+      ].map((e) => e.trim()).where((e) => e.isNotEmpty);
+
+      String text = '';
+      for (final raw in candidates) {
+        final cleaned = _numericVoiceFields.contains(key)
             ? _cleanNumericSpeech(raw)
             : _cleanArabicSpeech(raw);
-        if (text.isNotEmpty) {
-          final controller = c[key];
-          if (controller != null) {
+        if (cleaned.isNotEmpty) {
+          text = cleaned;
+          break;
+        }
+      }
+
+      if (text.isNotEmpty) {
+        final controller = c[key];
+        if (controller != null) {
+          // لا نستبدل نصاً جيداً بناتج جزئي أقصر بلا داعٍ.
+          final current = controller.text.trim();
+          final shouldApply = type == 'result' || current.isEmpty || text.length >= current.length;
+          if (shouldApply) {
             controller.value = TextEditingValue(
               text: text,
               selection: TextSelection.collapsed(offset: text.length),
@@ -898,6 +952,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   void _stopVoiceFromPointer() {
+    // السهم الثابت يضع هذا العلم قبل أن يصل pointer إلى Listener الأب؛
+    if (_voiceArrowPointerDown) {
+      _voiceArrowPointerDown = false;
+      return;
+    }
     // الميكروفون نفسه يضع هذا العلم قبل أن يصل pointer إلى Listener الأب؛
     // لذلك الضغط على الميكروفون لا يوقف الجلسة قبل تنفيذ onPressed.
     if (_micPointerDown) {
@@ -915,6 +974,221 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     Future<void>.microtask(() => _micPointerDown = false);
   }
 
+  bool _isVoiceFieldCurrentlyVisible(String key) {
+    if (!_voiceFields.contains(key) && !_numericVoiceFields.contains(key)) return false;
+    if (key == 'nationalId') return _isNationalId;
+    if (key == 'idNumber' || key == 'jinsiyaIdNumber' || key == 'recordNumber' || key == 'pageNumber') return _isCivilId;
+    if (key == 'birthCertificateNumber') return _isBirthCertificate;
+    if (key == 'otherIdNumber') return _isOtherId;
+    if (key == 'nameOfDocument') return _isBirthCertificate || _isOtherId || _isCivilId;
+    return c.containsKey(key);
+  }
+
+  List<String> _currentVoiceSequence() => _voiceSequentialOrder
+      .where(_isVoiceFieldCurrentlyVisible)
+      .toList(growable: false);
+
+  Future<void> _startSequentialVoiceMode() async {
+    if (saving || !AppCore.voiceInputEnabled) return;
+    if (!await _ensureMicrophoneAccess()) return;
+    final sequence = _currentVoiceSequence();
+    if (sequence.isEmpty) {
+      _showVoiceMessage('لا توجد حقول صوتية متاحة حالياً.');
+      return;
+    }
+    setState(() {
+      _voiceSequentialMode = true;
+      _sequentialVoiceIndex = 0;
+    });
+    await _startVoiceSession(sequence.first);
+    if (mounted && _activeVoiceSessionId == null) {
+      setState(() => _voiceSequentialMode = false);
+    }
+  }
+
+  void _stopSequentialVoiceMode() {
+    if (!_voiceSequentialMode) return;
+    setState(() => _voiceSequentialMode = false);
+    _pendingVoiceField = null;
+    if (_activeVoiceSessionId != null) _requestSpeechStop();
+  }
+
+  Future<void> _advanceSequentialVoice() async {
+    if (!_voiceSequentialMode || saving) return;
+    if (!AppCore.voiceInputEnabled) {
+      _showVoiceMessage('الميكروفون مغلق من الإعدادات.');
+      return;
+    }
+    final sequence = _currentVoiceSequence();
+    if (sequence.isEmpty) return;
+
+    var index = _sequentialVoiceIndex;
+    if (index >= sequence.length) index = sequence.length - 1;
+    if (index >= sequence.length - 1) {
+      _showVoiceMessage('تم الوصول إلى آخر حقل صوتي.');
+      return;
+    }
+
+    final nextIndex = index + 1;
+    final next = sequence[nextIndex];
+    if (mounted) setState(() => _sequentialVoiceIndex = nextIndex);
+
+    if (_activeVoiceSessionId != null) {
+      _pendingVoiceField = next;
+      _requestSpeechStop(nextField: next);
+    } else {
+      await _startVoiceSession(next);
+    }
+  }
+
+  Future<void> _retreatSequentialVoice() async {
+    if (!_voiceSequentialMode || saving) return;
+    if (!AppCore.voiceInputEnabled) {
+      _showVoiceMessage('الميكروفون مغلق من الإعدادات.');
+      return;
+    }
+    final sequence = _currentVoiceSequence();
+    if (sequence.isEmpty) return;
+
+    var index = _sequentialVoiceIndex;
+    if (index <= 0) {
+      _showVoiceMessage('أنت عند أول حقل صوتي.');
+      return;
+    }
+
+    final previousIndex = index - 1;
+    final previous = sequence[previousIndex];
+    if (mounted) setState(() => _sequentialVoiceIndex = previousIndex);
+
+    if (_activeVoiceSessionId != null) {
+      _pendingVoiceField = previous;
+      _requestSpeechStop(nextField: previous);
+    } else {
+      await _startVoiceSession(previous);
+    }
+  }
+
+  void _markVoiceArrowPointerDown() {
+    _voiceArrowPointerDown = true;
+    Future<void>.microtask(() => _voiceArrowPointerDown = false);
+  }
+
+  Future<void> _toggleSequentialModeFromButton() async {
+    if (_voiceSequentialMode) {
+      _stopSequentialVoiceMode();
+    } else {
+      await _startSequentialVoiceMode();
+    }
+  }
+
+  Widget _sequentialVoiceControl() {
+    final enabled = _voiceSequentialMode;
+    return Card(
+      margin: const EdgeInsets.only(top: 8, bottom: 4),
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: SwitchListTile(
+        secondary: Icon(
+          enabled ? Icons.keyboard_double_arrow_down_rounded : Icons.keyboard_arrow_down_rounded,
+          color: enabled ? Colors.green : Colors.grey,
+          size: 32,
+        ),
+        title: const Text(
+          'التنقل الصوتي بين الحقول',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: const Text(
+          'عند التفعيل يبدأ من أول حقل صوتي ويظهر سهمان ثابتان يسار الشاشة: للأعلى للرجوع وللأسفل للانتقال.',
+          textDirection: TextDirection.rtl,
+        ),
+        value: enabled,
+        activeColor: Colors.green,
+        onChanged: (_) => _toggleSequentialModeFromButton(),
+      ),
+    );
+  }
+
+  Widget _fixedSequentialArrow() {
+    if (!_voiceSequentialMode) return const SizedBox.shrink();
+
+    final sequence = _currentVoiceSequence();
+    final atFirst = _sequentialVoiceIndex <= 0 || sequence.isEmpty;
+    final atLast = sequence.isEmpty || _sequentialVoiceIndex >= sequence.length - 1;
+
+    Widget arrowButton({
+      required IconData icon,
+      required VoidCallback? onTap,
+      required bool disabled,
+      required String tooltip,
+    }) {
+      return Tooltip(
+        message: tooltip,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: disabled ? null : onTap,
+            child: SizedBox(
+              width: 58,
+              height: 68,
+              child: Icon(
+                icon,
+                size: 54,
+                color: disabled ? Colors.grey.shade400 : Colors.green.shade700,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Positioned(
+      left: 0,
+      top: MediaQuery.of(context).size.height * 0.38,
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (_) => _markVoiceArrowPointerDown(),
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 62,
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.97),
+              borderRadius: const BorderRadius.horizontal(right: Radius.circular(24)),
+              boxShadow: const [
+                BoxShadow(blurRadius: 9, offset: Offset(1, 2), color: Colors.black26),
+              ],
+              border: Border.all(color: Colors.green, width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                arrowButton(
+                  icon: Icons.keyboard_arrow_up_rounded,
+                  onTap: _retreatSequentialVoice,
+                  disabled: atFirst,
+                  tooltip: 'العودة إلى الحقل الصوتي السابق',
+                ),
+                Container(
+                  width: 36,
+                  height: 2,
+                  color: Colors.green.shade200,
+                ),
+                arrowButton(
+                  icon: Icons.keyboard_arrow_down_rounded,
+                  onTap: _advanceSequentialVoice,
+                  disabled: atLast,
+                  tooltip: 'الانتقال إلى الحقل الصوتي التالي',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _toggleVoiceInput(String key) async {
     if (saving || key == 'dateOfBirth') return;
 
@@ -923,6 +1197,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'الميكروفون مغلق من الإعدادات. افتح الإعدادات وفَعّل «الميكروفون والتعرف الصوتي» ثم عد إلى إضافة الطالب.',
       );
       return;
+    }
+
+    if (_voiceSequentialMode) {
+      final sequence = _currentVoiceSequence();
+      final selectedIndex = sequence.indexOf(key);
+      if (selectedIndex >= 0 && mounted) {
+        setState(() => _sequentialVoiceIndex = selectedIndex);
+      }
     }
 
     final current = _activeVoiceField;
@@ -1404,6 +1686,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   padding: const EdgeInsets.all(17),
                   children: [
                     _intro(),
+                    _sequentialVoiceControl(),
                     if (!AppCore.voiceInputEnabled) ...[
                       const SizedBox(height: 8),
                       Container(
@@ -1725,6 +2008,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                 ),
               ),
               ),
+          _fixedSequentialArrow(),
           if (!loading)
             Positioned(
               left: 0,

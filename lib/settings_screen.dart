@@ -233,6 +233,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.green.withOpacity(.10) : Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDark ? Colors.green.shade800 : Colors.green.shade200,
+                          ),
+                        ),
+                        child: const Text(
+                          'خدمة Google هنا ليست Google Cloud المدفوعة: التطبيق يستخدم SpeechRecognizer الموجود في Android مع مزود التعرف الموجود على الجهاز. لا يحتاج هذا المسار إلى مفتاح API أو اشتراك Google Cloud، لكن قد يستخدم اتصال الإنترنت وبيانات الهاتف عند اعتماد الخدمة على التعرف الشبكي.',
+                          textDirection: TextDirection.rtl,
+                          style: TextStyle(fontWeight: FontWeight.w600, height: 1.45, fontSize: 12),
+                        ),
+                      ),
+                    ),
+                    Padding(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 15),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
