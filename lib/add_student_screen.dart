@@ -528,13 +528,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         final listening = status == 'listening';
         setState(() {
           _speechListening = listening;
-          if (!listening && !_speechStopRequested && _pendingVoiceField == null) {
+          if (!listening &&
+              !_speechStopRequested &&
+              _pendingVoiceField == null) {
             _activeVoiceField = null;
           }
         });
 
-        // لا ننتظر هنا داخل واجهة المستخدم. إذا كان المستخدم ضغط ميكروفون
-        // حقلاً جديداً أثناء إغلاق الجلسة السابقة، نبدأه فور انتهاء الجلسة.
         if (!listening && _pendingVoiceField != null) {
           _startPendingVoiceField();
         }
@@ -548,6 +548,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           _activeVoiceField = null;
           _speechError = error.errorMsg;
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('التعرف الصوتي: ${error.errorMsg}')),
+        );
         if (pending != null) {
           _startPendingVoiceField();
         }
@@ -559,14 +562,20 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _speechAvailable = available;
 
     if (!available) {
-      if (mounted) {
-        setState(() {
-          _speechError = 'خدمة التعرف الصوتي غير متاحة على هذا الجهاز';
-        });
-      }
+      _speechLocaleId = null;
       return;
     }
 
+    // إذا اختار المستخدم لغة من الإعدادات، نستخدمها مباشرة.
+    // لا نشترط أن تظهر في locales()، لأن بعض محركات Android/Google
+    // لا تكشف جميع اللغات في القائمة رغم قدرتها على التعرف عليها.
+    final savedLocale = AppCore.voiceLocale;
+    if (savedLocale != null && savedLocale.trim().isNotEmpty) {
+      _speechLocaleId = savedLocale;
+      return;
+    }
+
+    // إعداد أولي فقط عند عدم وجود اختيار محفوظ.
     final locales = await _speech.locales();
     LocaleName? arabic;
     for (final locale in locales) {
@@ -574,19 +583,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         arabic = locale;
         break;
       }
-      if (arabic == null && locale.localeId.toLowerCase().startsWith('ar')) {
+      if (arabic == null &&
+          locale.localeId.toLowerCase().startsWith('ar')) {
         arabic = locale;
       }
     }
 
-    if (mounted) {
-      setState(() {
-        _speechLocaleId = arabic?.localeId;
-        _speechError = arabic == null
-            ? 'خدمة التعرف الصوتي متاحة، لكن اللغة العربية غير متاحة على هذا الجهاز'
-            : null;
-      });
-    }
+    // ar-IQ هو الافتراضي للتطبيق حتى لو لم تعرضه قائمة locales().
+    _speechLocaleId = arabic?.localeId ?? 'ar-IQ';
   }
 
   String _cleanArabicSpeech(String value) {
@@ -656,7 +660,16 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (!mounted || saving || key == 'dateOfBirth') return;
 
     await _initSpeech();
-    if (!_speechAvailable || _speechLocaleId == null || !mounted) return;
+    if (!_speechAvailable || _speechLocaleId == null || !mounted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('التعرف الصوتي غير مهيأ. افتح الإعدادات واختبر التعرف على العربية أولاً.'),
+          ),
+        );
+      }
+      return;
+    }
 
     final existing = c[key]?.text.trim() ?? '';
     setState(() {
@@ -1178,29 +1191,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   padding: const EdgeInsets.all(17),
                   children: [
                     _intro(),
-                    if (_speechError != null) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.orange.shade200),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.mic_off_outlined, color: Colors.orange),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _speechError!,
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
                     if (error != null) ...[
                       const SizedBox(height: 12),
                       _error(error!),

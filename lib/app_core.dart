@@ -7,6 +7,9 @@ class AppCore {
   static final AudioPlayer audioPlayer = AudioPlayer();
   static bool isAudioMuted = true; // اجعل القيمة الافتراضية صحيحة (موقف لحين قراءة التفضيلات)
   static double currentVolume = 0.5;
+  // Locale المختار لاستخدام التعرف الصوتي في التطبيق.
+  // يُضبط من صفحة الإعدادات ويُستخدم لاحقاً في صفحة إضافة الطالب.
+  static String? voiceLocale;
 
   static Future<void> initPreferences() async {
     final prefs = await SharedPreferences.getInstance();
@@ -16,6 +19,7 @@ class AppCore {
     // قراءة الحالة المحفوظة بدقة (افتراضياً صامت إلى أن يفعله المستخدم)
     isAudioMuted = prefs.getBool('isAudioMuted') ?? true;
     currentVolume = prefs.getDouble('currentVolume') ?? 0.5;
+    voiceLocale = prefs.getString('voiceLocale');
     await audioPlayer.setVolume(currentVolume);
 
     if (!isAudioMuted) {
@@ -57,6 +61,13 @@ class AppCore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('currentVolume', vol);
     await audioPlayer.setVolume(vol);
+  }
+
+
+  static Future<void> saveVoiceLocale(String locale) async {
+    voiceLocale = locale;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('voiceLocale', locale);
   }
 
   static void toggleTheme() {
