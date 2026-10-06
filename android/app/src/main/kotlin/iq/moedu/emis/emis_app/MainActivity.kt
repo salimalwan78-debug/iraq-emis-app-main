@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognitionService
 import android.speech.RecognizerIntent
@@ -18,7 +19,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val methodChannelName = "emis.google_speech"
     private val eventChannelName = "emis.google_speech/events"
-    private val googlePackage = "com.google.android.googlequicksearchbox"
+    private val googleQuickSearchPackage = "com.google.android.googlequicksearchbox"
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
@@ -27,6 +28,7 @@ class MainActivity : FlutterActivity() {
     private var explicitStop = false
     private var currentSessionId = 0
     private var currentLocale = "ar-IQ"
+    private var currentEngine = "google"
     private var restartRunnable: Runnable? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -46,31 +48,22 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, methodChannelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "getInfo" -> {
-                        val service = findGoogleRecognitionService()
-                        result.success(
-                            mapOf(
-                                "available" to (service != null && SpeechRecognizer.isRecognitionAvailable(this)),
-                                "package" to (service?.packageName ?: ""),
-                                "service" to (service?.className ?: ""),
-                                "provider" to if (service != null) "Google" else "",
-                            )
-                        )
-                    }
+                    "getInfo" -> result.success(getRecognitionInfo())
 
                     "start" -> {
                         val sessionId = call.argument<Int>("sessionId") ?: 0
                         val locale = call.argument<String>("locale")?.takeIf { it.isNotBlank() } ?: "ar-IQ"
-                        startGoogleRecognition(sessionId, locale, result)
+                        val engine = call.argument<String>("engine")?.takeIf { it.isNotBlank() } ?: "google"
+                        startRecognition(sessionId, locale, engine, result)
                     }
 
                     "stop" -> {
-                        stopGoogleRecognition(cancel = false)
+                        stopRecognition(cancel = false)
                         result.success(true)
                     }
 
                     "cancel" -> {
-                        stopGoogleRecognition(cancel = true)
+                        stopRecognition(cancel = true)
                         result.success(true)
                     }
 
@@ -79,7 +72,29 @@ class MainActivity : FlutterActivity() {
             }
     }
 
-    private fun findGoogleRecognitionService(): ComponentName? {
+    /**
+     * Android itself decides which service is the default SpeechRecognizer through
+     * Settings.Secure.VOICE_RECOGNITION_SERVICE. On some Samsung/Android builds the
+     * Google app is installed and works perfectly, but it does NOT publish the
+     * recognition service under com.google.android.googlequicksearchbox. Therefore
+     * requiring that exact package was the reason the previous build reported
+     * "Google service unavailable".
+     */
+    private fun defaultRecognitionService(): ComponentName? {
+        val flattened = try {
+            Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.VOICE_RECOGNITION_SERVICE
+            )
+        } catch (_: Exception) {
+            null
+        }
+        return flattened?.takeIf { it.isNotBlank() }?.let {
+            ComponentName.unflattenFromString(it)
+        }
+    }
+
+    private fun allRecognitionServices(): List<ComponentName> {
         val intent = Intent(RecognitionService.SERVICE_INTERFACE)
         val services = try {
             if (android.os.Build.VERSION.SDK_INT >= 33) {
@@ -95,30 +110,96 @@ class MainActivity : FlutterActivity() {
             emptyList()
         }
 
-        val google = services.firstOrNull {
-            it.serviceInfo?.packageName == googlePackage
-        }?.serviceInfo ?: return null
-
-        return ComponentName(google.packageName, google.name)
+        return services.mapNotNull { info ->
+            val service = info.serviceInfo ?: return@mapNotNull null
+            ComponentName(service.packageName, service.name)
+        }
     }
 
-    private fun ensureRecognizer(): Boolean {
-        if (recognizer != null) return true
+    private fun findGoogleRecognitionService(): ComponentName? {
+        val services = allRecognitionServices()
+        val default = defaultRecognitionService()
 
-        val service = findGoogleRecognitionService() ?: return false
-        recognizer = try {
-            SpeechRecognizer.createSpeechRecognizer(this, service).also {
+        // الأفضل: إذا كانت خدمة النظام الافتراضية نفسها Google، نستخدمها.
+        if (default != null && default.packageName.startsWith("com.google.android")) {
+            return default
+        }
+
+        // بعض الأجهزة تعرض Google كتطبيق Google Quick Search Box.
+        services.firstOrNull { it.packageName == googleQuickSearchPackage }?.let { return it }
+
+        // بعض إصدارات Android/Google تعرض Speech Recognition تحت حزمة Google أخرى.
+        services.firstOrNull { it.packageName.startsWith("com.google.android") }?.let { return it }
+
+        return null
+    }
+
+    private fun getRecognitionInfo(): Map<String, Any?> {
+        val default = defaultRecognitionService()
+        val google = findGoogleRecognitionService()
+        val frameworkAvailable = try {
+            SpeechRecognizer.isRecognitionAvailable(this)
+        } catch (_: Exception) {
+            false
+        }
+
+        val effective = google ?: default
+        val provider = when {
+            effective?.packageName?.startsWith("com.google.android") == true -> "Google"
+            effective != null -> "النظام / مزود التعرف الافتراضي"
+            else -> ""
+        }
+
+        return mapOf(
+            // مهم: available لا يعتمد على وجود com.google.android.googlequicksearchbox فقط.
+            "available" to (frameworkAvailable && effective != null),
+            "frameworkAvailable" to frameworkAvailable,
+            "package" to (effective?.packageName ?: ""),
+            "service" to (effective?.className ?: ""),
+            "defaultPackage" to (default?.packageName ?: ""),
+            "defaultService" to (default?.className ?: ""),
+            "googleAvailable" to (google != null),
+            "googlePackage" to (google?.packageName ?: ""),
+            "googleService" to (google?.className ?: ""),
+            "provider" to provider,
+        )
+    }
+
+    private fun createRecognizer(engine: String): SpeechRecognizer? {
+        val service = if (engine == "google") findGoogleRecognitionService() else null
+
+        return try {
+            if (service != null) {
+                SpeechRecognizer.createSpeechRecognizer(this, service)
+            } else {
+                // هذا هو المسار المهم على الأجهزة التي يكون فيها Google هو
+                // مزود النظام لكن لا يمكن العثور عليه تحت اسم حزمة Google المتوقّع.
+                SpeechRecognizer.createSpeechRecognizer(this)
+            }.also {
                 it.setRecognitionListener(recognitionListener)
             }
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun ensureRecognizer(engine: String): Boolean {
+        if (recognizer != null && currentEngine == engine) return true
+
+        try {
+            recognizer?.cancel()
+            recognizer?.destroy()
+        } catch (_: Exception) {
+        }
+        recognizer = createRecognizer(engine)
+        currentEngine = engine
         return recognizer != null
     }
 
-    private fun startGoogleRecognition(
+    private fun startRecognition(
         sessionId: Int,
         locale: String,
+        engine: String,
         result: MethodChannel.Result,
     ) {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
@@ -127,18 +208,17 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        if (findGoogleRecognitionService() == null) {
-            emit(
-                "error",
-                sessionId,
-                mapOf("message" to "خدمة Google للتعرف على الكلام غير متوفرة على هذا الجهاز. تأكد من تثبيت/تحديث تطبيق Google.")
-            )
-            result.success(false)
-            return
-        }
+        val requestedEngine = if (engine == "legacy") "google" else "google"
+        // Google mode: use Google's explicit service when Android exposes it;
+        // otherwise use Android's own default SpeechRecognizer service.
+        // We deliberately do NOT require the Google package to be discoverable:
+        // on some devices Google performs speech recognition through the default
+        // Android service even though its package is not listed as a direct
+        // RecognitionService. Android documents createSpeechRecognizer(context)
+        // as the normal way to use that default service.
 
-        if (!ensureRecognizer()) {
-            emit("error", sessionId, mapOf("message" to "تعذر تشغيل خدمة Google للتعرف على الكلام."))
+        if (!ensureRecognizer(requestedEngine)) {
+            emit("error", sessionId, mapOf("message" to "تعذر إنشاء خدمة التعرف الصوتي. سيتمكن التطبيق من استخدام المسار الاحتياطي من إعدادات EMIS."))
             result.success(false)
             return
         }
@@ -169,10 +249,9 @@ class MainActivity : FlutterActivity() {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, currentLocale)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-            // نطلب زمناً أطول قبل اعتبار الصمت نهاية للكلام. Google قد يتجاهل
-            // هذه القيم حسب إصدار الخدمة، لذلك توجد إعادة تشغيل تلقائية أدناه.
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 12000)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 10000)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 800)
         }
         try {
             recognizer?.startListening(intent)
@@ -183,16 +262,12 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun stopGoogleRecognition(cancel: Boolean) {
+    private fun stopRecognition(cancel: Boolean) {
         explicitStop = true
         active = false
         cancelScheduledRestart()
         try {
-            if (cancel) {
-                recognizer?.cancel()
-            } else {
-                recognizer?.stopListening()
-            }
+            if (cancel) recognizer?.cancel() else recognizer?.stopListening()
         } catch (_: Exception) {
         }
         emit("stopped", currentSessionId, emptyMap())
@@ -225,9 +300,7 @@ class MainActivity : FlutterActivity() {
         payload["type"] = type
         payload["sessionId"] = sessionId
         payload.putAll(data)
-        mainHandler.post {
-            eventSink?.success(payload)
-        }
+        mainHandler.post { eventSink?.success(payload) }
     }
 
     private val recognitionListener = object : RecognitionListener {
@@ -268,20 +341,13 @@ class MainActivity : FlutterActivity() {
             val values = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val text = values?.firstOrNull()?.trim().orEmpty()
             emit("result", currentSessionId, mapOf("text" to text))
-            if (active && !explicitStop) {
-                // Google/Android قد ينهي جلسة التعرف تلقائياً بعد الصمت. نعيد
-                // فتح جلسة جديدة داخل نفس sessionId حتى يبقى الميكروفون مفتوحاً
-                // إلى أن يطلب المستخدم إيقافه بالنقر.
-                scheduleRestart(120L)
-            }
+            if (active && !explicitStop) scheduleRestart(120L)
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
             val values = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val text = values?.firstOrNull()?.trim().orEmpty()
-            if (text.isNotEmpty()) {
-                emit("partial", currentSessionId, mapOf("text" to text))
-            }
+            if (text.isNotEmpty()) emit("partial", currentSessionId, mapOf("text" to text))
         }
 
         override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -291,14 +357,14 @@ class MainActivity : FlutterActivity() {
         SpeechRecognizer.ERROR_AUDIO -> "تعذر الوصول إلى الميكروفون."
         SpeechRecognizer.ERROR_CLIENT -> "حدث خطأ في خدمة التعرف الصوتي."
         SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "لم يتم منح صلاحية الميكروفون."
-        SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED -> "اللغة العربية غير مدعومة في خدمة Google الحالية."
-        SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "اللغة العربية غير متاحة حالياً في خدمة Google."
+        SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED -> "اللغة العربية غير مدعومة في خدمة التعرف الحالية."
+        SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "اللغة العربية غير متاحة حالياً في خدمة التعرف."
         SpeechRecognizer.ERROR_NETWORK,
-        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "تعذر الاتصال بخدمة Google للتعرف على الكلام."
+        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "تعذر الاتصال بخدمة التعرف على الكلام."
         SpeechRecognizer.ERROR_NO_MATCH -> "لم يتم التعرف على الكلام."
-        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "خدمة Google مشغولة، ستتم إعادة المحاولة تلقائياً."
+        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "خدمة التعرف مشغولة، ستتم إعادة المحاولة تلقائياً."
         SpeechRecognizer.ERROR_SERVER,
-        SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> "حدث خطأ في خادم Google للتعرف على الكلام."
+        SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> "حدث خطأ في خادم التعرف على الكلام."
         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "لم يتم سماع كلام واضح، ستتم إعادة المحاولة تلقائياً."
         else -> "خطأ في التعرف الصوتي (رمز $code)."
     }
