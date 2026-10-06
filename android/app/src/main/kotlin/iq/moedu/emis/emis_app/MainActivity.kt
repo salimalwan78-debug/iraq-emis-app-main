@@ -30,6 +30,11 @@ class MainActivity : FlutterActivity() {
     private var currentLocale = "ar-IQ"
     private var currentEngine = "google"
     private var restartRunnable: Runnable? = null
+    private var autoRestart = true
+    private var possibleSilenceMs = 12000L
+    private var completeSilenceMs = 15000L
+    private var minimumSpeechMs = 250L
+    private var restartDelayMs = 700L
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -54,6 +59,11 @@ class MainActivity : FlutterActivity() {
                         val sessionId = call.argument<Int>("sessionId") ?: 0
                         val locale = call.argument<String>("locale")?.takeIf { it.isNotBlank() } ?: "ar-IQ"
                         val engine = call.argument<String>("engine")?.takeIf { it.isNotBlank() } ?: "google"
+                        autoRestart = call.argument<Boolean>("autoRestart") ?: true
+                        possibleSilenceMs = (call.argument<Int>("possibleSilenceMs") ?: 12000).toLong().coerceIn(1000L, 30000L)
+                        completeSilenceMs = (call.argument<Int>("completeSilenceMs") ?: 15000).toLong().coerceIn(1000L, 30000L)
+                        minimumSpeechMs = (call.argument<Int>("minimumSpeechMs") ?: 250).toLong().coerceIn(100L, 3000L)
+                        restartDelayMs = (call.argument<Int>("restartDelayMs") ?: 700).toLong().coerceIn(0L, 5000L)
                         startRecognition(sessionId, locale, engine, result)
                     }
 
@@ -259,9 +269,9 @@ class MainActivity : FlutterActivity() {
             putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
             // نمنح الخدمة زمناً أطول قبل اعتبار الكلام منتهياً. بعض الخدمات
             // قد تتجاهل هذه القيم، لكن لا توجد هنا قيمة قصيرة تفرض الإغلاق.
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 15000)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 12000)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 250)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, completeSilenceMs.toInt())
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, possibleSilenceMs.toInt())
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, minimumSpeechMs.toInt())
         }
         try {
             recognizer?.startListening(intent)
@@ -335,15 +345,12 @@ class MainActivity : FlutterActivity() {
         override fun onError(error: Int) {
             emit("error", currentSessionId, mapOf("code" to error, "message" to speechErrorMessage(error)))
             if (active && !explicitStop) {
-                val delay = when (error) {
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 600L
-                    SpeechRecognizer.ERROR_NETWORK,
-                    SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
-                    SpeechRecognizer.ERROR_SERVER,
-                    SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> 900L
-                    else -> 250L
+                if (autoRestart) {
+                    scheduleRestart(restartDelayMs)
+                } else {
+                    active = false
+                    emit("stopped", currentSessionId, emptyMap())
                 }
-                scheduleRestart(delay)
             }
         }
 
@@ -360,7 +367,14 @@ class MainActivity : FlutterActivity() {
                     "confidences" to (confidences?.toList() ?: emptyList<Float>())
                 )
             )
-            if (active && !explicitStop) scheduleRestart(120L)
+            if (active && !explicitStop) {
+                if (autoRestart) {
+                    scheduleRestart(restartDelayMs)
+                } else {
+                    active = false
+                    emit("stopped", currentSessionId, emptyMap())
+                }
+            }
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
