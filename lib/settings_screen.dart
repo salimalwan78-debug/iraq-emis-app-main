@@ -60,6 +60,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {});
   }
 
+  Future<void> _setVoiceSetting({
+    bool? autoRestart,
+    int? possibleSilenceMs,
+    int? completeSilenceMs,
+    int? minimumSpeechMs,
+    int? restartDelayMs,
+    int? finalizationTimeoutMs,
+    double? arrowOpacity,
+  }) async {
+    await AppCore.saveVoiceSettings(
+      autoRestart: autoRestart,
+      possibleSilenceMs: possibleSilenceMs,
+      completeSilenceMs: completeSilenceMs,
+      minimumSpeechMs: minimumSpeechMs,
+      restartDelayMs: restartDelayMs,
+      finalizationTimeoutMs: finalizationTimeoutMs,
+      arrowOpacity: arrowOpacity,
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _resetVoiceSettings() async {
+    await AppCore.resetVoiceSettings();
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تمت إعادة جميع إعدادات الميكروفون إلى القيم الافتراضية.')),
+    );
+  }
+
   Future<void> _setVoiceEnabled(bool enabled) async {
     if (enabled) {
       final permission = await Permission.microphone.request();
@@ -77,6 +107,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     await AppCore.setVoiceInputEnabled(enabled);
     if (mounted) setState(() {});
+  }
+
+  Widget _voiceSlider(
+    BuildContext context, {
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required int divisions,
+    required String Function(double) formatter,
+    required ValueChanged<double> onChanged,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600))),
+            Text(formatter(value), style: TextStyle(color: isDark ? Colors.lightGreenAccent : Colors.green.shade700, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        Slider(
+          value: value.clamp(min, max),
+          min: min,
+          max: max,
+          divisions: divisions,
+          label: formatter(value),
+          onChanged: onChanged,
+        ),
+      ],
+    );
   }
 
   @override
@@ -284,6 +346,112 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 15),
+              Card(
+                color: cardColor,
+                elevation: 2,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.tune_rounded, color: Colors.green, size: 30),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'ضبط الميكروفون والتعرف الصوتي',
+                              style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: _resetVoiceSettings,
+                            icon: const Icon(Icons.restore_rounded),
+                            label: const Text('الافتراضي'),
+                          ),
+                        ],
+                      ),
+                      const Divider(),
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('إعادة الاستماع تلقائياً'),
+                        subtitle: const Text('إذا أنهت خدمة Google جلسة بسبب الصمت أو النتيجة، يعيد التطبيق الاستماع تلقائياً ما دام المستخدم لم يضغط لإيقاف الميكروفون.'),
+                        value: AppCore.voiceAutoRestart,
+                        onChanged: (v) => _setVoiceSetting(autoRestart: v),
+                      ),
+                      const SizedBox(height: 8),
+                      _voiceSlider(
+                        context,
+                        label: 'الصمت المحتمل قبل إنهاء الجملة',
+                        value: AppCore.voicePossibleSilenceMs.toDouble(),
+                        min: 1000,
+                        max: 30000,
+                        divisions: 58,
+                        formatter: (v) => '${(v / 1000).toStringAsFixed(1)} ث',
+                        onChanged: (v) => _setVoiceSetting(possibleSilenceMs: v.round()),
+                      ),
+                      _voiceSlider(
+                        context,
+                        label: 'الصمت المؤكد قبل إنهاء الجلسة',
+                        value: AppCore.voiceCompleteSilenceMs.toDouble(),
+                        min: 1000,
+                        max: 30000,
+                        divisions: 58,
+                        formatter: (v) => '${(v / 1000).toStringAsFixed(1)} ث',
+                        onChanged: (v) => _setVoiceSetting(completeSilenceMs: v.round()),
+                      ),
+                      _voiceSlider(
+                        context,
+                        label: 'الحد الأدنى لبدء التقاط الكلام',
+                        value: AppCore.voiceMinimumSpeechMs.toDouble(),
+                        min: 100,
+                        max: 3000,
+                        divisions: 29,
+                        formatter: (v) => '${v.round()} مللي ثانية',
+                        onChanged: (v) => _setVoiceSetting(minimumSpeechMs: v.round()),
+                      ),
+                      _voiceSlider(
+                        context,
+                        label: 'الفاصل بين جلسات التعرف',
+                        value: AppCore.voiceRestartDelayMs.toDouble(),
+                        min: 0,
+                        max: 5000,
+                        divisions: 50,
+                        formatter: (v) => '${v.round()} مللي ثانية',
+                        onChanged: (v) => _setVoiceSetting(restartDelayMs: v.round()),
+                      ),
+                      _voiceSlider(
+                        context,
+                        label: 'مهلة إنهاء الجلسة عند الضغط على الإيقاف',
+                        value: AppCore.voiceFinalizationTimeoutMs.toDouble(),
+                        min: 500,
+                        max: 3000,
+                        divisions: 25,
+                        formatter: (v) => '${v.round()} مللي ثانية',
+                        onChanged: (v) => _setVoiceSetting(finalizationTimeoutMs: v.round()),
+                      ),
+                      _voiceSlider(
+                        context,
+                        label: 'شفافية الأسهم الثابتة',
+                        value: ((1.0 - AppCore.voiceArrowOpacity) * 100).clamp(10.0, 80.0),
+                        min: 10,
+                        max: 80,
+                        divisions: 14,
+                        formatter: (v) => '${v.round()}%',
+                        onChanged: (v) => _setVoiceSetting(arrowOpacity: 1.0 - v / 100.0),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'زيادة الشفافية تجعل الأسهم أقل تغطية للحقول الموجودة خلفها. الإعدادات الزمنية تؤثر على مسار Google/Android ولا تُجبر خدمة Google إذا كانت تفرض حدوداً داخلية خاصة بها.',
+                        textDirection: TextDirection.rtl,
+                        style: TextStyle(color: isDark ? Colors.white70 : Colors.grey[700], height: 1.45, fontSize: 12),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 15),

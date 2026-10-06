@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'app_core.dart';
 
 /// واجهة Flutter لمسار Android SpeechRecognizer.
 /// في وضع Google يستخدم التطبيق خدمة Google إن كانت ظاهرة للنظام،
@@ -27,6 +28,11 @@ class GoogleSpeechService {
       'sessionId': sessionId,
       'locale': locale,
       'engine': 'google',
+      'autoRestart': AppCore.voiceAutoRestart,
+      'possibleSilenceMs': AppCore.voicePossibleSilenceMs,
+      'completeSilenceMs': AppCore.voiceCompleteSilenceMs,
+      'minimumSpeechMs': AppCore.voiceMinimumSpeechMs,
+      'restartDelayMs': AppCore.voiceRestartDelayMs,
     });
     return result == true;
   }

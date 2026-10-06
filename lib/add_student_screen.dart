@@ -254,6 +254,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     c['issuingCountry']!.text = 'العراق';
     c['idType']!.text = '12';
     c['studyLanguage']!.text = 'العربية';
+    // القيم الافتراضية المطلوبة عند فتح نموذج إضافة الطالب.
+    c['motherTongue']!.text = 'العربية';
+    c['bloodGroup']!.text = 'O+';
+    c['religion']!.text = 'الإسلام';
+    c['economicLevel']!.text = 'الطبقة الوسطى';
+    c['address2']!.text = '0';
+    c['closestLocation']!.text = '0';
     _googleSpeechSubscription = GoogleSpeechService.events.listen(_handleGoogleSpeechEvent);
     _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _load();
@@ -431,6 +438,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       stages = results.remove('stageId') ?? [];
       options.addAll(results);
       await _loadAddressStructure();
+      _applyDefaultAddressValues();
       options['nationality'] = List<Map<String, dynamic>>.from(options['countryOfBirth'] ?? const []);
       options['studyLanguage'] = List<Map<String, dynamic>>.from(options['motherTongue'] ?? const []);
 
@@ -474,6 +482,40 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final raw = node['children'] ?? node['items'] ?? node['subItems'] ?? node['childs'];
     if (raw is! List) return [];
     return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  void _applyDefaultAddressValues() {
+    if (_addressGovernorates.isEmpty) return;
+
+    Map<String, dynamic>? governorate;
+    for (final item in _addressGovernorates) {
+      final name = _text(item).trim();
+      if (name == 'القادسية' || name.contains('القادسية')) {
+        governorate = item;
+        break;
+      }
+    }
+    governorate ??= _addressGovernorates.firstWhere(
+      (x) => _text(x).trim() == 'القادسية',
+      orElse: () => <String, dynamic>{},
+    );
+    if (governorate.isEmpty) return;
+
+    _addressGovernorateId = _value(governorate);
+    _setAddressDistricts(governorate);
+
+    Map<String, dynamic>? district;
+    for (final item in _addressDistricts) {
+      final name = _text(item).trim();
+      if (name == 'الديوانية' || name.contains('الديوانية')) {
+        district = item;
+        break;
+      }
+    }
+    if (district != null) {
+      _addressDistrictId = _value(district);
+    }
+    c['town']!.text = 'الديوانية';
   }
 
   void _setAddressGovernorates(Map<String, dynamic> country) {
@@ -793,7 +835,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   void _scheduleGoogleFinalizationFallback() {
     _googleFinalizationTimer?.cancel();
-    _googleFinalizationTimer = Timer(const Duration(milliseconds: 1200), () {
+    _googleFinalizationTimer = Timer(Duration(milliseconds: AppCore.voiceFinalizationTimeoutMs), () {
       if (!mounted || _usingLegacyVoice) return;
       if (_activeVoiceSessionId != null && _speechStopRequested) {
         _finishVoiceSessionAndStartPending();
@@ -1154,7 +1196,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             width: 62,
             padding: const EdgeInsets.symmetric(vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.97),
+              color: Colors.white.withOpacity(AppCore.voiceArrowOpacity),
               borderRadius: const BorderRadius.horizontal(right: Radius.circular(24)),
               boxShadow: const [
                 BoxShadow(blurRadius: 9, offset: Offset(1, 2), color: Colors.black26),
