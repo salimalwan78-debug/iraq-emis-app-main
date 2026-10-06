@@ -36,8 +36,7 @@ dependencies:
   # إزالة خلفية الشخص محليًا
   google_mlkit_selfie_segmentation: 0.12.1
 
-  # الإدخال الصوتي العربي عبر Android SpeechRecognizer
-  speech_to_text: ^7.4.0
+  # التعرف الصوتي يتم عبر Android SpeechRecognizer الموجه إلى خدمة Google مباشرة
 
 dev_dependencies:
   flutter_test:
