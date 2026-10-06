@@ -74,7 +74,7 @@ class MainActivity : FlutterActivity() {
 
     /**
      * Android itself decides which service is the default SpeechRecognizer through
-     * Settings.Secure.VOICE_RECOGNITION_SERVICE. On some Samsung/Android builds the
+     * "voice_recognition_service". On some Samsung/Android builds the
      * Google app is installed and works perfectly, but it does NOT publish the
      * recognition service under com.google.android.googlequicksearchbox. Therefore
      * requiring that exact package was the reason the previous build reported
@@ -84,7 +84,7 @@ class MainActivity : FlutterActivity() {
         val flattened = try {
             Settings.Secure.getString(
                 contentResolver,
-                Settings.Secure.VOICE_RECOGNITION_SERVICE
+                "voice_recognition_service"
             )
         } catch (_: Exception) {
             null
