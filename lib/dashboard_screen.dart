@@ -110,7 +110,7 @@ class DashboardScreen extends StatelessWidget {
                       Navigator.push(context, MaterialPageRoute(builder: (context) => StudentManagementScreen(token: token, schoolId: schoolId, allStudents: allStudents)));
                     }),
                     _buildMenuCard(title: 'إدارة المعلمين', icon: Icons.work_rounded, color: Colors.deepPurple, cardColor: cardColor, textColor: textColor, onTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => TeachersListScreen(token: token, schoolId: schoolId, initialTeachers: allTeachers)));
+                      _openTeachersWithWarning(context);
                     }),
                     _buildMenuCard(title: 'الدرجات', icon: Icons.bar_chart_rounded, color: Colors.orange, cardColor: cardColor, textColor: textColor, onTap: () { Navigator.push(context, MaterialPageRoute(builder: (_) => GradesScreen(
                         token: token,
@@ -127,6 +127,50 @@ class DashboardScreen extends StatelessWidget {
           ),
         );
       }
+    );
+  }
+
+  Future<void> _openTeachersWithWarning(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            SizedBox(width: 8),
+            Expanded(child: Text('تنبيه مهم قبل فتح إدارة المعلمين')),
+          ],
+        ),
+        content: const Text(
+          'توجد حالياً مشاكل في وظائف إضافة معلم جديد وتعديل بيانات المعلم في EMIS داخل التطبيق.\n\n'
+          'وظيفة تحديث حالة المعلم هي الوظيفة التي تعمل بشكل طبيعي حالياً. إذا تابعت، يُفضّل استخدام تحديث حالة المعلم فقط وعدم إضافة أو تعديل بيانات المعلمين إلى أن يتم إصلاح تلك الوظائف.',
+          textDirection: TextDirection.rtl,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.arrow_forward_rounded),
+            label: const Text('تأكيد والمتابعة'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TeachersListScreen(
+          token: token,
+          schoolId: schoolId,
+          initialTeachers: allTeachers,
+        ),
+      ),
     );
   }
 

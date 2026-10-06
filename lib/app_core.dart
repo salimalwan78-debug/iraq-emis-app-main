@@ -1,34 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppCore {
   static ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
   static final AudioPlayer audioPlayer = AudioPlayer();
-  static bool isAudioMuted = true;
+  static bool isAudioMuted = true; // اجعل القيمة الافتراضية صحيحة (موقف لحين قراءة التفضيلات)
   static double currentVolume = 0.5;
-
-  // إعدادات التعرف الصوتي المحفوظة محلياً.
-  static String? voiceLocale;
-  static bool voiceEnhancementEnabled = true;
-  static double voiceCalibrationScore = 0.0;
-  static bool voiceCalibrationCompleted = false;
-
-  static const MethodChannel _voiceChannel = MethodChannel('emis.voice/audio');
+  static bool voiceInputEnabled = true;
 
   static Future<void> initPreferences() async {
     final prefs = await SharedPreferences.getInstance();
-    final isDark = prefs.getBool('isDark') ?? false;
+    bool isDark = prefs.getBool('isDark') ?? false;
     themeNotifier.value = isDark ? ThemeMode.dark : ThemeMode.light;
 
+    // قراءة الحالة المحفوظة بدقة (افتراضياً صامت إلى أن يفعله المستخدم)
     isAudioMuted = prefs.getBool('isAudioMuted') ?? true;
     currentVolume = prefs.getDouble('currentVolume') ?? 0.5;
-    voiceLocale = prefs.getString('voiceLocale');
-    voiceEnhancementEnabled = prefs.getBool('voiceEnhancementEnabled') ?? true;
-    voiceCalibrationScore = prefs.getDouble('voiceCalibrationScore') ?? 0.0;
-    voiceCalibrationCompleted = prefs.getBool('voiceCalibrationCompleted') ?? false;
-
+    voiceInputEnabled = prefs.getBool('voiceInputEnabled') ?? true;
     await audioPlayer.setVolume(currentVolume);
 
     if (!isAudioMuted) {
@@ -72,55 +61,14 @@ class AppCore {
     await audioPlayer.setVolume(vol);
   }
 
-  static Future<void> saveVoiceLocale(String locale) async {
-    voiceLocale = locale;
+
+  static Future<void> setVoiceInputEnabled(bool enabled) async {
+    voiceInputEnabled = enabled;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('voiceLocale', locale);
+    await prefs.setBool('voiceInputEnabled', enabled);
   }
-
-  static Future<void> saveVoiceEnhancement(bool enabled) async {
-    voiceEnhancementEnabled = enabled;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('voiceEnhancementEnabled', enabled);
-  }
-
-  static Future<void> saveVoiceCalibration(double score) async {
-    voiceCalibrationScore = score.clamp(0.0, 1.0).toDouble();
-    voiceCalibrationCompleted = true;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('voiceCalibrationScore', voiceCalibrationScore);
-    await prefs.setBool('voiceCalibrationCompleted', true);
-  }
-
-  static Future<bool> setVoiceEnhancement(bool enabled) async {
-    try {
-      final result = await _voiceChannel.invokeMethod<bool>(
-        enabled ? 'enableVoiceEnhancement' : 'disableVoiceEnhancement',
-      );
-      return result ?? false;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  static Future<Map<String, dynamic>> getVoiceProcessingCapabilities() async {
-    try {
-      final result = await _voiceChannel.invokeMethod<dynamic>(
-        'getVoiceProcessingCapabilities',
-      );
-      if (result is Map) {
-        return Map<String, dynamic>.from(result);
-      }
-    } catch (_) {}
-    return <String, dynamic>{
-      'noiseSuppressorAvailable': false,
-      'acousticEchoCancelerAvailable': false,
-      'modeApplied': false,
-    };
-  }
-
   static void toggleTheme() {
-    final isDark = themeNotifier.value == ThemeMode.dark;
+    bool isDark = themeNotifier.value == ThemeMode.dark;
     saveThemePreference(!isDark);
   }
 }

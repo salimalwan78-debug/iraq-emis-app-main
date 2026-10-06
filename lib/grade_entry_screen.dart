@@ -135,8 +135,62 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
   bool? _readExamIgnored() {
     final exam = _currentExam;
     if (exam == null) return null;
-    for (final key in const ['isIgnored','ignored','isIgnore','isExamIgnored']) {
-      if (exam.containsKey(key)) return _bool(exam[key]);
+    return _readIgnoredFlagFromMap(exam);
+  }
+
+  bool? _readIgnoredFlagFromMap(Map<dynamic, dynamic> value) {
+    for (final key in const [
+      'isIgnored',
+      'ignored',
+      'isIgnore',
+      'isExamIgnored',
+      'isIgnoredExam',
+      'ignore',
+    ]) {
+      if (value.containsKey(key) && value[key] != null) {
+        return _bool(value[key]);
+      }
+    }
+    final exam = value['exam'];
+    if (exam is Map) return _readIgnoredFlagFromMap(exam);
+    final examInfo = value['examInfo'];
+    if (examInfo is Map) return _readIgnoredFlagFromMap(examInfo);
+    return null;
+  }
+
+  bool _gradeBelongsToExam(Map<dynamic, dynamic> grade, String selectedExamId) {
+    final direct = grade['examId'] ?? grade['exam_id'];
+    if (direct != null && '$direct' == selectedExamId) return true;
+    final nested = grade['exam'];
+    if (nested is Map) {
+      final nestedId = nested['id'] ?? nested['examId'] ?? nested['value'];
+      if (nestedId != null && '$nestedId' == selectedExamId) return true;
+    }
+    return false;
+  }
+
+
+  bool? _findIgnoredStateForExam(dynamic value, String selectedExamId, {int depth = 0}) {
+    if (depth > 5 || value == null) return null;
+    if (value is List) {
+      bool? result;
+      for (final item in value) {
+        final found = _findIgnoredStateForExam(item, selectedExamId, depth: depth + 1);
+        if (found == true) return true;
+        if (found != null) result = false;
+      }
+      return result;
+    }
+    if (value is! Map) return null;
+
+    final map = Map<dynamic, dynamic>.from(value);
+    final belongs = _gradeBelongsToExam(map, selectedExamId);
+    if (belongs) return _readIgnoredFlagFromMap(map);
+
+    for (final entry in map.entries) {
+      final found = _findIgnoredStateForExam(entry.value, selectedExamId, depth: depth + 1);
+      if (found == true) return true;
+      if (found != null) return false;
     }
     return null;
   }
@@ -163,20 +217,27 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
 
       // Always show an empty input. Existing EMIS grades are intentionally not
       // copied into the editor, so every visit starts with a blank field.
+      bool? detectedIgnored = _readExamIgnored();
       for (final student in result) {
         final id = int.tryParse('${student['id']}');
         if (id != null) grades[id] = TextEditingController();
-        final rawGrades = student['grades'];
-        if (rawGrades is List) {
-          for (final raw in rawGrades) {
-            if (raw is Map && '${raw['examId'] ?? raw['exam']?['id']}' == examId) {
-              if (raw.containsKey('isIgnored')) examIgnored = _bool(raw['isIgnored']);
-              break;
-            }
+
+        if (examId != null) {
+          final state = _findIgnoredStateForExam(student, examId!);
+          if (state != null) {
+            // حالة الإهمال مرتبطة بالفصل والطالب ضمن الصف/المادة المحددين.
+            // إذا ظهر أي سجل صريح بأنه مهمل، نعامل الاختيار الحالي كمهمَل.
+            detectedIgnored = detectedIgnored == true ? true : state;
           }
         }
       }
-      if (mounted) setState(() => students = result);
+
+      if (mounted) {
+        setState(() {
+          students = result;
+          examIgnored = detectedIgnored;
+        });
+      }
     } catch (e) { if (mounted) setState(() => error = '$e'); }
   }
 
@@ -197,10 +258,17 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
   Future<void> _saveGrades() async {
     final exam = _currentExam;
     if (exam == null) return;
-    final ignored = examIgnored ?? _readExamIgnored() ?? false;
-    if (ignored) {
+    final ignored = examIgnored;
+    if (ignored == true) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('هذا الفصل غير مفعل لأنه مُهمَل ولا يمكن إدخال درجات فيه.'),
+        backgroundColor: Colors.orange,
+      ));
+      return;
+    }
+    if (ignored == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('لم يتم التحقق من حالة الإهمال لهذا الفصل بشكل مؤكد. تم منع الحفظ لحماية الدرجات.'),
         backgroundColor: Colors.orange,
       ));
       return;
@@ -304,11 +372,15 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
             )),
             if (error != null) ...[const SizedBox(height: 12), _messageCard(error!, Colors.red)],
             if (exam != null) ...[const SizedBox(height: 16), _examCard(exam, max)],
+            if (examId != null && examIgnored == null && students.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _messageCard('تعذر تحديد حالة الإهمال لهذا الفصل الدراسي بدقة من بيانات EMIS. تم تعطيل حقول الدرجات مؤقتاً حتى لا يتم إدخال درجة في فصل قد يكون مُهمَلاً.', Colors.orange),
+            ],
             if (students.isNotEmpty) ...[
               const SizedBox(height: 10),
               ...students.map((student) => _studentCard(student, max)),
               const SizedBox(height: 12),
-              SizedBox(height: 54, child: FilledButton.icon(onPressed: saving ? null : _saveGrades, icon: saving ? const SizedBox(width:20,height:20,child:CircularProgressIndicator(strokeWidth:2)) : const Icon(Icons.save_rounded), label: const Text('حفظ الدرجات', style: TextStyle(fontSize:16,fontWeight:FontWeight.bold)))),
+              SizedBox(height: 54, child: FilledButton.icon(onPressed: (saving || examIgnored != false) ? null : _saveGrades, icon: saving ? const SizedBox(width:20,height:20,child:CircularProgressIndicator(strokeWidth:2)) : const Icon(Icons.save_rounded), label: const Text('حفظ الدرجات', style: TextStyle(fontSize:16,fontWeight:FontWeight.bold)))),
             ],
           ],
         ),
@@ -332,15 +404,57 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
   );
 
   Widget _examCard(Map<String,dynamic> exam,int max) {
-    final ignored=examIgnored ?? _readExamIgnored() ?? false;
-    return Card(elevation:0,shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(20)),child:Padding(padding:const EdgeInsets.all(16),child:Row(children:[CircleAvatar(backgroundColor:(ignored?Colors.red:Colors.green).withOpacity(.1),child:Icon(ignored?Icons.visibility_off:Icons.assignment,color:ignored?Colors.red:Colors.green)),const SizedBox(width:12),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(_label(exam),style:const TextStyle(fontWeight:FontWeight.bold,fontSize:16)),const SizedBox(height:4),Text('الدرجة القصوى: $max  •  الطلاب: ${students.length}',style:const TextStyle(color:Colors.grey,fontWeight:FontWeight.bold))])),Chip(label:Text(ignored?'غير مفعل':'فعال',style:const TextStyle(fontWeight:FontWeight.bold)))])));
+    final ignored = examIgnored;
+    final statusText = ignored == true
+        ? 'غير مفعل — مُهمَل'
+        : (ignored == false ? 'فعال — غير مُهمَل' : 'جارٍ التحقق من حالة الإهمال');
+    final statusColor = ignored == true
+        ? Colors.red
+        : (ignored == false ? Colors.green : Colors.orange);
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: statusColor.withOpacity(.1),
+              child: Icon(
+                ignored == true ? Icons.visibility_off : Icons.assignment,
+                color: statusColor,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_label(exam), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 4),
+                  Text(
+                    'الدرجة القصوى: $max  •  الطلاب: ${students.length}',
+                    style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+            Chip(
+              backgroundColor: statusColor.withOpacity(.10),
+              label: Text(statusText, style: TextStyle(fontWeight: FontWeight.bold, color: statusColor)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _studentCard(Map<String,dynamic> student,int max) {
     final id=int.tryParse('${student['id']}') ?? -1;
-    final ignored=examIgnored ?? _readExamIgnored() ?? false;
+    final ignored=examIgnored == true;
+    final stateUnknown = examIgnored == null;
     final name='${student['name'] ?? student['fullName'] ?? student['studentName'] ?? ''}';
-    return Card(elevation:0,margin:const EdgeInsets.only(bottom:9),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(17)),child:Padding(padding:const EdgeInsets.fromLTRB(12,10,12,10),child:Row(children:[CircleAvatar(backgroundColor:const Color(0xFF1A237E).withOpacity(.08),child:const Icon(Icons.person,color:Color(0xFF3949AB))),const SizedBox(width:11),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(name,style:const TextStyle(fontWeight:FontWeight.bold)),Text('رقم الطالب: ${student['id'] ?? ''}',style:const TextStyle(color:Colors.grey,fontSize:12,fontWeight:FontWeight.bold))])),SizedBox(width:86,child:TextField(enabled:!ignored,controller:grades[id],keyboardType:TextInputType.number,inputFormatters:[FilteringTextInputFormatter.digitsOnly],textAlign:TextAlign.center,style:const TextStyle(fontWeight:FontWeight.bold),decoration:InputDecoration(hintText:'',filled:true,fillColor:Color(0xFFF7F8FB),border:OutlineInputBorder(borderRadius:BorderRadius.all(Radius.circular(12))))))])));
+    return Card(elevation:0,margin:const EdgeInsets.only(bottom:9),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(17)),child:Padding(padding:const EdgeInsets.fromLTRB(12,10,12,10),child:Row(children:[CircleAvatar(backgroundColor:const Color(0xFF1A237E).withOpacity(.08),child:const Icon(Icons.person,color:Color(0xFF3949AB))),const SizedBox(width:11),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(name,style:const TextStyle(fontWeight:FontWeight.bold)),Text('رقم الطالب: ${student['id'] ?? ''}',style:const TextStyle(color:Colors.grey,fontSize:12,fontWeight:FontWeight.bold))])),SizedBox(width:86,child:TextField(enabled:!ignored && !stateUnknown,controller:grades[id],keyboardType:TextInputType.number,inputFormatters:[FilteringTextInputFormatter.digitsOnly],textAlign:TextAlign.center,style:const TextStyle(fontWeight:FontWeight.bold),decoration:InputDecoration(hintText:'',filled:true,fillColor:Color(0xFFF7F8FB),border:OutlineInputBorder(borderRadius:BorderRadius.all(Radius.circular(12))))))])));
   }
 
   Widget _messageCard(String text,Color color)=>Container(padding:const EdgeInsets.all(13),decoration:BoxDecoration(color:color.withOpacity(.08),borderRadius:BorderRadius.circular(14)),child:Text(text,style:TextStyle(color:color,fontWeight:FontWeight.bold)));

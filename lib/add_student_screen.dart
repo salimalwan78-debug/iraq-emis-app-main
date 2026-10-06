@@ -1,30 +1,11 @@
 import 'dart:convert';
 import 'dart:async';
-import 'dart:collection';
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
-import 'package:speech_to_text/speech_recognition_error.dart';
-import 'package:speech_to_text/speech_recognition_result.dart';
-import 'package:speech_to_text/speech_to_text.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 import 'app_core.dart';
 import 'emis_live_sync.dart';
-
-
-class _VoiceRequest {
-  final String fieldKey;
-  final int id;
-  const _VoiceRequest(this.fieldKey, this.id);
-}
-
-class _VoiceSession {
-  final int id;
-  final String fieldKey;
-  String lastText = '';
-  String? lastError;
-  bool finished = false;
-  _VoiceSession(this.id, this.fieldKey);
-}
+import 'google_speech_service.dart';
 
 class AddStudentScreen extends StatefulWidget {
   final String token;
@@ -46,22 +27,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   final Map<String, List<Map<String, dynamic>>> options = {};
 
   bool loading = true, saving = false;
-  final SpeechToText _speech = SpeechToText();
-  bool _speechInitialized = false;
-  bool _speechAvailable = false;
   bool _speechListening = false;
-  String? _speechLocaleId;
   String? _speechError;
   String? _activeVoiceField;
+  String? _pendingVoiceField;
   int? _activeVoiceSessionId;
   int _nextVoiceSessionId = 0;
-  final Queue<_VoiceRequest> _voiceQueue = Queue<_VoiceRequest>();
-  final Map<int, _VoiceSession> _voiceSessions = <int, _VoiceSession>{};
   bool _speechStopRequested = false;
-  Future<void>? _pendingSpeechStop;
-  bool _voiceEnhancementEnabled = false;
-  bool _startingVoiceSession = false;
-  Timer? _voiceFinalizationTimer;
+  bool _micPointerDown = false;
+  StreamSubscription<Map<String, dynamic>>? _googleSpeechSubscription;
   String? error;
   String? _saveStatus;
   bool _saveStatusIsError = false;
@@ -94,8 +68,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   };
 
   // حقول النص العربي التي نسمح لها بالإدخال الصوتي.
-  // الحقول الرقمية والتواريخ تبقى إدخالاً يدوياً حتى لا تتحول الأرقام
-  // إلى كلمات أو أرقام عربية بحسب خدمة التعرف في الجهاز.
+  // الحقول النصية العربية التي تستخدم التعرف الصوتي.
   static const Set<String> _voiceFields = {
     'name',
     'fatherName',
@@ -118,9 +91,18 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     'notes',
   };
 
+  // الحقول الرقمية التي يمكن أن تستفيد من التعرف الصوتي مع تحويل الكلمات
+  // والأرقام العربية إلى أرقام إنجليزية قبل وضعها في الحقل.
   static const Set<String> _numericVoiceFields = {
     'nationalId',
+    'idNumber',
+    'jinsiyaIdNumber',
+    'recordNumber',
+    'pageNumber',
+    'birthCertificateNumber',
+    'otherIdNumber',
     'homePhoneNumber',
+    'censusNumber',
   };
 
   final labels = const <String, String>{
@@ -179,7 +161,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   @override
   void initState() {
     super.initState();
-    _voiceEnhancementEnabled = AppCore.voiceEnhancementEnabled;
     for (final key in [
       'name',
       'fatherName',
@@ -231,6 +212,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     c['issuingCountry']!.text = 'العراق';
     c['idType']!.text = '12';
     c['studyLanguage']!.text = 'العربية';
+    _googleSpeechSubscription = GoogleSpeechService.events.listen(_handleGoogleSpeechEvent);
     _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _load();
   }
@@ -238,11 +220,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   @override
   void dispose() {
     _liveTimer?.cancel();
-    _speech.stop();
-    _voiceFinalizationTimer?.cancel();
-    _disableVoiceEnhancement();
-    _voiceQueue.clear();
-    _voiceSessions.clear();
+    unawaited(GoogleSpeechService.cancelListening());
+    _googleSpeechSubscription?.cancel();
     for (final controller in c.values) {
       controller.dispose();
     }
@@ -553,68 +532,12 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   bool get _isBirthCertificate => c['idType']!.text == '22';
   bool get _isOtherId => c['idType']!.text == '16';
 
-  Future<void> _initSpeech() async {
-    if (_speechInitialized) return;
-
-    final available = await _speech.initialize(
-      finalTimeout: const Duration(milliseconds: 350),
-      onStatus: (status) {
-        if (!mounted) return;
-        final listening = status == 'listening';
-        setState(() {
-          _speechListening = listening;
-          if (!listening && !_speechStopRequested && _activeVoiceSessionId == null) {
-            _activeVoiceField = null;
-          }
-        });
-        if (!listening && _activeVoiceSessionId != null && !_speechStopRequested) {
-          // انتهت الجلسة طبيعياً. ننتظر finalResult/done قبل فتح جلسة جديدة
-          // لأن SpeechToText يستخدم مستمعاً واحداً للجلسات كلها.
-          _finalizeVoiceSessionAndStartNext();
-        } else if (!listening && _speechStopRequested) {
-          // stop() قد يصل قبل finalResult. لا نفتح الجلسة التالية هنا؛
-          // ننتظر نتيجة الجلسة الحالية حتى لا تختلط نتيجتان.
-          _scheduleVoiceFinalizationFallback();
-        }
-      },
-      onError: (SpeechRecognitionError error) {
-        if (!mounted) return;
-        final sessionId = _activeVoiceSessionId;
-        if (sessionId != null) {
-          _voiceSessions[sessionId]?.lastError = error.errorMsg;
-        }
-        setState(() {
-          _speechListening = false;
-          _speechStopRequested = false;
-          _speechError = error.errorMsg;
-        });
-        _finalizeVoiceSessionAndStartNext();
-      },
-      debugLogging: false,
+  void _showVoiceMessage(String message) {
+    if (!mounted) return;
+    setState(() => _speechError = message);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.orange),
     );
-
-    _speechInitialized = true;
-    _speechAvailable = available;
-    if (!available) return;
-
-    final savedLocale = AppCore.voiceLocale;
-    if (savedLocale != null && savedLocale.trim().isNotEmpty) {
-      _speechLocaleId = savedLocale.trim();
-      return;
-    }
-
-    final locales = await _speech.locales();
-    LocaleName? arabic;
-    for (final locale in locales) {
-      if (locale.localeId.toLowerCase() == 'ar-iq') {
-        arabic = locale;
-        break;
-      }
-      if (arabic == null && locale.localeId.toLowerCase().startsWith('ar')) {
-        arabic = locale;
-      }
-    }
-    _speechLocaleId = arabic?.localeId ?? 'ar-IQ';
   }
 
   String _cleanArabicSpeech(String value) {
@@ -625,203 +548,258 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   String _cleanNumericSpeech(String value) {
-    var text = value.toLowerCase().trim();
-    const digitMap = <String, String>{
-      'صفر': '0', 'واحد': '1', 'واحدة': '1', 'اثنان': '2', 'اثنين': '2',
-      'اثنتان': '2', 'اثنتين': '2', 'ثلاثة': '3', 'ثلاث': '3',
-      'أربعة': '4', 'اربعة': '4', 'أربعه': '4', 'خمسة': '5', 'خمس': '5',
-      'ستة': '6', 'ست': '6', 'سبعة': '7', 'سبع': '7', 'ثمانية': '8',
-      'ثماني': '8', 'تسعة': '9', 'تسع': '9',
-      'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
-      'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
-    };
     const arabicIndic = '٠١٢٣٤٥٦٧٨٩';
-    const easternIndic = '۰۱۲۳۴۵۶۷۸۹';
+    const easternArabicIndic = '۰۱۲۳۴۵۶۷۸۹';
+    const wordDigits = <String, String>{
+      'صفر': '0',
+      'واحد': '1',
+      'واحدة': '1',
+      'اثنان': '2',
+      'اثنين': '2',
+      'اثنتان': '2',
+      'اثنتين': '2',
+      'ثلاثة': '3',
+      'ثلاث': '3',
+      'أربعة': '4',
+      'اربعة': '4',
+      'أربعه': '4',
+      'اربعه': '4',
+      'خمسة': '5',
+      'خمس': '5',
+      'ستة': '6',
+      'ست': '6',
+      'سبعة': '7',
+      'سبع': '7',
+      'ثمانية': '8',
+      'ثماني': '8',
+      'تسعة': '9',
+      'تسع': '9',
+      'zero': '0',
+      'one': '1',
+      'two': '2',
+      'three': '3',
+      'four': '4',
+      'five': '5',
+      'six': '6',
+      'seven': '7',
+      'eight': '8',
+      'nine': '9',
+    };
+
+    final normalized = value.replaceAll('،', ' ').replaceAll(',', ' ');
+    final words = normalized.split(RegExp(r'\s+')).where((x) => x.isNotEmpty);
     final out = StringBuffer();
-    for (final ch in text.runes) {
-      final c = String.fromCharCode(ch);
-      final ai = arabicIndic.indexOf(c);
-      if (ai >= 0) { out.write(ai); continue; }
-      final ei = easternIndic.indexOf(c);
-      if (ei >= 0) { out.write(ei); continue; }
-      if (RegExp(r'[0-9]').hasMatch(c)) out.write(c);
+    for (final raw in words) {
+      final word = raw.replaceAll(RegExp(r'[.\-_/]'), '');
+      if (word.isEmpty) continue;
+      final mapped = wordDigits[word.toLowerCase()];
+      if (mapped != null) {
+        out.write(mapped);
+        continue;
+      }
+      for (final rune in word.runes) {
+        final ch = String.fromCharCode(rune);
+        final a = arabicIndic.indexOf(ch);
+        if (a >= 0) {
+          out.write(a);
+          continue;
+        }
+        final e = easternArabicIndic.indexOf(ch);
+        if (e >= 0) {
+          out.write(e);
+          continue;
+        }
+        if (RegExp(r'[0-9]').hasMatch(ch)) out.write(ch);
+      }
     }
-    var digits = out.toString();
-    if (digits.isEmpty) {
-      for (final token in text.split(RegExp(r'[\s,،.\-_/]+'))) {
-        final d = digitMap[token];
-        if (d != null) digits += d;
-      }
-    } else {
-      // If the recognizer returned both digits and spoken digit words, keep both.
-      for (final token in text.split(RegExp(r'[\s,،.\-_/]+'))) {
-        final d = digitMap[token];
-        if (d != null && !RegExp(r'[0-9]').hasMatch(token)) digits += d;
+    return out.toString();
+  }
+
+  bool get _voiceAvailableBySetting => AppCore.voiceInputEnabled;
+
+  Future<bool> _ensureMicrophoneAccess() async {
+    if (!_voiceAvailableBySetting) {
+      _showVoiceMessage(
+        'الميكروفون مغلق من الإعدادات. افتح الإعدادات وفَعّل «الميكروفون والتعرف الصوتي» ثم عد إلى إضافة الطالب.',
+      );
+      return false;
+    }
+
+    final status = await Permission.microphone.status;
+    if (status.isGranted) return true;
+
+    final requested = await Permission.microphone.request();
+    if (requested.isGranted) return true;
+
+    _showVoiceMessage(
+      'لم يتم منح صلاحية الميكروفون. افتح إعدادات Android واسمح للتطبيق باستخدام الميكروفون.',
+    );
+    return false;
+  }
+
+  void _handleGoogleSpeechEvent(Map<String, dynamic> event) {
+    if (!mounted) return;
+    final sessionId = int.tryParse('${event['sessionId'] ?? ''}');
+    if (sessionId == null || sessionId != _activeVoiceSessionId) return;
+
+    final type = '${event['type'] ?? ''}';
+    final key = _activeVoiceField;
+    if (key == null) return;
+
+    if (type == 'listening' || type == 'ready' || type == 'begin' || type == 'partial') {
+      if (!_speechListening) setState(() => _speechListening = true);
+    }
+
+    if (type == 'partial' || type == 'result') {
+      final raw = '${event['text'] ?? ''}'.trim();
+      if (raw.isNotEmpty) {
+        final text = _numericVoiceFields.contains(key)
+            ? _cleanNumericSpeech(raw)
+            : _cleanArabicSpeech(raw);
+        if (text.isNotEmpty) {
+          final controller = c[key];
+          if (controller != null) {
+            controller.value = TextEditingValue(
+              text: text,
+              selection: TextSelection.collapsed(offset: text.length),
+            );
+            _liveSyncKey.currentState?.pushValues(_liveValues());
+          }
+        }
       }
     }
-    return digits;
-  }
 
-  Future<void> _enableVoiceEnhancement() async {
-    if (!_voiceEnhancementEnabled) return;
-    try {
-      await AppCore.setVoiceEnhancement(true);
-    } catch (_) {}
-  }
-
-  Future<void> _disableVoiceEnhancement() async {
-    try {
-      await AppCore.setVoiceEnhancement(false);
-    } catch (_) {}
-  }
-
-  void _scheduleVoiceFinalizationFallback() {
-    _voiceFinalizationTimer?.cancel();
-    _voiceFinalizationTimer = Timer(const Duration(milliseconds: 900), () {
-      if (!mounted) return;
-      if (_activeVoiceSessionId != null) {
-        _finalizeVoiceSessionAndStartNext();
+    if (type == 'error') {
+      final message = '${event['message'] ?? ''}'.trim();
+      if (message.isNotEmpty && event['code'] != 7) {
+        setState(() => _speechError = message);
       }
-    });
-  }
-
-  Future<void> _finalizeVoiceSessionAndStartNext() async {
-    _voiceFinalizationTimer?.cancel();
-    _voiceFinalizationTimer = null;
-    final oldId = _activeVoiceSessionId;
-    if (oldId == null) {
-      if (mounted) await _startNextVoiceRequest();
+      if (_speechStopRequested) {
+        _finishVoiceSessionAndStartPending();
+      }
       return;
     }
-    final old = _voiceSessions[oldId];
-    if (old != null) old.finished = true;
-    _activeVoiceSessionId = null;
-    _activeVoiceField = null;
+
+    if (type == 'result') {
+      // هذه النتيجة تخص sessionId نفسه. لا نستخدم الحقل الحالي بشكل عشوائي؛
+      // key محفوظ مع الجلسة الحالية، ثم نبدأ الحقل المعلّق فقط بعد وصول النتيجة.
+      if (_speechStopRequested) {
+        _finishVoiceSessionAndStartPending();
+      }
+    }
+
+    if (type == 'stopped' && !_speechStopRequested) {
+      setState(() => _speechListening = false);
+    }
+  }
+
+  Future<void> _startVoiceSession(String key) async {
+    if (!mounted || saving || key == 'dateOfBirth') return;
+    if (!await _ensureMicrophoneAccess()) return;
+
+    final info = await GoogleSpeechService.getInfo();
+    if (info['available'] != true) {
+      _showVoiceMessage(
+        'خدمة Google للتعرف على الكلام غير متوفرة. تأكد من تثبيت أو تحديث تطبيق Google ثم أعد المحاولة.',
+      );
+      return;
+    }
+
+    final sessionId = ++_nextVoiceSessionId;
+    _activeVoiceSessionId = sessionId;
+    _activeVoiceField = key;
     _speechStopRequested = false;
-    _speechListening = false;
-    await _disableVoiceEnhancement();
-    if (mounted) await _startNextVoiceRequest();
+    if (mounted) {
+      setState(() {
+        _speechError = null;
+        _speechListening = true;
+      });
+    }
+
+    final started = await GoogleSpeechService.startListening(
+      sessionId: sessionId,
+      locale: 'ar-IQ',
+    );
+    if (!started && mounted && _activeVoiceSessionId == sessionId) {
+      setState(() => _speechListening = false);
+    }
   }
 
   void _requestSpeechStop({String? nextField}) {
-    if (nextField != null) {
-      _voiceQueue.add(_VoiceRequest(nextField, ++_nextVoiceSessionId));
-    }
-
-    if (_activeVoiceSessionId == null && !_speechStopRequested) {
-      _startNextVoiceRequest();
+    if (nextField != null) _pendingVoiceField = nextField;
+    if (_activeVoiceSessionId == null) {
+      final pending = _pendingVoiceField;
+      if (pending != null) {
+        _pendingVoiceField = null;
+        _startVoiceSession(pending);
+      }
       return;
     }
     if (_speechStopRequested) return;
 
     _speechStopRequested = true;
-    final stopFuture = _speech.stop();
-    _pendingSpeechStop = stopFuture;
-    stopFuture.whenComplete(() {
-      if (identical(_pendingSpeechStop, stopFuture)) _pendingSpeechStop = null;
-      if (!mounted) return;
-      _speechListening = false;
-      // لا نبدأ الحقل التالي من هنا. stop() قد أنهى الميكروفون لكن النتيجة
-      // النهائية القديمة قد تصل بعده بقليل.
-      _scheduleVoiceFinalizationFallback();
-    });
+    setState(() => _speechListening = false);
+    // لا ننتظر هنا. Google يعيد النتيجة النهائية بعد stopListening، وبعدها
+    // _handleGoogleSpeechEvent يربطها بنفس sessionId ثم يفتح الحقل التالي.
+    unawaited(GoogleSpeechService.stopListening());
+  }
+
+  Future<void> _finishVoiceSessionAndStartPending() async {
+    final pending = _pendingVoiceField;
+    _pendingVoiceField = null;
+    _speechStopRequested = false;
+    _activeVoiceSessionId = null;
+    _activeVoiceField = null;
     if (mounted) setState(() => _speechListening = false);
+
+    if (pending != null && mounted) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      if (mounted) await _startVoiceSession(pending);
+    }
   }
 
   void _stopVoiceFromPointer() {
-    if (_activeVoiceSessionId == null && !_speechListening) return;
-    _requestSpeechStop();
-  }
-
-  Future<void> _startNextVoiceRequest() async {
-    if (!mounted || saving || _startingVoiceSession || _speechListening || _speechStopRequested || _activeVoiceSessionId != null) return;
-    if (_voiceQueue.isEmpty) return;
-    final request = _voiceQueue.removeFirst();
-    _startingVoiceSession = true;
-    try {
-      await _startVoiceSession(request);
-    } finally {
-      _startingVoiceSession = false;
-    }
-  }
-
-  Future<void> _startVoiceSession(_VoiceRequest request) async {
-    if (!mounted || saving) return;
-    await _initSpeech();
-    if (!_speechAvailable || _speechLocaleId == null || !mounted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('التعرف الصوتي غير مهيأ. افتح الإعدادات واختبر العربية أولاً.')),
-        );
-      }
+    // الميكروفون نفسه يضع هذا العلم قبل أن يصل pointer إلى Listener الأب؛
+    // لذلك الضغط على الميكروفون لا يوقف الجلسة قبل تنفيذ onPressed.
+    if (_micPointerDown) {
+      _micPointerDown = false;
       return;
     }
-
-    final session = _VoiceSession(request.id, request.fieldKey);
-    _voiceSessions[request.id] = session;
-    _activeVoiceSessionId = request.id;
-    _activeVoiceField = request.fieldKey;
-    setState(() {
-      _speechError = null;
-      _speechListening = true;
-      _speechStopRequested = false;
-    });
-    await _enableVoiceEnhancement();
-
-    try {
-      await _speech.listen(
-        onResult: (SpeechRecognitionResult result) {
-          // مهم: لا نستخدم _activeVoiceField لتحديد مكان النتيجة.
-          // كل callback يحمل sessionId وfieldKey ثابتين منذ لحظة بدء التسجيل.
-          final bound = _voiceSessions[request.id];
-          if (bound == null || !mounted) return;
-          final controller = c[request.fieldKey];
-          if (controller == null) return;
-          final text = _numericVoiceFields.contains(request.fieldKey)
-              ? _cleanNumericSpeech(result.recognizedWords)
-              : _cleanArabicSpeech(result.recognizedWords);
-          if (text.isEmpty) return;
-          bound.lastText = text;
-          controller.value = TextEditingValue(
-            text: text,
-            selection: TextSelection.collapsed(offset: text.length),
-          );
-          _liveSyncKey.currentState?.pushValues(_liveValues());
-          setState(() {});
-          if (result.finalResult) {
-            _finalizeVoiceSessionAndStartNext();
-          }
-        },
-        localeId: _speechLocaleId,
-        listenFor: const Duration(seconds: 12),
-        // الأسماء القصيرة لا تحتاج زمناً طويلاً. نسمح بنحو 1.2 ثانية من الصمت
-        // كي تُغلق الجملة القصيرة بسرعة، مع بقاء الإيقاف اليدوي فورياً.
-        pauseFor: const Duration(milliseconds: 1200),
-        partialResults: true,
-        onDevice: false,
-        cancelOnError: true,
-      );
-    } catch (e) {
-      if (mounted) {
-        _speechError = '$e';
-        _speechListening = false;
-        _finalizeVoiceSessionAndStartNext();
-      }
+    if (_activeVoiceSessionId != null) {
+      _pendingVoiceField = null;
+      _requestSpeechStop();
     }
+  }
+
+  void _markMicPointerDown() {
+    _micPointerDown = true;
+    Future<void>.microtask(() => _micPointerDown = false);
   }
 
   Future<void> _toggleVoiceInput(String key) async {
-    if (saving) return;
+    if (saving || key == 'dateOfBirth') return;
 
-    // الميكروفون الحالي نفسه: إيقاف فقط.
-    if (_activeVoiceSessionId != null && _activeVoiceField == key) {
+    if (!_voiceAvailableBySetting) {
+      _showVoiceMessage(
+        'الميكروفون مغلق من الإعدادات. افتح الإعدادات وفَعّل «الميكروفون والتعرف الصوتي» ثم عد إلى إضافة الطالب.',
+      );
+      return;
+    }
+
+    final current = _activeVoiceField;
+    if (current == key && _activeVoiceSessionId != null) {
+      _pendingVoiceField = null;
       _requestSpeechStop();
       return;
     }
 
-    // ميكروفون جديد: نعطيه رقماً جديداً ونضعه في طابور النتائج.
-    // جلسة الحقل السابق تبقى مرتبطة برقمها حتى لو وصلت نتيجتها متأخرة.
-    _requestSpeechStop(nextField: key);
+    if (_activeVoiceSessionId != null) {
+      _pendingVoiceField = key;
+      _requestSpeechStop(nextField: key);
+      return;
+    }
+
+    await _startVoiceSession(key);
   }
 
   Widget _textField(
@@ -851,18 +829,24 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
         suffixIcon: (_voiceFields.contains(key) || _numericVoiceFields.contains(key))
-            ? IconButton(
-                tooltip: _speechListening && _activeVoiceField == key
-                    ? 'إيقاف التسجيل'
-                    : (_numericVoiceFields.contains(key) ? 'الإدخال الصوتي للأرقام' : 'الإدخال الصوتي بالعربية'),
-                onPressed: () => _toggleVoiceInput(key),
-                icon: Icon(
-                  _speechListening && _activeVoiceField == key
-                      ? Icons.mic_rounded
-                      : Icons.mic_none_rounded,
-                  color: _speechListening && _activeVoiceField == key
-                      ? Colors.red
-                      : null,
+            ? Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (_) => _markMicPointerDown(),
+                child: IconButton(
+                  tooltip: _speechListening && _activeVoiceField == key
+                      ? 'إيقاف التسجيل'
+                      : (_numericVoiceFields.contains(key)
+                          ? 'الإدخال الصوتي للأرقام عبر Google'
+                          : 'الإدخال الصوتي بالعربية عبر Google'),
+                  onPressed: () => _toggleVoiceInput(key),
+                  icon: Icon(
+                    _speechListening && _activeVoiceField == key
+                        ? Icons.mic_rounded
+                        : Icons.mic_none_rounded,
+                    color: _speechListening && _activeVoiceField == key
+                        ? Colors.red
+                        : null,
+                  ),
                 ),
               )
             : null,
@@ -980,7 +964,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   Future<void> _save() async {
-    if (saving) return;
+    if (saving || _activeVoiceSessionId != null) return;
 
     // كل مراحل الحفظ أصبحت داخل try/catch حتى لا تبقى رسالة
     // "بدأت عملية حفظ الطالب..." ظاهرة إذا حدث استثناء قبل إرسال الطلب.
@@ -1281,6 +1265,29 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   padding: const EdgeInsets.all(17),
                   children: [
                     _intro(),
+                    if (!AppCore.voiceInputEnabled) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.mic_off_outlined, color: Colors.orange),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'الميكروفون مغلق من الإعدادات. إذا أردت استخدام الإدخال الصوتي، افتح الإعدادات وفَعّل الميكروفون والتعرف الصوتي.',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     if (_speechError != null) ...[
                       const SizedBox(height: 8),
                       Container(
@@ -1559,7 +1566,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                     SizedBox(
                       height: 55,
                       child: FilledButton.icon(
-                        onPressed: saving ? null : _save,
+                        onPressed: (saving || _activeVoiceSessionId != null) ? null : _save,
                         icon: saving
                             ? const SizedBox(
                                 width: 21,
@@ -1568,9 +1575,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.person_add_alt_1_rounded),
-                        label: const Text(
-                          'حفظ الطالب',
-                          style: TextStyle(fontWeight: FontWeight.bold,fontSize: 17),
+                        label: Text(
+                          _activeVoiceSessionId != null ? 'أوقف الميكروفون أولاً' : 'حفظ الطالب',
+                          style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 17),
                         ),
                       ),
                     ),

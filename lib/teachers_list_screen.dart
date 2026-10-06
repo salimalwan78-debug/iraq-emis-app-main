@@ -3,9 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-import 'edit_teacher_screen.dart';
 import 'teacher_smart_tools_screen.dart';
-import 'add_teacher_screen.dart';
 
 class TeachersListScreen extends StatefulWidget {
   final String token;
@@ -333,17 +331,9 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
-            tooltip: 'إضافة معلم جديد',
-            icon: const Icon(Icons.person_add_alt_1, color: Colors.white),
-            onPressed: () async {
-              final changed = await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => AddTeacherScreen(token: widget.token, schoolId: widget.schoolId),
-                ),
-              );
-              if (changed == true) await _loadTeachers();
-            },
+            tooltip: 'إضافة معلم جديد معطلة مؤقتاً بسبب مشاكل في EMIS',
+            icon: const Icon(Icons.person_add_alt_1, color: Colors.white54),
+            onPressed: null,
           ),
           IconButton(
             tooltip: 'تحديث',
@@ -358,6 +348,29 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
           children: [
             _buildSummary(card, text),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(.10),
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: Colors.orange.withOpacity(.30)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded, color: Colors.orange),
+                  SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      'تنبيه: إضافة معلم جديد وتعديل بيانات المعلم معطلتان مؤقتاً بسبب مشاكل مع EMIS. تحديث حالة المعلم هو الوظيفة المتاحة حالياً.',
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 14),
             Card(
               color: card,
@@ -447,7 +460,6 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
 
   Widget _buildTeacherCard(Map<String, dynamic> teacher, Color card, Color text) {
     final name = '${teacher['employeeFullName'] ?? 'بدون اسم'}';
-    final id = '${teacher['id'] ?? ''}';
     final national = '${teacher['nationalIdNumber'] ?? ''}';
     final employeeNo = '${teacher['employeeIdNumber'] ?? ''}';
     final type = '${teacher['employmentType'] ?? ''}';
@@ -507,23 +519,11 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
                 ),
               ),
               IconButton(
-                tooltip: 'تعديل بيانات المعلم',
-                onPressed: () async {
-                  final changed = await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => EditTeacherScreen(
-                        token: widget.token,
-                        schoolId: widget.schoolId,
-                        teacherId: id,
-                      ),
-                    ),
-                  );
-                  if (changed == true) await _loadTeachers();
-                },
+                tooltip: 'تعديل بيانات المعلم معطل مؤقتاً بسبب مشاكل في EMIS',
+                onPressed: null,
                 icon: const Icon(
                   Icons.edit_outlined,
-                  color: Colors.deepPurple,
+                  color: Colors.grey,
                 ),
               ),
             ],
