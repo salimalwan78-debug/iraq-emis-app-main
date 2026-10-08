@@ -1060,12 +1060,40 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   bool _isVoiceFieldCurrentlyVisible(String key) {
-    if (!_voiceFields.contains(key) && !_numericVoiceFields.contains(key)) return false;
+    if (!_voiceFields.contains(key) && !_numericVoiceFields.contains(key)) {
+      return false;
+    }
+
+    // هذا الفحص يجب أن يطابق شروط ظهور الحقول في واجهة وثيقة التعريف
+    // حرفياً. وجود controller للحقل لا يعني أن الحقل ظاهر؛ بعض الحقول
+    // موجودة في النموذج فقط لاستخدامها مع أنواع هوية أخرى.
     if (key == 'nationalId') return _isNationalId;
-    if (key == 'idNumber' || key == 'jinsiyaIdNumber' || key == 'recordNumber' || key == 'pageNumber') return _isCivilId;
+
+    if (key == 'idNumber' ||
+        key == 'jinsiyaIdNumber' ||
+        key == 'recordNumber' ||
+        key == 'pageNumber') {
+      return _isCivilId;
+    }
+
     if (key == 'birthCertificateNumber') return _isBirthCertificate;
     if (key == 'otherIdNumber') return _isOtherId;
-    if (key == 'nameOfDocument') return _isBirthCertificate || _isOtherId || _isCivilId;
+
+    // issuer لا يظهر مع البطاقة الوطنية؛ يظهر فقط مع أنواع الهوية
+    // التي تحتوي على بيانات المُصدر في الواجهة.
+    if (key == 'issuer') {
+      return _isCivilId || _isBirthCertificate || _isOtherId;
+    }
+
+    if (key == 'nameOfDocument') {
+      return _isBirthCertificate || _isOtherId || _isCivilId;
+    }
+
+    // censusNumber موجود في نموذج البيانات لإرساله إلى EMIS، لكنه ليس
+    // حقلاً معروضاً للمستخدم في صفحة إضافة الطالب، لذلك لا يدخل أبداً
+    // في التنقل الصوتي.
+    if (key == 'censusNumber') return false;
+
     return c.containsKey(key);
   }
 
