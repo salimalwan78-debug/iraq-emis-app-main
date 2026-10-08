@@ -122,6 +122,54 @@ jobs:
             android/app/src/main/AndroidManifest.xml || true
 
       # ==========================================
+      # Install and verify the exact Android NDK required by ML Kit.
+      # Retry because sdkmanager can occasionally receive a truncated
+      # NDK archive ("Error on ZipFile unknown archive").
+      # ==========================================
+      - name: Install Android NDK 28.2.13676358
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          NDK_DIR="$SDK_ROOT/ndk/28.2.13676358"
+
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager not found at $SDKMANAGER"
+            exit 1
+          fi
+
+          installed=0
+          for attempt in 1 2 3; do
+            echo "Installing NDK 28.2.13676358 (attempt $attempt/3)"
+            rm -rf "$NDK_DIR"
+            rm -rf "$SDK_ROOT/.temp"/* 2>/dev/null || true
+
+            if yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+            then
+              :
+            fi
+
+            if "$SDKMANAGER" --install "ndk;28.2.13676358"; then
+              if [ -f "$NDK_DIR/source.properties" ]; then
+                installed=1
+                break
+              fi
+            fi
+
+            echo "NDK installation attempt $attempt failed; retrying..."
+            sleep 5
+          done
+
+          if [ "$installed" -ne 1 ]; then
+            echo "ERROR: NDK 28.2.13676358 could not be installed after 3 attempts."
+            exit 1
+          fi
+
+          echo "NDK installed successfully:"
+          cat "$NDK_DIR/source.properties"
+
+      # ==========================================
       # Install dependencies
       # ==========================================
       - name: Install dependencies
