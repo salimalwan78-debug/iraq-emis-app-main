@@ -297,6 +297,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     c['countryOfBirth']!.text = 'العراق';
     c['issuingCountry']!.text = 'العراق';
     c['idType']!.text = '12';
+    c['gender']!.text = '1'; // القيمة الافتراضية: ذكر
     c['studyLanguage']!.text = 'العربية';
     // القيم الافتراضية المطلوبة عند فتح نموذج إضافة الطالب.
     c['motherTongue']!.text = 'العربية';
@@ -690,11 +691,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           )],
         );
       },
-    )).whenComplete(() {
+    ).whenComplete(() {
       _voiceDropdownDialogOpen = false;
       _voiceDropdownTarget = null;
       _voiceDropdownItems = [];
-    });
+    }));
   }
 
   int? _spokenNumber(String phrase) {
