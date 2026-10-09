@@ -517,27 +517,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _addressDistrictId = null;
   }
 
-  Future<void> _pickDate(String key) async {
-    final currentDate = c[key]?.text ?? '';
-    final displayMatch = RegExp(r'^(\d{1,2})-(\d{1,2})-(\d{4})$').firstMatch(currentDate);
-    final initial = displayMatch != null
-        ? DateTime.tryParse('${displayMatch.group(3)}-${displayMatch.group(2)!.padLeft(2, '0')}-${displayMatch.group(1)!.padLeft(2, '0')}') ?? DateTime.now()
-        : DateTime.tryParse(currentDate) ?? DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now(),
-      helpText: labels[key],
-      locale: const Locale('ar'),
-    );
-    if (picked == null || !mounted) return;
-    c[key]!.text =
-        '${picked.day.toString().padLeft(2, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.year.toString().padLeft(4, '0')}';
-    _focusLive(key);
-    setState(() {});
-  }
-
   Future<void> _stageChanged(String? value) async {
     setState(() {
       stageId = value;
@@ -847,7 +826,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     );
     _liveSyncKey.currentState?.pushValues(_liveValues());
     if (mounted) setState(() {});
-    // تم إخفاء رسالة شريط التنبيه السفلي بناءً على الطلب
   }
 
   String _dateForApi(String? raw) {
@@ -948,7 +926,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   String _cleanNumericSpeech(String value) {
-    const arabicIndic = '٠١٣٤٥٦٧٨٩';
+    const arabicIndic = '٠١٢٣٤٥٦٧٨٩';
     const easternArabicIndic = '۰۱۲۳۴۵۶۷۸۹';
     const wordDigits = <String, String>{
       'صفر': '0', 'واحد': '1', 'واحدة': '1', 'اثنان': '2', 'اثنين': '2',
@@ -1469,18 +1447,20 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     await _startVoiceSession(key);
   }
 
-  // معالج كتابة التاريخ يدوياً بصيغة dd-mm-yyyy مع إضافة الشرطة تلقائياً
+  // تنسيق التاريخ اليدوي بدقة: أقصى حد 8 أرقام مع إضافة الشرطات '-' تلقائياً (dd-mm-yyyy)
   void _onDateTextChanged(String key, String value) {
-    final clean = value.replaceAll(RegExp(r'[^\d]'), '');
+    final clean = _normalizeDigits(value).replaceAll(RegExp(r'[^\d]'), '');
+    final limited = clean.length > 8 ? clean.substring(0, 8) : clean;
     var formatted = '';
-    if (clean.length > 0) {
-      formatted += clean.substring(0, clean.length >= 2 ? 2 : clean.length);
+    
+    if (limited.length > 0) {
+      formatted += limited.substring(0, limited.length >= 2 ? 2 : limited.length);
     }
-    if (clean.length > 2) {
-      formatted += '-${clean.substring(2, clean.length >= 4 ? 4 : clean.length)}';
+    if (limited.length > 2) {
+      formatted += '-${limited.substring(2, limited.length >= 4 ? 4 : limited.length)}';
     }
-    if (clean.length > 4) {
-      formatted += '-${clean.substring(4, clean.length >= 8 ? 8 : clean.length)}';
+    if (limited.length > 4) {
+      formatted += '-${limited.substring(4, limited.length)}';
     }
 
     if (formatted != value) {
@@ -1510,7 +1490,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           _liveSyncKey.currentState?.pushValues(_liveValues());
         }
       },
-      onTap: isDate ? () => _pickDate(key) : () => _focusLive(key),
+      onTap: () => _focusLive(key),
       decoration: InputDecoration(
         labelText: labels[key] ?? key,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
@@ -1518,7 +1498,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         fillColor: Colors.white,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
-        // تم إزالة أيقونة التقويم نهائياً مع الإبقاء على الوظيفة عند النقر على الحقل
         suffixIcon: (_voiceFields.contains(key) || _numericVoiceFields.contains(key) || isDate)
             ? Row(mainAxisSize: MainAxisSize.min, children: [
                 Listener(
