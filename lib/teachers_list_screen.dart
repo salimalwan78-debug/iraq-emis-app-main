@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'teacher_smart_tools_screen.dart';
+import 'edit_teacher_screen.dart';
 
 class TeachersListScreen extends StatefulWidget {
   final String token;
@@ -266,7 +267,7 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
                           const SizedBox(height: 12),
                           Text(
                             dialogError!,
-                            style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.red),
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
                             textAlign: TextAlign.center,
                           ),
                         ],
@@ -325,16 +326,11 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
     return Scaffold(
       backgroundColor: bg,
       appBar: AppBar(
-        title: const Text('إدارة المعلمين', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white)),
+        title: const Text('إدارة المعلمين', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         centerTitle: true,
         backgroundColor: const Color(0xFF4527A0),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(
-            tooltip: 'إضافة معلم جديد معطلة مؤقتاً بسبب مشاكل في EMIS',
-            icon: const Icon(Icons.person_add_alt_1, color: Colors.white54),
-            onPressed: null,
-          ),
           IconButton(
             tooltip: 'تحديث',
             onPressed: _loading ? null : _loadTeachers,
@@ -348,29 +344,6 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
           children: [
             _buildSummary(card, text),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(.10),
-                borderRadius: BorderRadius.circular(15),
-                border: Border.all(color: Colors.orange.withOpacity(.30)),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline_rounded, color: Colors.orange),
-                  SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      'تنبيه: إضافة معلم جديد وتعديل بيانات المعلم معطلتان مؤقتاً بسبب مشاكل مع EMIS. تحديث حالة المعلم هو الوظيفة المتاحة حالياً.',
-                      textDirection: TextDirection.rtl,
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: 14),
             Card(
               color: card,
@@ -431,6 +404,21 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
     );
   }
 
+  Widget _summaryCard(String title, String value, IconData icon, Color color, Color card, Color text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(18)),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 25),
+          const SizedBox(height: 5),
+          Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: text)),
+          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSummary(Color card, Color text) {
     return Row(
       children: [
@@ -443,21 +431,6 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
     );
   }
 
-  Widget _summaryCard(String title, String value, IconData icon, Color color, Color card, Color text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-      decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(18)),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 25),
-          const SizedBox(height: 5),
-          Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: text)),
-          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 11, color: Colors.grey)),
-        ],
-      ),
-    );
-  }
-
   Widget _buildTeacherCard(Map<String, dynamic> teacher, Color card, Color text) {
     final name = '${teacher['employeeFullName'] ?? 'بدون اسم'}';
     final national = '${teacher['nationalIdNumber'] ?? ''}';
@@ -465,6 +438,7 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
     final type = '${teacher['employmentType'] ?? ''}';
     final classification = '${teacher['classification'] ?? ''}';
     final status = '${teacher['currentEmploymentStatus'] ?? 'غير محدد'}';
+    final teacherId = '${teacher['id'] ?? ''}';
 
     return Card(
       color: card,
@@ -473,7 +447,18 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: null,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => EditTeacherScreen(
+                token: widget.token,
+                schoolId: widget.schoolId,
+                teacherId: teacherId,
+              ),
+            ),
+          ).then((_) => _loadTeachers());
+        },
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
@@ -503,9 +488,9 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
                     ),
                     const SizedBox(height: 6),
                     if (national.isNotEmpty)
-                      Text('الهوية الوطنية: $national', style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 12, color: Colors.grey), textAlign: TextAlign.right),
+                      Text('الهوية الوطنية: $national', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey), textAlign: TextAlign.right),
                     if (employeeNo.isNotEmpty)
-                      Text('الرقم الوظيفي: $employeeNo', style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 12, color: Colors.grey), textAlign: TextAlign.right),
+                      Text('الرقم الوظيفي: $employeeNo', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey), textAlign: TextAlign.right),
                   ],
                 ),
               ),
@@ -519,11 +504,22 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
                 ),
               ),
               IconButton(
-                tooltip: 'تعديل بيانات المعلم معطل مؤقتاً بسبب مشاكل في EMIS',
-                onPressed: null,
+                tooltip: 'تعديل بيانات المعلم',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => EditTeacherScreen(
+                        token: widget.token,
+                        schoolId: widget.schoolId,
+                        teacherId: teacherId,
+                      ),
+                    ),
+                  ).then((_) => _loadTeachers());
+                },
                 icon: const Icon(
                   Icons.edit_outlined,
-                  color: Colors.grey,
+                  color: Colors.deepPurple,
                 ),
               ),
             ],
@@ -549,7 +545,7 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
         children: [
           const Icon(Icons.error_outline, color: Colors.red, size: 42),
           const SizedBox(height: 10),
-          Text(_error!, style: TextStyle(fontWeight: FontWeight.bold,color: text), textAlign: TextAlign.center),
+          Text(_error!, style: TextStyle(fontWeight: FontWeight.bold, color: text), textAlign: TextAlign.center),
           const SizedBox(height: 14),
           ElevatedButton.icon(onPressed: _loadTeachers, icon: const Icon(Icons.refresh), label: const Text('إعادة المحاولة')),
         ],
