@@ -847,7 +847,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     );
     _liveSyncKey.currentState?.pushValues(_liveValues());
     if (mounted) setState(() {});
-    _showVoiceMessage('تم إدخال ${labels[key] ?? 'التاريخ'}: $value');
+    // تم إخفاء رسالة شريط التنبيه السفلي بناءً على الطلب
   }
 
   String _dateForApi(String? raw) {
@@ -948,7 +948,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   String _cleanNumericSpeech(String value) {
-    const arabicIndic = '٠١٢٣٤٥٦٧٨٩';
+    const arabicIndic = '٠١٣٤٥٦٧٨٩';
     const easternArabicIndic = '۰۱۲۳۴۵۶۷۸۹';
     const wordDigits = <String, String>{
       'صفر': '0', 'واحد': '1', 'واحدة': '1', 'اثنان': '2', 'اثنين': '2',
@@ -1469,17 +1469,48 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     await _startVoiceSession(key);
   }
 
+  // معالج كتابة التاريخ يدوياً بصيغة dd-mm-yyyy مع إضافة الشرطة تلقائياً
+  void _onDateTextChanged(String key, String value) {
+    final clean = value.replaceAll(RegExp(r'[^\d]'), '');
+    var formatted = '';
+    if (clean.length > 0) {
+      formatted += clean.substring(0, clean.length >= 2 ? 2 : clean.length);
+    }
+    if (clean.length > 2) {
+      formatted += '-${clean.substring(2, clean.length >= 4 ? 4 : clean.length)}';
+    }
+    if (clean.length > 4) {
+      formatted += '-${clean.substring(4, clean.length >= 8 ? 8 : clean.length)}';
+    }
+
+    if (formatted != value) {
+      c[key]?.value = TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+    }
+    _liveSyncKey.currentState?.pushValues(_liveValues());
+  }
+
   Widget _textField(String key, {bool required = false, int maxLines = 1, TextInputType? keyboard}) {
+    final isDate = _dateVoiceFields.contains(key);
     return TextFormField(
-      key: _voiceFieldKeys.containsKey(key) || _voiceFields.contains(key) || _numericVoiceFields.contains(key) || _dateVoiceFields.contains(key)
+      key: _voiceFieldKeys.containsKey(key) || _voiceFields.contains(key) || _numericVoiceFields.contains(key) || isDate
           ? _voiceFieldKey(key)
           : null,
       controller: c[key],
       maxLines: maxLines,
-      keyboardType: keyboard,
-      readOnly: _dateVoiceFields.contains(key),
+      keyboardType: isDate ? TextInputType.number : keyboard,
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       textDirection: TextDirection.rtl,
+      onChanged: (val) {
+        if (isDate) {
+          _onDateTextChanged(key, val);
+        } else {
+          _liveSyncKey.currentState?.pushValues(_liveValues());
+        }
+      },
+      onTap: isDate ? () => _pickDate(key) : () => _focusLive(key),
       decoration: InputDecoration(
         labelText: labels[key] ?? key,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
@@ -1487,14 +1518,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         fillColor: Colors.white,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
-        suffixIconConstraints: _dateVoiceFields.contains(key) ? const BoxConstraints(minWidth: 96, minHeight: 48) : null,
-        suffixIcon: (_voiceFields.contains(key) || _numericVoiceFields.contains(key) || _dateVoiceFields.contains(key))
+        // تم إزالة أيقونة التقويم نهائياً مع الإبقاء على الوظيفة عند النقر على الحقل
+        suffixIcon: (_voiceFields.contains(key) || _numericVoiceFields.contains(key) || isDate)
             ? Row(mainAxisSize: MainAxisSize.min, children: [
-                if (_dateVoiceFields.contains(key)) IconButton(
-                  tooltip: 'اختيار التاريخ',
-                  onPressed: () => _pickDate(key),
-                  icon: const Icon(Icons.calendar_month_outlined),
-                ),
                 Listener(
                   behavior: HitTestBehavior.opaque,
                   onPointerDown: (_) => _markMicPointerDown(),
@@ -1510,8 +1536,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
               ])
             : null,
       ),
-      onChanged: (_) => _liveSyncKey.currentState?.pushValues(_liveValues()),
-      onTap: _dateVoiceFields.contains(key) ? () => _pickDate(key) : () => _focusLive(key),
     );
   }
 
@@ -1870,7 +1894,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             if (stageDetails != null) ...[const SizedBox(height: 10), _stageInfo()],
                           ]),
                           _section('العنوان', [
-                            // تم إلغاء رمز الميكروفون من حقل الدولة هنا
                             _addressDropdown(
                               label: 'الدولة',
                               voiceKey: 'addressCountry',
@@ -2022,14 +2045,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     );
   }
 
-  Widget _addressDropdown({
-    required String label,
-    required String voiceKey,
-    required String? value,
-    required List<Map<String, dynamic>> items,
-    required ValueChanged<String?> onChanged,
-    bool showMic = true,
-  }) {
+  Widget _addressDropdown({required String label, required String voiceKey, required String? value, required List<Map<String, dynamic>> items, required ValueChanged<String?> onChanged, bool showMic = true}) {
     final safe = items.any((x) => _value(x) == value) ? value : null;
     return DropdownButtonFormField<String>(
       key: ValueKey<String>('voice-address-$voiceKey-${safe ?? ''}'),
