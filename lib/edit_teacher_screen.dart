@@ -620,7 +620,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                   const Text(
                     'يمكنك تقريب الصورة وتحريكها لمراجعتها قبل اعتمادها',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 12),
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
@@ -673,7 +673,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                           Navigator.pop(dialogContext);
                         },
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                  child: const Text('اعتماد', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white)),
+                  child: const Text('اعتماد', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
               ],
             );
@@ -711,7 +711,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   Future<String?> _uploadImageToEmisServer(File imageFile) async {
     final request = http.MultipartRequest(
       'POST',
-      Uri.parse('https://emis.moedu.gov.iq/api/student/uploadimage'),
+      Uri.parse('https://emis.moedu.gov.iq/api/employee/uploadimage'),
     );
     request.headers['Authorization'] = widget.token;
     request.headers['Accept'] = 'application/json';
@@ -1030,7 +1030,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             TextButton.icon(
               onPressed: hasImage && !_saving ? _deleteCurrentPhoto : null,
               icon: const Icon(Icons.delete_forever, color: Colors.red),
-              label: const Text('إزالة الصورة الحالية', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.red)),
+              label: const Text('إزالة الصورة الحالية', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
             ),
           ],
         ),
@@ -1042,7 +1042,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('تعديل بيانات المعلم', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white)),
+        title: const Text('تعديل بيانات المعلم', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         centerTitle: true,
         backgroundColor: const Color(0xFF4527A0),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -1054,126 +1054,126 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
               : _error != null
                   ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center)))
                   : Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: Form(
-                    key: _formKey,
-                    child: ListView(
-                      padding: const EdgeInsets.all(14),
-                      children: [
-                        _buildTeacherImageCard(),
-                        const SizedBox(height: 14),
-                        _section('الاسم الكامل', [
-                          _textField('name', required: true),
-                          _textField('fatherName', required: true),
-                          _textField('grandFatherName', required: true),
-                          _textField('fathersGrandFatherName', required: true),
-                          _textField('surName', required: true),
-                          _textField('motherName'),
-                          _textField('mothersFatherName'),
-                          _textField('mothersGrandFatherName'),
-                        ]),
-                        _section('البيانات الشخصية', [
-                          _textField('dateOfBirth', required: true, readOnly: true),
-                          _selectField('countryOfBirth', required: true),
-                          _selectField('gender', required: true),
-                          _selectField('nationality', required: true),
-                          _textField('homeTown'),
-                          _selectField('motherTongue'),
-                          _selectField('maritalStatus'),
-                          _selectField('bloodGroup'),
-                          _selectField('religion'),
-                          _textField('notes', maxLines: 3),
-                        ]),
-                        _section('وثيقة التعريف', [
-                          _selectField('idType', required: true),
-                          _selectField('issuingCountry', required: true),
-                          _textField('nationalId', required: true, keyboardType: TextInputType.number),
-                          _textField('employeeIdNumber', keyboardType: TextInputType.number),
-                          _textField('familyNumber', keyboardType: TextInputType.number),
-                        ]),
-                        _section('البيانات الوظيفية', [
-                          _selectField('employmentType', required: true),
-                          _selectField('employeeCategory', required: true),
-                          _selectField('classification', required: true),
-                          _textField('jobDesignation'),
-                          _textField('employmentGrade'),
-                          _selectField('currentPosition'),
-                          _selectField('positionType', required: true),
-                          _textField('dateOfStartWorking', required: true, readOnly: true),
-                        ]),
-                        _section('الحالة الوظيفية', [
-                          _selectField('status', required: true),
-                          _textField('statusDate', readOnly: true),
-                          _textField('statusReason', maxLines: 2),
-                        ]),
-                        _section('التحصيل الدراسي', [
-                          _selectField('educationLevel', fallback: const ['ابتدائية', 'متوسطة', 'إعدادية', 'دبلوم', 'بكالوريوس', 'دبلوم عالي', 'ماجستير', 'دكتوراه']),
-                          _textField('universityName'),
-                          _textField('graduationYear', readOnly: true),
-                          _textField('specialization'),
-                        ]),
-                        _section('ذوو الاحتياجات الخاصة والاتصال الطارئ', [
-                          _textField('specialNeedsInformation'),
-                          _textField('emergencyContactName'),
-                          _textField('emergencyContactRelationship'),
-                          _textField('emergencyContactPhoneNumber', keyboardType: TextInputType.phone),
-                        ]),
-                        _section('العنوان ومعلومات الاتصال', [
-                          _addressDropdown('الدولة', _addressCountryId, _addressCountries, (v) {
-                            final country = _addressCountries.where((x) => _optionValue(x)?.toString() == v).toList();
-                            if (country.isEmpty) return;
-                            setState(() {
-                              _addressCountryId = v;
-                              _addressGovernorates = _childrenOf(country.first);
-                              _addressGovernorateId = null;
-                              _addressDistricts = [];
-                              _addressDistrictId = null;
-                              if (_employee?['address'] is Map) _employee!['address']['countryStructureId'] = null;
-                            });
-                          }),
-                          _addressDropdown('المحافظة', _addressGovernorateId, _addressGovernorates, (v) {
-                            final gov = _addressGovernorates.where((x) => _optionValue(x)?.toString() == v).toList();
-                            if (gov.isEmpty) return;
-                            setState(() {
-                              _addressGovernorateId = v;
-                              _addressDistricts = _childrenOf(gov.first);
-                              _addressDistrictId = null;
-                              if (_employee?['address'] is Map) _employee!['address']['countryStructureId'] = null;
-                            });
-                          }),
-                          _addressDropdown('القضاء', _addressDistrictId, _addressDistricts, (v) {
-                            setState(() {
-                              _addressDistrictId = v;
-                              if (_employee?['address'] is Map) {
-                                _employee!['address']['countryStructureId'] = v == null ? null : int.tryParse(v);
-                              }
-                            });
-                          }),
-                          _textField('town'),
-                          _textField('area'),
-                          _textField('quarter'),
-                          _textField('street'),
-                          _textField('address1'),
-                          _textField('address2'),
-                          _textField('closestLocation'),
-                          _textField('email', keyboardType: TextInputType.emailAddress),
-                          _textField('mobilePhoneNumber', keyboardType: TextInputType.phone),
-                        ]),
-                        const SizedBox(height: 4),
-                        SizedBox(
-                          height: 54,
-                          child: ElevatedButton.icon(
-                            onPressed: _saving ? null : _save,
-                            icon: _saving ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save),
-                            label: Text(_saving ? 'جارٍ الحفظ...' : 'حفظ بيانات المعلم'),
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                          ),
+                      textDirection: TextDirection.rtl,
+                      child: Form(
+                        key: _formKey,
+                        child: ListView(
+                          padding: const EdgeInsets.all(14),
+                          children: [
+                            _buildTeacherImageCard(),
+                            const SizedBox(height: 14),
+                            _section('الاسم الكامل', [
+                              _textField('name', required: true),
+                              _textField('fatherName', required: true),
+                              _textField('grandFatherName', required: true),
+                              _textField('fathersGrandFatherName', required: true),
+                              _textField('surName', required: true),
+                              _textField('motherName'),
+                              _textField('mothersFatherName'),
+                              _textField('mothersGrandFatherName'),
+                            ]),
+                            _section('البيانات الشخصية', [
+                              _textField('dateOfBirth', required: true, readOnly: true),
+                              _selectField('countryOfBirth', required: true),
+                              _selectField('gender', required: true),
+                              _selectField('nationality', required: true),
+                              _textField('homeTown'),
+                              _selectField('motherTongue'),
+                              _selectField('maritalStatus'),
+                              _selectField('bloodGroup'),
+                              _selectField('religion'),
+                              _textField('notes', maxLines: 3),
+                            ]),
+                            _section('وثيقة التعريف', [
+                              _selectField('idType', required: true),
+                              _selectField('issuingCountry', required: true),
+                              _textField('nationalId', required: true, keyboardType: TextInputType.number),
+                              _textField('employeeIdNumber', keyboardType: TextInputType.number),
+                              _textField('familyNumber', keyboardType: TextInputType.number),
+                            ]),
+                            _section('البيانات الوظيفية', [
+                              _selectField('employmentType', required: true),
+                              _selectField('employeeCategory', required: true),
+                              _selectField('classification', required: true),
+                              _textField('jobDesignation'),
+                              _textField('employmentGrade'),
+                              _selectField('currentPosition'),
+                              _selectField('positionType', required: true),
+                              _textField('dateOfStartWorking', required: true, readOnly: true),
+                            ]),
+                            _section('الحالة الوظيفية', [
+                              _selectField('status', required: true),
+                              _textField('statusDate', readOnly: true),
+                              _textField('statusReason', maxLines: 2),
+                            ]),
+                            _section('التحصيل الدراسي', [
+                              _selectField('educationLevel', fallback: const ['ابتدائية', 'متوسطة', 'إعدادية', 'دبلوم', 'بكالوريوس', 'دبلوم عالي', 'ماجستير', 'دكتوراه']),
+                              _textField('universityName'),
+                              _textField('graduationYear', readOnly: true),
+                              _textField('specialization'),
+                            ]),
+                            _section('ذوو الاحتياجات الخاصة والاتصال الطارئ', [
+                              _textField('specialNeedsInformation'),
+                              _textField('emergencyContactName'),
+                              _textField('emergencyContactRelationship'),
+                              _textField('emergencyContactPhoneNumber', keyboardType: TextInputType.phone),
+                            ]),
+                            _section('العنوان ومعلومات الاتصال', [
+                              _addressDropdown('الدولة', _addressCountryId, _addressCountries, (v) {
+                                final country = _addressCountries.where((x) => _optionValue(x)?.toString() == v).toList();
+                                if (country.isEmpty) return;
+                                setState(() {
+                                  _addressCountryId = v;
+                                  _addressGovernorates = _childrenOf(country.first);
+                                  _addressGovernorateId = null;
+                                  _addressDistricts = [];
+                                  _addressDistrictId = null;
+                                  if (_employee?['address'] is Map) _employee!['address']['countryStructureId'] = null;
+                                });
+                              }),
+                              _addressDropdown('المحافظة', _addressGovernorateId, _addressGovernorates, (v) {
+                                final gov = _addressGovernorates.where((x) => _optionValue(x)?.toString() == v).toList();
+                                if (gov.isEmpty) return;
+                                setState(() {
+                                  _addressGovernorateId = v;
+                                  _addressDistricts = _childrenOf(gov.first);
+                                  _addressDistrictId = null;
+                                  if (_employee?['address'] is Map) _employee!['address']['countryStructureId'] = null;
+                                });
+                              }),
+                              _addressDropdown('القضاء', _addressDistrictId, _addressDistricts, (v) {
+                                setState(() {
+                                  _addressDistrictId = v;
+                                  if (_employee?['address'] is Map) {
+                                    _employee!['address']['countryStructureId'] = v == null ? null : int.tryParse(v);
+                                  }
+                                });
+                              }),
+                              _textField('town'),
+                              _textField('area'),
+                              _textField('quarter'),
+                              _textField('street'),
+                              _textField('address1'),
+                              _textField('address2'),
+                              _textField('closestLocation'),
+                              _textField('email', keyboardType: TextInputType.emailAddress),
+                              _textField('mobilePhoneNumber', keyboardType: TextInputType.phone),
+                            ]),
+                            const SizedBox(height: 4),
+                            SizedBox(
+                              height: 54,
+                              child: ElevatedButton.icon(
+                                onPressed: _saving ? null : _save,
+                                icon: _saving ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save),
+                                label: Text(_saving ? 'جارٍ الحفظ...' : 'حفظ بيانات المعلم'),
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                          ],
                         ),
-                        const SizedBox(height: 20),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
           Positioned(
             left: 0,
             bottom: 0,
@@ -1186,7 +1186,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
               recordId: widget.teacherId,
               aliases: _liveAliases(),
               onSnapshot: _applyLiveSnapshot,
-                onOptions: _applyLiveOptions,
+              onOptions: _applyLiveOptions,
               onStatus: (v) { if (mounted) setState(() => _liveStatus = v); },
             ),
           ),
