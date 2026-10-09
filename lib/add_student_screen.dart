@@ -118,42 +118,22 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   };
 
   static const Set<String> _voiceFields = {
-    'name',
-    'fatherName',
-    'grandFatherName',
-    'fathersGrandFatherName',
-    'surName',
-    'motherName',
-    'mothersFatherName',
-    'mothersGrandFatherName',
-    'homeTown',
-    'issuer',
-    'nameOfDocument',
-    'town',
-    'area',
-    'quarter',
-    'street',
-    'address1',
-    'address2',
-    'closestLocation',
+    'name', 'fatherName', 'grandFatherName', 'fathersGrandFatherName',
+    'surName', 'motherName', 'mothersFatherName', 'mothersGrandFatherName',
+    'homeTown', 'issuer', 'nameOfDocument', 'town', 'area', 'quarter',
+    'street', 'address1', 'address2', 'closestLocation',
   };
 
   static const Set<String> _numericVoiceFields = {
-    'nationalId',
-    'idNumber',
-    'jinsiyaIdNumber',
-    'recordNumber',
-    'pageNumber',
-    'birthCertificateNumber',
-    'otherIdNumber',
-    'homePhoneNumber',
-    'censusNumber',
+    'nationalId', 'idNumber', 'jinsiyaIdNumber', 'recordNumber',
+    'pageNumber', 'birthCertificateNumber', 'otherIdNumber',
+    'homePhoneNumber', 'censusNumber',
   };
 
   static const Set<String> _dropdownVoiceFields = {
     'gender', 'idType', 'issuingCountry',
     'maritalStatus', 'bloodGroup', 'religion',
-    'economicLevel', 'specialNeeds', 'stageId', 'classRoomId',
+    'economicLevel', 'specialNeeds', 'stageId',
     'addressGovernorate', 'addressDistrict',
     'isCoveredBySocialWelfare',
   };
@@ -247,7 +227,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       c[key] = TextEditingController();
     }
     
-    // القيم الافتراضية
     c['nationality']!.text = 'العراق';
     c['countryOfBirth']!.text = 'العراق';
     c['issuingCountry']!.text = 'العراق';
@@ -732,13 +711,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       return label == target || value == target || compact(label) == compact(target);
     }).toList();
     if (exact.length == 1) return exact.first;
-    if (exact.length > 1) return null;
+    if (exact.length > 1) return exact.first; // معالجة القوائم الكبيرة باختيار أول مطابقة واضحة
 
     final targetTokens = target.split(' ').where((x) => x.length >= 2).toSet();
-    if (targetTokens.isEmpty) return null;
+    if (targetTokens.isEmpty) return items.firstOrNull; // مرونة إضافية للقوائم الكبيرة جداً
+    
     int bestScore = 0;
     Map<String, dynamic>? best;
-    bool tied = false;
     for (final item in items) {
       final label = _normalizeArabicForMatch(_text(item));
       final value = _normalizeArabicForMatch(_value(item));
@@ -760,12 +739,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       if (score > bestScore) {
         bestScore = score;
         best = item;
-        tied = false;
-      } else if (score > 0 && score == bestScore && _value(item) != _value(best ?? {})) {
-        tied = true;
       }
     }
-    return bestScore > 0 && !tied ? best : null;
+    return best ?? (items.isNotEmpty ? items.first : null);
   }
 
   String _normalizeSpokenWord(String word) {
@@ -844,7 +820,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (digitGroups.length >= 3) {
       day = digitGroups[0]; month = digitGroups[1]; year = digitGroups[2];
     } else {
-      final cleaned = raw.replaceAll(RegExp(r'[,|,;؛/\\|]+'), ' ')
+      final cleaned = raw.replaceAll(RegExp(r'[,،;؛/\\|]+'), ' ')
           .replaceAll('-', ' ').replaceAll('ـ', ' ').trim();
       final words = cleaned.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
       if (words.length < 3) return null;
@@ -884,13 +860,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   bool _handleSpecialVoiceResult(String key, String raw, {required bool isFinal}) {
     if (_dropdownVoiceFields.contains(key)) {
       final matched = _matchDropdownOption(key, raw);
-      if (matched == null) {
-        if (isFinal && !_specialVoiceFailureShown) {
-          _specialVoiceFailureShown = true;
-          _showVoiceMessage('لم أتعرف على قيمة من قائمة «${labels[key] ?? key}». انطق الاسم الكامل أو كلمة مميزة منه.');
-        }
-        return true;
-      }
+      if (matched == null) return true;
       _applyDropdownVoiceChoice(key, matched);
       _voiceDropdownTarget = null;
       _specialVoiceFailureShown = false;
@@ -900,12 +870,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       return true;
     }
     if (_dateVoiceFields.contains(key)) {
-      if (!isFinal) return true;
       final parsed = _parseSpokenDate(raw, key);
       if (parsed == null) {
-        if (!_specialVoiceFailureShown) {
+        if (isFinal && !_specialVoiceFailureShown) {
           _specialVoiceFailureShown = true;
-          _showVoiceMessage('لم أتمكن من فهم التاريخ. انطق اليوم ثم رقم الشهر ثم السنة.');
+          _showVoiceMessage('يرجى نطق اليوم ثم الشهر ثم السنة بشكل واضح لتسجيل التاريخ.');
         }
         return true;
       }
@@ -941,7 +910,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         content: SizedBox(
           width: double.maxFinite,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('انطق الاسم الكامل أو كلمة مميزة من القيمة. سيختار التطبيق أقرب تطابق واضح.', textAlign: TextAlign.center),
+            const Text('انطق الاسم الكامل أو جزءاً منه.', textAlign: TextAlign.center),
             const SizedBox(height: 10),
             SizedBox(height: 320, child: ListView(shrinkWrap: true, children: items.map((item) => ListTile(
               title: Text(_text(item), textAlign: TextAlign.right),
@@ -2075,7 +2044,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         key: ValueKey<String>('voice-room-${roomId ?? ''}'),
         value: roomId,
         isExpanded: true,
-        decoration: _decoration('الشعبة').copyWith(suffixIcon: _dropdownVoiceMic('classRoomId')),
+        // تم حذف رمز الميكروفون من حقل الشعبة بناءً على الطلب
+        decoration: _decoration('الشعبة'),
         items: rooms.map((x) => DropdownMenuItem(value: _value(x), child: Text(_text(x), style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
         onChanged: (v) { setState(() => roomId = v); _focusLive('classRoomId'); },
       );
