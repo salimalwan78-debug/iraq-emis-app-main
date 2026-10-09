@@ -782,42 +782,33 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final target = _normalizeArabicForMatch(spoken);
     if (target.isEmpty) return null;
     final items = _dropdownOptionsForVoice(key);
-    String normLabel(Map<String, dynamic> item) => _normalizeArabicForMatch(_text(item));
-    String normValue(Map<String, dynamic> item) => _normalizeArabicForMatch(_value(item));
 
-    // أولاً: التطابق الكامل مع الاسم المعروض أو قيمة الخيار.
+    // التطابق الكامل أولاً.
     for (final item in items) {
-      if (normLabel(item) == target || normValue(item) == target) return item;
+      if (_normalizeArabicForMatch(_text(item)) == target ||
+          _normalizeArabicForMatch(_value(item)) == target) return item;
     }
 
-    // ثانياً: احتساب الكلمات المميزة. لا نقبل كلمة قصيرة/شائعة إذا طابقت
-    // أكثر من خيار، ولا نغلق الحوار إلا عند وجود أفضل تطابق وحيد.
-    final targetTokens = target.split(' ').where((x) => x.length >= 2).toSet();
-    if (targetTokens.isEmpty) return null;
+    // السماح بنطق القيمة كاملة أو جزء مميز منها، مع رفض أفضلية متعادلة.
     int bestScore = 0;
     Map<String, dynamic>? best;
     bool tied = false;
     for (final item in items) {
-      final label = normLabel(item);
-      final value = normValue(item);
+      final label = _normalizeArabicForMatch(_text(item));
+      final value = _normalizeArabicForMatch(_value(item));
       if (label.isEmpty) continue;
-      if (label == target || value == target) return item;
-
-      final labelTokens = label.split(' ').where((x) => x.length >= 2).toSet();
-      final valueTokens = value.split(' ').where((x) => x.length >= 2).toSet();
-      final overlap = targetTokens.intersection(labelTokens).length;
-      final valueOverlap = targetTokens.intersection(valueTokens).length;
-      int score = overlap * 10 + valueOverlap * 2;
-      if (label.contains(target) && target.length >= 3) score += 8;
-      if (target.contains(label) && label.length >= 3) score += 6;
-      if (value.isNotEmpty && value == target) score += 100;
-      if (score > bestScore) {
-        bestScore = score;
-        best = item;
-        tied = false;
-      } else if (score > 0 && score == bestScore && _value(item) != _value(best ?? const {})) {
-        tied = true;
+      if (label.contains(target) || target.contains(label) ||
+          (value.isNotEmpty && (value.contains(target) || target.contains(value)))) {
+        final score = target.length + (label == target ? 1000 : 0);
+        if (score > bestScore) { bestScore = score; best = item; tied = false; }
+        else if (score == bestScore) { tied = true; }
+        continue;
       }
+      final tokens = label.split(' ').where((x) => x.length >= 2).toSet();
+      final targetTokens = target.split(' ').where((x) => x.length >= 2).toSet();
+      final overlap = targetTokens.intersection(tokens).length;
+      if (overlap > bestScore) { bestScore = overlap; best = item; tied = false; }
+      else if (overlap > 0 && overlap == bestScore) { tied = true; }
     }
     return bestScore > 0 && !tied ? best : null;
   }
@@ -1199,7 +1190,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             if (result.finalResult == true && _speechStopRequested) _finishLegacyVoiceSessionAndStartPending();
             return;
           }
-          if (result.finalResult != true) return;
           final text = _numericVoiceFields.contains(key)
               ? _cleanNumericSpeech(raw)
               : _cleanArabicSpeech(raw);
@@ -1298,9 +1288,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         if (controller != null) {
           // لا نستبدل نصاً جيداً بناتج جزئي أقصر بلا داعٍ.
           final current = controller.text.trim();
-          // لا نستبدل النص الحالي بالنتائج الجزئية؛ تُطبّق الكتابة عند النتيجة النهائية فقط.
-          // بذلك يبقى النص السابق كما هو إذا أُلغي الميكروفون قبل اكتمال التعرف.
-          final shouldApply = type == 'result';
+          // اعرض النتائج الجزئية أثناء الكلام كما في النسخة التي كان التعرف يعمل فيها.
+          // تبقى النتيجة النهائية هي التي تثبت النص المعتمد عند انتهاء التعرف.
+          final shouldApply = type == 'result' || current.isEmpty || text.length >= current.length;
           if (shouldApply) {
             controller.value = TextEditingValue(
               text: text,
