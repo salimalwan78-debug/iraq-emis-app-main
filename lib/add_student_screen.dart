@@ -155,37 +155,51 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     'censusNumber',
   };
 
+  // الحقول التي تستخدم قائمة منسدلة ويمكن اختيار قيمتها بالصوت.
+  static const Set<String> _dropdownVoiceFields = {
+    'gender',
+    'countryOfBirth',
+    'nationality',
+    'idType',
+    'issuingCountry',
+    'motherTongue',
+    'studyLanguage',
+    'maritalStatus',
+    'bloodGroup',
+    'religion',
+    'economicLevel',
+    'specialNeeds',
+    'isCoveredBySocialWelfare',
+    'addressCountry',
+    'addressGovernorate',
+    'addressDistrict',
+    'stageId',
+    'classRoomId',
+  };
+
+  // الحقول التي تعرض تقويماً ويمكن تعبئتها صوتياً.
+  static const Set<String> _dateVoiceFields = {
+    'dateOfBirth',
+    'issuingDate',
+  };
+
+  String? _activeVoiceSelectionKey;
+  BuildContext? _voiceSelectionSheetContext;
+
   // ترتيب الحقول التي ينتقل بينها زر السهم الثابت. الحقول المخفية بحسب نوع
   // الهوية لا تدخل في التسلسل، وكذلك أي حقل غير ظاهر فعلياً في الشاشة.
   static const List<String> _voiceSequentialOrder = [
-    'name',
-    'fatherName',
-    'grandFatherName',
-    'fathersGrandFatherName',
-    'surName',
-    'motherName',
-    'mothersFatherName',
-    'mothersGrandFatherName',
-    'nationalId',
-    'idNumber',
-    'jinsiyaIdNumber',
-    'issuer',
-    'recordNumber',
-    'pageNumber',
-    'nameOfDocument',
-    'birthCertificateNumber',
-    'otherIdNumber',
-    'homeTown',
-    'homePhoneNumber',
-    'notes',
-    'town',
-    'area',
-    'quarter',
-    'street',
-    'address1',
-    'address2',
-    'closestLocation',
-    'censusNumber',
+    'name', 'fatherName', 'grandFatherName', 'fathersGrandFatherName',
+    'surName', 'motherName', 'mothersFatherName', 'mothersGrandFatherName',
+    'gender', 'dateOfBirth', 'countryOfBirth', 'nationality', 'homeTown',
+    'idType', 'nationalId', 'idNumber', 'jinsiyaIdNumber', 'issuer',
+    'recordNumber', 'pageNumber', 'issuingCountry', 'issuingDate',
+    'birthCertificateNumber', 'otherIdNumber', 'nameOfDocument',
+    'motherTongue', 'studyLanguage', 'maritalStatus', 'bloodGroup',
+    'religion', 'economicLevel', 'specialNeeds', 'homePhoneNumber', 'notes',
+    'stageId', 'classRoomId', 'addressCountry', 'addressGovernorate',
+    'addressDistrict', 'town', 'area', 'quarter', 'street', 'address1',
+    'address2', 'closestLocation', 'censusNumber',
   ];
 
   final labels = const <String, String>{
@@ -294,6 +308,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     c['countryOfBirth']!.text = 'العراق';
     c['issuingCountry']!.text = 'العراق';
     c['idType']!.text = '12';
+    c['gender']!.text = '1';
     c['studyLanguage']!.text = 'العربية';
     // القيم الافتراضية المطلوبة عند فتح نموذج إضافة الطالب.
     c['motherTongue']!.text = 'العربية';
@@ -478,6 +493,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
       stages = results.remove('stageId') ?? [];
       options.addAll(results);
+      final genderOptions = options['gender'] ?? const <Map<String, dynamic>>[];
+      final male = genderOptions.where((x) => _normalizeVoiceMatch(_text(x)) == 'ذكر').toList();
+      if (male.isNotEmpty) c['gender']!.text = _value(male.first);
       await _loadAddressStructure();
       _applyDefaultAddressValues();
       options['nationality'] = List<Map<String, dynamic>>.from(options['countryOfBirth'] ?? const []);
@@ -743,6 +761,57 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     return out.toString();
   }
 
+  int? _arabicNumber(String raw) {
+    final s = _normalizeVoiceMatch(raw);
+    if (s.isEmpty) return null;
+    final direct = int.tryParse(_cleanNumericSpeech(s));
+    if (direct != null) return direct;
+    final ones = <String,int>{'صفر':0,'واحد':1,'واحدة':1,'اثنان':2,'اثنين':2,'اثنتان':2,'اثنتين':2,'ثلاثة':3,'ثلاث':3,'اربعة':4,'أربعة':4,'اربعه':4,'أربعه':4,'خمسة':5,'خمس':5,'ستة':6,'ست':6,'سبعة':7,'سبع':7,'ثمانية':8,'ثماني':8,'تمانية':8,'تمانيه':8,'تسعة':9,'تسع':9,'عشرة':10,'عشر':10,'احد عشر':11,'أحد عشر':11,'اثنا عشر':12,'اثني عشر':12,'ثلاثة عشر':13,'اربعة عشر':14,'خمسة عشر':15,'ستة عشر':16,'سبعة عشر':17,'ثمانية عشر':18,'تسعة عشر':19};
+    final tens = <String,int>{'عشرون':20,'عشرين':20,'ثلاثون':30,'ثلاثين':30,'اربعون':40,'أربعون':40,'اربعين':40,'خمسون':50,'خمسين':50,'ستون':60,'ستين':60,'سبعون':70,'سبعين':70,'ثمانون':80,'ثمانين':80,'تسعون':90,'تسعين':90};
+    final hundreds = <String,int>{'مائة':100,'مئه':100,'مية':100,'مئتان':200,'مائتان':200,'مئتين':200,'مائتين':200,'ثلاثمائة':300,'ثلاثمئه':300,'أربعمائة':400,'اربعمائة':400,'خمسمائة':500,'ستمائة':600,'سبعمائة':700,'ثمانمائة':800,'تسعمائة':900};
+    var total = 0, current = 0;
+    final words = s.replaceAll('و', ' و ').split(RegExp(r'\s+')).where((x)=>x.isNotEmpty).toList();
+    for (final w0 in words) {
+      final w = w0.trim();
+      if (w == 'و') continue;
+      if (w == 'الف' || w == 'ألف') { current = current == 0 ? 1 : current; total += current * 1000; current = 0; continue; }
+      if (hundreds.containsKey(w)) { current += hundreds[w]!; continue; }
+      if (tens.containsKey(w)) { current += tens[w]!; continue; }
+      if (ones.containsKey(w)) { current += ones[w]!; continue; }
+      if (w.startsWith('الف')) { total += 1000; current = 0; continue; }
+    }
+    final result = total + current;
+    return result > 0 ? result : null;
+  }
+
+  String? _parseSpokenDate(String raw) {
+    var text = raw.replaceAll('،', ' ').replaceAll('-', ' ').replaceAll('/', ' ');
+    text = text.replaceAll('\u0660','0').replaceAll('\u0661','1').replaceAll('\u0662','2').replaceAll('\u0663','3').replaceAll('\u0664','4').replaceAll('\u0665','5').replaceAll('\u0666','6').replaceAll('\u0667','7').replaceAll('\u0668','8').replaceAll('\u0669','9');
+    final yearMarkers = RegExp(r'\b(?:الف|ألف|الفين|ألفين|مائة|مئه|مائة|مائتين|مئتين|تسعمائة|ثمانمائة|سبعمائة|ستمائة|خمسمائة|أربعمائة|اربعمائة|ثلاثمائة)\b');
+    final match = yearMarkers.firstMatch(text);
+    String first = text, yearPart = '';
+    if (match != null) { first = text.substring(0, match.start); yearPart = text.substring(match.start); }
+    final numericTokens = RegExp(r'\d+').allMatches(first).map((m)=>int.tryParse(m.group(0)!)).whereType<int>().toList();
+    final spokenTokens = first.split(RegExp(r'\s+')).where((x)=>x.isNotEmpty).toList();
+    final firstNums = <int>[];
+    for (final token in spokenTokens) {
+      final n = int.tryParse(token) ?? _arabicNumber(token);
+      if (n != null && n >= 0 && n <= 31) firstNums.add(n);
+    }
+    final nums = numericTokens.length >= 2 ? numericTokens : firstNums;
+    if (nums.length < 2) return null;
+    final day = nums[0], month = nums[1];
+    int? year;
+    if (yearPart.isNotEmpty) year = _arabicNumber(yearPart);
+    if (year == null) {
+      final allNums = RegExp(r'\d+').allMatches(text).map((m)=>int.tryParse(m.group(0)!)).whereType<int>().toList();
+      if (allNums.length >= 3) year = allNums.last;
+    }
+    if (year == null || day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > DateTime.now().year) return null;
+    try { final d = DateTime(year, month, day); if (d.year != year || d.month != month || d.day != day) return null; } catch (_) { return null; }
+    return '${year.toString().padLeft(4,'0')}-${month.toString().padLeft(2,'0')}-${day.toString().padLeft(2,'0')}';
+  }
+
   bool get _voiceAvailableBySetting => AppCore.voiceInputEnabled;
 
   Future<bool> _ensureMicrophoneAccess() async {
@@ -829,6 +898,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _activeVoiceSessionId = sessionId;
     _activeVoiceField = key;
     _scrollVoiceFieldIntoView(key);
+    if (_dropdownVoiceFields.contains(key)) {
+      unawaited(_openVoiceOptions(key));
+    }
     _speechStopRequested = false;
     if (mounted) {
       setState(() {
@@ -847,13 +919,20 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
               ? _cleanNumericSpeech(raw)
               : _cleanArabicSpeech(raw);
           if (text.isEmpty) return;
-          final controller = c[key];
-          if (controller == null) return;
-          controller.value = TextEditingValue(
-            text: text,
-            selection: TextSelection.collapsed(offset: text.length),
-          );
-          _liveSyncKey.currentState?.pushValues(_liveValues());
+          if (_dropdownVoiceFields.contains(key)) {
+            _applyVoiceDropdownSelection(key, text);
+          } else if (_dateVoiceFields.contains(key)) {
+            final parsed = _parseSpokenDate(text);
+            if (parsed != null && c[key] != null) {
+              c[key]!.text = parsed;
+              _liveSyncKey.currentState?.pushValues(_liveValues());
+            }
+          } else {
+            final controller = c[key];
+            if (controller == null) return;
+            controller.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+            _liveSyncKey.currentState?.pushValues(_liveValues());
+          }
           if (result.finalResult == true) {
             _finishLegacyVoiceSessionAndStartPending();
           }
@@ -912,23 +991,27 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         final cleaned = _numericVoiceFields.contains(key)
             ? _cleanNumericSpeech(raw)
             : _cleanArabicSpeech(raw);
-        if (cleaned.isNotEmpty) {
-          text = cleaned;
-          break;
-        }
+        if (cleaned.isNotEmpty) { text = cleaned; break; }
       }
 
-      if (text.isNotEmpty) {
+      if (text.isNotEmpty && _dropdownVoiceFields.contains(key) && type == 'result') {
+        _applyVoiceDropdownSelection(key, text);
+      } else if (text.isNotEmpty && _dateVoiceFields.contains(key) && type == 'result') {
+        final parsed = _parseSpokenDate(text);
+        if (parsed != null) {
+          final controller = c[key];
+          if (controller != null) {
+            controller.value = TextEditingValue(text: parsed, selection: TextSelection.collapsed(offset: parsed.length));
+            _liveSyncKey.currentState?.pushValues(_liveValues());
+          }
+        }
+      } else if (text.isNotEmpty) {
         final controller = c[key];
         if (controller != null) {
-          // لا نستبدل نصاً جيداً بناتج جزئي أقصر بلا داعٍ.
           final current = controller.text.trim();
           final shouldApply = type == 'result' || current.isEmpty || text.length >= current.length;
           if (shouldApply) {
-            controller.value = TextEditingValue(
-              text: text,
-              selection: TextSelection.collapsed(offset: text.length),
-            );
+            controller.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
             _liveSyncKey.currentState?.pushValues(_liveValues());
           }
         }
@@ -960,7 +1043,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   Future<void> _startVoiceSession(String key) async {
-    if (!mounted || saving || key == 'dateOfBirth') return;
+    if (!mounted || saving) return;
     if (!await _ensureMicrophoneAccess()) return;
     if (_usingLegacyVoice) {
       await _startLegacyVoiceSession(key);
@@ -979,6 +1062,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _activeVoiceSessionId = sessionId;
     _activeVoiceField = key;
     _scrollVoiceFieldIntoView(key);
+    if (_dropdownVoiceFields.contains(key)) {
+      unawaited(_openVoiceOptions(key));
+    }
     _speechStopRequested = false;
     if (mounted) {
       setState(() {
@@ -1060,46 +1146,160 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   bool _isVoiceFieldCurrentlyVisible(String key) {
-    if (!_voiceFields.contains(key) && !_numericVoiceFields.contains(key)) {
-      return false;
-    }
-
-    // هذا الفحص يجب أن يطابق شروط ظهور الحقول في واجهة وثيقة التعريف
-    // حرفياً. وجود controller للحقل لا يعني أن الحقل ظاهر؛ بعض الحقول
-    // موجودة في النموذج فقط لاستخدامها مع أنواع هوية أخرى.
+    if (!_voiceFields.contains(key) &&
+        !_numericVoiceFields.contains(key) &&
+        !_dropdownVoiceFields.contains(key) &&
+        !_dateVoiceFields.contains(key)) return false;
     if (key == 'nationalId') return _isNationalId;
-
-    if (key == 'idNumber' ||
-        key == 'jinsiyaIdNumber' ||
-        key == 'recordNumber' ||
-        key == 'pageNumber') {
-      return _isCivilId;
-    }
-
+    if (key == 'idNumber' || key == 'jinsiyaIdNumber' || key == 'recordNumber' || key == 'pageNumber') return _isCivilId;
     if (key == 'birthCertificateNumber') return _isBirthCertificate;
     if (key == 'otherIdNumber') return _isOtherId;
-
-    // issuer لا يظهر مع البطاقة الوطنية؛ يظهر فقط مع أنواع الهوية
-    // التي تحتوي على بيانات المُصدر في الواجهة.
-    if (key == 'issuer') {
-      return _isCivilId || _isBirthCertificate || _isOtherId;
-    }
-
-    if (key == 'nameOfDocument') {
-      return _isBirthCertificate || _isOtherId || _isCivilId;
-    }
-
-    // censusNumber موجود في نموذج البيانات لإرساله إلى EMIS، لكنه ليس
-    // حقلاً معروضاً للمستخدم في صفحة إضافة الطالب، لذلك لا يدخل أبداً
-    // في التنقل الصوتي.
-    if (key == 'censusNumber') return false;
-
-    return c.containsKey(key);
+    if (key == 'nameOfDocument') return _isBirthCertificate || _isOtherId || _isCivilId;
+    if (key == 'issuer' || key == 'issuingCountry' || key == 'issuingDate') return _isCivilId || _isBirthCertificate || _isOtherId;
+    if (key == 'classRoomId') return rooms.isNotEmpty;
+    if (key == 'addressCountry') return _addressCountries.isNotEmpty;
+    if (key == 'addressGovernorate') return _addressGovernorates.isNotEmpty;
+    if (key == 'addressDistrict') return _addressDistricts.isNotEmpty;
+    return c.containsKey(key) || key == 'stageId';
   }
 
   List<String> _currentVoiceSequence() => _voiceSequentialOrder
       .where(_isVoiceFieldCurrentlyVisible)
       .toList(growable: false);
+
+  List<Map<String, dynamic>> _voiceOptionsForKey(String key) {
+    if (key == 'isCoveredBySocialWelfare') {
+      return const [
+        {'value': 'false', 'displayName': 'لا'},
+        {'value': 'true', 'displayName': 'نعم'},
+      ];
+    }
+    if (key == 'stageId') return stages;
+    if (key == 'classRoomId') return rooms;
+    if (key == 'addressCountry') return _addressCountries;
+    if (key == 'addressGovernorate') return _addressGovernorates;
+    if (key == 'addressDistrict') return _addressDistricts;
+    return options[key] ?? const <Map<String, dynamic>>[];
+  }
+
+  String _normalizeVoiceMatch(String value) {
+    var s = value.toLowerCase().trim();
+    s = s.replaceAll(RegExp(r'[إأآٱ]'), 'ا');
+    s = s.replaceAll('ة', 'ه');
+    s = s.replaceAll('ى', 'ي');
+    s = s.replaceAll(RegExp(r'[ًٌٍَُِّْـ]'), '');
+    s = s.replaceAll(RegExp(r'[^؀-ۿa-z0-9]+'), ' ');
+    return s.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  void _applyVoiceDropdownSelection(String key, String spoken) {
+    final spokenNorm = _normalizeVoiceMatch(spoken);
+    if (spokenNorm.isEmpty) return;
+    final items = _voiceOptionsForKey(key);
+    if (items.isEmpty) return;
+
+    Map<String, dynamic>? best;
+    var bestScore = -1;
+    for (final item in items) {
+      final name = _normalizeVoiceMatch(_text(item));
+      if (name.isEmpty) continue;
+      var score = 0;
+      if (spokenNorm == name) score = 1000;
+      else if (spokenNorm.contains(name)) score = 800 + name.length;
+      else if (name.contains(spokenNorm)) score = 600 + spokenNorm.length;
+      else {
+        final words = name.split(' ');
+        for (final w in words) {
+          if (w.length >= 2 && spokenNorm.contains(w)) score = score < 400 ? 400 + w.length : score;
+        }
+      }
+      if (score > bestScore) { bestScore = score; best = item; }
+    }
+    if (best == null || bestScore < 400) return;
+
+    final value = _value(best);
+    if (key == 'isCoveredBySocialWelfare') {
+      final v = value == 'true' || _normalizeVoiceMatch(_text(best)) == 'نعم';
+      setState(() => _socialWelfare = v);
+      _focusLive(key);
+    } else if (key == 'stageId') {
+      _stageChanged(value);
+      _focusLive(key);
+    } else if (key == 'classRoomId') {
+      setState(() => roomId = value);
+      _focusLive(key);
+    } else if (key == 'addressCountry') {
+      final item = _addressCountries.firstWhere((x) => _value(x) == value, orElse: () => <String,dynamic>{});
+      if (item.isNotEmpty) {
+        setState(() { _addressCountryId = value; _setAddressGovernorates(item); });
+        _focusLive(key);
+      }
+    } else if (key == 'addressGovernorate') {
+      final item = _addressGovernorates.firstWhere((x) => _value(x) == value, orElse: () => <String,dynamic>{});
+      if (item.isNotEmpty) {
+        setState(() { _addressGovernorateId = value; _setAddressDistricts(item); });
+        _focusLive(key);
+      }
+    } else if (key == 'addressDistrict') {
+      setState(() => _addressDistrictId = value);
+      _focusLive(key);
+    } else {
+      final controller = c[key];
+      if (controller != null) {
+        setState(() => controller.text = value);
+        _focusLive(key);
+      }
+    }
+    _closeVoiceOptions();
+  }
+
+  Future<void> _openVoiceOptions(String key) async {
+    if (!mounted) return;
+    final items = _voiceOptionsForKey(key);
+    if (items.isEmpty) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (sheetContext) {
+        _voiceSelectionSheetContext = sheetContext;
+        return SafeArea(
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetContext).size.height * .62),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: items.length,
+                itemBuilder: (_, i) {
+                  final item = items[i];
+                  final selected = key == 'stageId' ? stageId == _value(item) :
+                      key == 'classRoomId' ? roomId == _value(item) :
+                      key == 'addressCountry' ? _addressCountryId == _value(item) :
+                      key == 'addressGovernorate' ? _addressGovernorateId == _value(item) :
+                      key == 'addressDistrict' ? _addressDistrictId == _value(item) :
+                      key == 'isCoveredBySocialWelfare' ? (_socialWelfare == (_value(item) == 'true')) :
+                      c[key]?.text == _value(item);
+                  return ListTile(
+                    leading: Icon(selected ? Icons.check_circle : Icons.radio_button_unchecked, color: selected ? Colors.green : Colors.grey),
+                    title: Text(_text(item), style: const TextStyle(fontWeight: FontWeight.bold)),
+                    onTap: () { _applyVoiceDropdownSelection(key, _text(item)); _pendingVoiceField = null; _requestSpeechStop(); Navigator.of(sheetContext).pop(); },
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    _voiceSelectionSheetContext = null;
+  }
+
+  void _closeVoiceOptions() {
+    final sheetContext = _voiceSelectionSheetContext;
+    _voiceSelectionSheetContext = null;
+    if (sheetContext != null && sheetContext.mounted) Navigator.of(sheetContext).pop();
+  }
 
   Future<void> _startSequentialVoiceMode() async {
     if (saving || !AppCore.voiceInputEnabled) return;
@@ -1303,7 +1503,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   Future<void> _toggleVoiceInput(String key) async {
-    if (saving || key == 'dateOfBirth') return;
+    if (saving) return;
 
     if (!_voiceAvailableBySetting) {
       _showVoiceMessage(
@@ -1343,7 +1543,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     TextInputType? keyboard,
   }) {
     return TextFormField(
-      key: _voiceFieldKeys.containsKey(key) || _voiceFields.contains(key) || _numericVoiceFields.contains(key)
+      key: (_voiceFields.contains(key) || _numericVoiceFields.contains(key) || _dateVoiceFields.contains(key))
           ? _voiceFieldKey(key)
           : null,
       controller: c[key],
@@ -1365,16 +1565,18 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
-        suffixIcon: (_voiceFields.contains(key) || _numericVoiceFields.contains(key))
+        suffixIcon: (_voiceFields.contains(key) || _numericVoiceFields.contains(key) || _dateVoiceFields.contains(key))
             ? Listener(
                 behavior: HitTestBehavior.opaque,
                 onPointerDown: (_) => _markMicPointerDown(),
                 child: IconButton(
                   tooltip: _speechListening && _activeVoiceField == key
                       ? 'إيقاف التسجيل'
-                      : (_numericVoiceFields.contains(key)
-                          ? 'الإدخال الصوتي للأرقام عبر Google'
-                          : 'الإدخال الصوتي بالعربية عبر Google'),
+                      : (_dateVoiceFields.contains(key)
+                          ? 'إدخال التاريخ بالصوت: اليوم ثم الشهر ثم السنة'
+                          : (_numericVoiceFields.contains(key)
+                              ? 'الإدخال الصوتي للأرقام عبر Google'
+                              : 'الإدخال الصوتي بالعربية عبر Google')),
                   onPressed: () => _toggleVoiceInput(key),
                   icon: Icon(
                     _speechListening && _activeVoiceField == key
@@ -1410,6 +1612,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
 
     return DropdownButtonFormField<String>(
+      key: _voiceFieldKey(key),
       value: current.isEmpty ? null : current,
       isExpanded: true,
       decoration: InputDecoration(
@@ -1425,6 +1628,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
+        suffixIcon: _dropdownVoiceFields.contains(key)
+            ? IconButton(
+                tooltip: 'اختيار ${labels[key] ?? key} بالصوت',
+                icon: Icon(_speechListening && _activeVoiceField == key ? Icons.mic_rounded : Icons.mic_none_rounded,
+                    color: _speechListening && _activeVoiceField == key ? Colors.red : null),
+                onPressed: () => _toggleVoiceInput(key),
+              )
+            : null,
       ),
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       items: values
@@ -2149,9 +2360,12 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   Widget _socialWelfareSelect() {
     return DropdownButtonFormField<bool>(
+      key: _voiceFieldKey('isCoveredBySocialWelfare'),
       value: _socialWelfare,
       isExpanded: true,
-      decoration: _decoration('مشمول بمنحة الرعاية الاجتماعية؟'),
+      decoration: _decoration('مشمول بمنحة الرعاية الاجتماعية؟').copyWith(
+        suffixIcon: IconButton(tooltip: 'اختيار الحالة بالصوت', icon: Icon(_speechListening && _activeVoiceField == 'isCoveredBySocialWelfare' ? Icons.mic_rounded : Icons.mic_none_rounded, color: _speechListening && _activeVoiceField == 'isCoveredBySocialWelfare' ? Colors.red : null), onPressed: () => _toggleVoiceInput('isCoveredBySocialWelfare')),
+      ),
       style: const TextStyle(
         fontWeight: FontWeight.bold,
         color: Colors.black87,
@@ -2180,12 +2394,21 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     required List<Map<String, dynamic>> items,
     required ValueChanged<String?> onChanged,
   }) {
+    final key = label == 'الدولة' ? 'addressCountry' : label == 'المحافظة' ? 'addressGovernorate' : 'addressDistrict';
     final safe = items.any((x) => _value(x) == value) ? value : null;
     return DropdownButtonFormField<String>(
+      key: _voiceFieldKey(key),
       value: safe,
       isExpanded: true,
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-      decoration: _decoration(label),
+      decoration: _decoration(label).copyWith(
+        suffixIcon: IconButton(
+          tooltip: 'اختيار $label بالصوت',
+          icon: Icon(_speechListening && _activeVoiceField == key ? Icons.mic_rounded : Icons.mic_none_rounded,
+              color: _speechListening && _activeVoiceField == key ? Colors.red : null),
+          onPressed: () => _toggleVoiceInput(key),
+        ),
+      ),
       items: items
           .map((x) => DropdownMenuItem<String>(
                 value: _value(x),
@@ -2199,9 +2422,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   Widget _selectStage() => DropdownButtonFormField<String>(
+        key: _voiceFieldKey('stageId'),
         value: stageId,
         isExpanded: true,
-        decoration: _decoration('الصف الدراسي').copyWith(labelStyle: const TextStyle(fontWeight: FontWeight.bold)),
+        decoration: _decoration('الصف الدراسي').copyWith(labelStyle: const TextStyle(fontWeight: FontWeight.bold), suffixIcon: IconButton(tooltip: 'اختيار الصف بالصوت', icon: Icon(_speechListening && _activeVoiceField == 'stageId' ? Icons.mic_rounded : Icons.mic_none_rounded, color: _speechListening && _activeVoiceField == 'stageId' ? Colors.red : null), onPressed: () => _toggleVoiceInput('stageId'))),
         items: stages
             .map(
               (x) => DropdownMenuItem(
@@ -2216,9 +2440,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       );
 
   Widget _selectRoom() => DropdownButtonFormField<String>(
+        key: _voiceFieldKey('classRoomId'),
         value: roomId,
         isExpanded: true,
-        decoration: _decoration('الشعبة').copyWith(labelStyle: const TextStyle(fontWeight: FontWeight.bold)),
+        decoration: _decoration('الشعبة').copyWith(labelStyle: const TextStyle(fontWeight: FontWeight.bold), suffixIcon: IconButton(tooltip: 'اختيار الشعبة بالصوت', icon: Icon(_speechListening && _activeVoiceField == 'classRoomId' ? Icons.mic_rounded : Icons.mic_none_rounded, color: _speechListening && _activeVoiceField == 'classRoomId' ? Colors.red : null), onPressed: () => _toggleVoiceInput('classRoomId'))),
         items: rooms
             .map(
               (x) => DropdownMenuItem(
