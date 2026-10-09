@@ -41,14 +41,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   bool _voiceArrowPointerDown = false;
   bool _voiceSequentialMode = false;
   int _sequentialVoiceIndex = 0;
+  String? _voiceDropdownTarget;
+  bool _voiceDropdownDialogOpen = false;
+  bool _specialVoiceFailureShown = false;
   StreamSubscription<Map<String, dynamic>>? _googleSpeechSubscription;
   bool _legacySpeechInitialized = false;
   bool _legacySpeechAvailable = false;
   Timer? _legacyFinalizationTimer;
   Timer? _googleFinalizationTimer;
-  String? _voiceDropdownTarget;
-  List<Map<String, dynamic>> _voiceDropdownItems = [];
-  bool _voiceDropdownDialogOpen = false;
 
   GlobalKey _voiceFieldKey(String key) =>
       _voiceFieldKeys.putIfAbsent(key, GlobalKey.new);
@@ -158,37 +158,30 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     'censusNumber',
   };
 
+  // حقول القوائم المنسدلة والتواريخ مدعومة صوتياً أيضاً.
+  static const Set<String> _dropdownVoiceFields = {
+    'gender', 'countryOfBirth', 'nationality', 'idType', 'issuingCountry',
+    'motherTongue', 'studyLanguage', 'maritalStatus', 'bloodGroup', 'religion',
+    'economicLevel', 'specialNeeds', 'stageId', 'classRoomId',
+    'addressCountry', 'addressGovernorate', 'addressDistrict',
+    'isCoveredBySocialWelfare',
+  };
+  static const Set<String> _dateVoiceFields = {'dateOfBirth', 'issuingDate'};
+
   // ترتيب الحقول التي ينتقل بينها زر السهم الثابت. الحقول المخفية بحسب نوع
   // الهوية لا تدخل في التسلسل، وكذلك أي حقل غير ظاهر فعلياً في الشاشة.
   static const List<String> _voiceSequentialOrder = [
-    'name',
-    'fatherName',
-    'grandFatherName',
-    'fathersGrandFatherName',
-    'surName',
-    'motherName',
-    'mothersFatherName',
-    'mothersGrandFatherName',
-    'nationalId',
-    'idNumber',
-    'jinsiyaIdNumber',
-    'issuer',
-    'recordNumber',
-    'pageNumber',
-    'nameOfDocument',
-    'birthCertificateNumber',
-    'otherIdNumber',
-    'homeTown',
-    'homePhoneNumber',
-    'notes',
-    'town',
-    'area',
-    'quarter',
-    'street',
-    'address1',
-    'address2',
-    'closestLocation',
-    'censusNumber',
+    'name', 'fatherName', 'grandFatherName', 'fathersGrandFatherName',
+    'surName', 'motherName', 'mothersFatherName', 'mothersGrandFatherName',
+    'gender', 'dateOfBirth', 'countryOfBirth', 'nationality', 'homeTown',
+    'idType', 'nationalId', 'idNumber', 'jinsiyaIdNumber', 'issuer',
+    'recordNumber', 'pageNumber', 'issuingCountry', 'issuingDate',
+    'nameOfDocument', 'birthCertificateNumber', 'otherIdNumber',
+    'motherTongue', 'studyLanguage', 'maritalStatus', 'bloodGroup',
+    'religion', 'economicLevel', 'specialNeeds', 'isCoveredBySocialWelfare',
+    'homePhoneNumber', 'notes', 'stageId', 'classRoomId', 'addressCountry',
+    'addressGovernorate', 'addressDistrict', 'town', 'area', 'quarter',
+    'street', 'address1', 'address2', 'closestLocation',
   ];
 
   final labels = const <String, String>{
@@ -235,6 +228,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     'addressCountry': 'الدولة',
     'addressGovernorate': 'المحافظة',
     'addressDistrict': 'القضاء',
+    'stageId': 'الصف الدراسي',
+    'classRoomId': 'الشعبة',
+    'isCoveredBySocialWelfare': 'مشمول بمنحة الرعاية الاجتماعية؟',
     'censusNumber': 'رقم الإحصاء',
   };
 
@@ -297,7 +293,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     c['countryOfBirth']!.text = 'العراق';
     c['issuingCountry']!.text = 'العراق';
     c['idType']!.text = '12';
-    c['gender']!.text = '1'; // القيمة الافتراضية: ذكر
     c['studyLanguage']!.text = 'العربية';
     // القيم الافتراضية المطلوبة عند فتح نموذج إضافة الطالب.
     c['motherTongue']!.text = 'العربية';
@@ -486,6 +481,21 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       _applyDefaultAddressValues();
       options['nationality'] = List<Map<String, dynamic>>.from(options['countryOfBirth'] ?? const []);
       options['studyLanguage'] = List<Map<String, dynamic>>.from(options['motherTongue'] ?? const []);
+      if ((c['gender']?.text.trim() ?? '').isEmpty) {
+        final genderItems = options['gender'] ?? const <Map<String, dynamic>>[];
+        Map<String, dynamic>? male;
+        for (final item in genderItems) {
+          final label = _normalizeArabicForMatch(_text(item));
+          if (label == _normalizeArabicForMatch('ذكر') || label.contains(_normalizeArabicForMatch('ذكر'))) {
+            male = item;
+            break;
+          }
+        }
+        if (male == null) {
+          for (final item in genderItems) { if (_value(item) == '1') { male = item; break; } }
+        }
+        if (male != null) c['gender']!.text = _value(male);
+      }
 
       if (!mounted) return;
       setState(() => loading = false);
@@ -573,199 +583,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   void _setAddressDistricts(Map<String, dynamic> governorate) {
     _addressDistricts = _children(governorate);
     _addressDistrictId = null;
-  }
-
-  String _normalizeSpokenChoice(String value) {
-    return value
-        .replaceAll(RegExp(r'[ًٌٍَُِّْـ]'), '')
-        .replaceAll('أ', 'ا').replaceAll('إ', 'ا').replaceAll('آ', 'ا')
-        .replaceAll('ى', 'ي').replaceAll('ة', 'ه')
-        .replaceAll(RegExp(r'[^\u0600-\u06FFa-zA-Z0-9]+'), '')
-        .toLowerCase();
-  }
-
-  String? _matchSpokenDropdownValue(String key, String spoken) {
-    final candidates = _voiceDropdownItems;
-    if (candidates.isEmpty) return null;
-    final heard = _normalizeSpokenChoice(spoken);
-    if (heard.isEmpty) return null;
-    final ranked = <MapEntry<int, Map<String, dynamic>>>[];
-    for (final item in candidates) {
-      final label = _normalizeSpokenChoice(_text(item));
-      final val = _normalizeSpokenChoice(_value(item));
-      if (label.isEmpty) continue;
-      var score = 0;
-      if (heard == label || heard == val) {
-        score = 100;
-      } else if (label.contains(heard) || heard.contains(label)) {
-        score = 80 - (label.length - heard.length).abs();
-      } else {
-        final heardTokens = spoken.split(RegExp(r'\s+'))
-            .map(_normalizeSpokenChoice).where((x) => x.length >= 2).toSet();
-        final labelTokens = _text(item).split(RegExp(r'\s+'))
-            .map(_normalizeSpokenChoice).where((x) => x.length >= 2).toSet();
-        final overlap = heardTokens.intersection(labelTokens).length;
-        if (overlap > 0) score = overlap * 20;
-      }
-      if (score > 0) ranked.add(MapEntry(score, item));
-    }
-    if (ranked.isEmpty) return null;
-    ranked.sort((a, b) => b.key.compareTo(a.key));
-    if (ranked.length > 1 && ranked[0].key == ranked[1].key &&
-        _value(ranked[0].value) != _value(ranked[1].value)) return null;
-    return _value(ranked.first.value);
-  }
-
-  void _applyVoiceDropdownChoice(String key, Map<String, dynamic> item) {
-    final value = _value(item);
-    if (key == 'addressCountry') {
-      setState(() {
-        _addressCountryId = value;
-        _setAddressGovernorates(item);
-      });
-    } else if (key == 'addressGovernorate') {
-      setState(() {
-        _addressGovernorateId = value;
-        _setAddressDistricts(item);
-      });
-    } else if (key == 'addressDistrict') {
-      setState(() => _addressDistrictId = value);
-    } else if (key == 'stageId') {
-      unawaited(_stageChanged(value));
-    } else if (key == 'classRoomId') {
-      setState(() => roomId = value);
-    } else if (key == 'isCoveredBySocialWelfare') {
-      setState(() => _socialWelfare = value.toLowerCase() == 'true' || value == 'نعم');
-    } else if (c.containsKey(key)) {
-      c[key]!.text = value;
-      setState(() {});
-    }
-    _focusLive(key);
-    _pushLive();
-  }
-
-  Future<void> _openVoiceDropdown(String key, List<Map<String, dynamic>> items) async {
-    if (saving) return;
-    if (!await _ensureMicrophoneAccess()) return;
-    _voiceDropdownTarget = key;
-    _voiceDropdownItems = List<Map<String, dynamic>>.from(items);
-    _voiceDropdownDialogOpen = true;
-    if (mounted) setState(() {});
-    unawaited(showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _voiceDropdownDialogOpen && _activeVoiceSessionId == null) {
-            _startVoiceSession('__dropdown__$key');
-          }
-        });
-        return AlertDialog(
-          title: Text('انطق قيمة ${labels[key] ?? key}'),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 280,
-            child: Column(children: [
-              const Text('انطق الاسم الكامل أو كلمة مميزة من القيمة. سيختار التطبيق أقرب تطابق ويغلق هذه النافذة.'),
-              const SizedBox(height: 8),
-              Expanded(child: ListView(
-                children: items.map((item) => ListTile(
-                  dense: true,
-                  title: Text(_text(item)),
-                  onTap: () {
-                    _applyVoiceDropdownChoice(key, item);
-                    _voiceDropdownDialogOpen = false;
-                    Navigator.of(dialogContext).pop();
-                  },
-                )).toList(),
-              )),
-            ]),
-          ),
-          actions: [TextButton(
-            onPressed: () {
-              _voiceDropdownDialogOpen = false;
-              if (_activeVoiceSessionId != null) _requestSpeechStop();
-              Navigator.of(dialogContext).pop();
-            },
-            child: const Text('إلغاء'),
-          )],
-        );
-      },
-    ).whenComplete(() {
-      _voiceDropdownDialogOpen = false;
-      _voiceDropdownTarget = null;
-      _voiceDropdownItems = [];
-    }));
-  }
-
-  int? _spokenNumber(String phrase) {
-    final normalized = _normalizeDigits(phrase)
-        .replaceAll(RegExp(r'[ًٌٍَُِّْـ]'), '')
-        .replaceAll('أ', 'ا').replaceAll('إ', 'ا').replaceAll('آ', 'ا')
-        .replaceAll('ى', 'ي').replaceAll('ة', 'ه')
-        .replaceAll(RegExp(r'[,،]+'), ' ')
-        .replaceAll(RegExp(r'(^|\s)و(?=\s|$)'), ' ');
-    final tokens = normalized.split(RegExp(r'\s+')).where((x) => x.isNotEmpty).toList();
-    const values = <String, int>{
-      'صفر': 0, 'واحد': 1, 'واحده': 1, 'احد': 1, 'اثنان': 2, 'اثنين': 2,
-      'اثنتان': 2, 'اثنتين': 2, 'ثلاثه': 3, 'ثلاث': 3, 'اربعه': 4, 'اربع': 4,
-      'خمسه': 5, 'خمس': 5, 'سته': 6, 'ست': 6, 'سبعه': 7, 'سبع': 7,
-      'ثمانيه': 8, 'ثماني': 8, 'تسعه': 9, 'تسع': 9, 'عشره': 10,
-      'احدعشر': 11, 'اثناعشر': 12, 'عشرون': 20, 'ثلاثون': 30, 'اربعون': 40,
-      'خمسون': 50, 'ستون': 60, 'سبعون': 70, 'ثمانون': 80, 'تسعون': 90,
-      'مائه': 100, 'مئة': 100, 'مائتان': 200, 'ثلاثمائه': 300, 'اربعمائه': 400,
-      'خمسمائه': 500, 'ستمائه': 600, 'سبعمائه': 700, 'ثمانمائه': 800,
-      'تسعمائه': 900, 'تسعمائة': 900, 'الف': 1000, 'الاف': 1000,
-    };
-    if (tokens.isEmpty) return null;
-    var total = 0;
-    var current = 0;
-    for (final token in tokens) {
-      final digit = int.tryParse(token);
-      if (digit != null) { current = digit; continue; }
-      final n = values[token];
-      if (n == null) return null;
-      if (n == 1000) { total += (current == 0 ? 1 : current) * 1000; current = 0; }
-      else if (n >= 100) { current = (current == 0 ? 1 : current) * n; }
-      else if (n >= 20) { current += n; }
-      else { current += n; }
-    }
-    return total + current;
-  }
-
-  String? _parseSpokenDate(String raw) {
-    final text = _normalizeDigits(raw).replaceAll(RegExp(r'[,،/]+'), ' ').trim();
-    int? day, month, year;
-    final iso = RegExp(r'^(\d{4})\s*[- ]\s*(\d{1,2})\s*[- ]\s*(\d{1,2})$').firstMatch(text);
-    final dmy = RegExp(r'^(\d{1,2})\s*[- ]\s*(\d{1,2})\s*[- ]\s*(\d{4})$').firstMatch(text);
-    if (iso != null) {
-      year = int.tryParse(iso.group(1)!);
-      month = int.tryParse(iso.group(2)!);
-      day = int.tryParse(iso.group(3)!);
-    } else if (dmy != null) {
-      day = int.tryParse(dmy.group(1)!);
-      month = int.tryParse(dmy.group(2)!);
-      year = int.tryParse(dmy.group(3)!);
-    } else {
-      final tokens = text.split(RegExp(r'\s+')).where((x) => x.isNotEmpty).toList();
-      if (tokens.length < 3) return null;
-      final firstNumeric = int.tryParse(tokens.first);
-      if (firstNumeric != null && firstNumeric >= 1000) {
-        // بعض خدمات التعرف تعيد التاريخ بترتيب السنة ثم الشهر ثم اليوم.
-        year = firstNumeric;
-        month = _spokenNumber(tokens[1]);
-        day = _spokenNumber(tokens.sublist(2).join(' '));
-      } else {
-        // الصيغة المنطوقة المطلوبة: اليوم ثم رقم الشهر ثم السنة.
-        day = _spokenNumber(tokens[0]);
-        month = _spokenNumber(tokens[1]);
-        year = _spokenNumber(tokens.sublist(2).join(' '));
-      }
-    }
-    if (day == null || month == null || year == null || year < 1900 || year > DateTime.now().year || month < 1 || month > 12 || day < 1) return null;
-    final parsed = DateTime(year, month, day);
-    if (parsed.year != year || parsed.month != month || parsed.day != day) return null;
-    return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
   }
 
   Future<void> _pickDate(String key) async {
@@ -863,6 +680,333 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.orange),
     );
+  }
+
+  String _normalizeArabicForMatch(String value) {
+    var out = value.toLowerCase().trim();
+    out = out.replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '');
+    out = out.replaceAll('أ', 'ا').replaceAll('إ', 'ا').replaceAll('آ', 'ا');
+    out = out.replaceAll('ى', 'ي').replaceAll('ة', 'ه');
+    out = out.replaceAll(RegExp(r'[^\u0600-\u06FFa-z0-9 ]'), ' ');
+    out = out.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return out;
+  }
+
+  List<Map<String, dynamic>> _dropdownOptionsForVoice(String key) {
+    final all = <Map<String, dynamic>>[];
+    switch (key) {
+      case 'stageId': all.addAll(stages); break;
+      case 'classRoomId': all.addAll(rooms); break;
+      case 'addressCountry': all.addAll(_addressCountries); break;
+      case 'addressGovernorate': all.addAll(_addressGovernorates); break;
+      case 'addressDistrict': all.addAll(_addressDistricts); break;
+      case 'isCoveredBySocialWelfare':
+        all.addAll(const [
+          {'value': false, 'displayName': 'لا'},
+          {'value': true, 'displayName': 'نعم'},
+        ]);
+        break;
+      default: all.addAll(options[key] ?? []);
+    }
+    if (key == 'studyLanguage') {
+      all.add({'value': 'العربية', 'displayName': 'العربية'});
+    }
+    final current = switch (key) {
+      'stageId' => stageId ?? '',
+      'classRoomId' => roomId ?? '',
+      'addressCountry' => _addressCountryId ?? '',
+      'addressGovernorate' => _addressGovernorateId ?? '',
+      'addressDistrict' => _addressDistrictId ?? '',
+      'isCoveredBySocialWelfare' => _socialWelfare.toString(),
+      _ => c[key]?.text.trim() ?? '',
+    };
+    if (current.isNotEmpty && !all.any((item) => _value(item) == current)) {
+      all.add({'value': current, 'displayName': current});
+    }
+    final seen = <String>{};
+    return all.where((item) {
+      final value = _value(item).trim();
+      return value.isNotEmpty && seen.add(value);
+    }).toList();
+  }
+
+  void _applyDropdownVoiceChoice(String key, Map<String, dynamic> item) {
+    final value = _value(item);
+    switch (key) {
+      case 'stageId':
+        unawaited(_stageChanged(value));
+        break;
+      case 'classRoomId':
+        roomId = value;
+        _focusLive('classRoomId');
+        break;
+      case 'addressCountry':
+        _addressCountryId = value;
+        _setAddressGovernorates(item);
+        _focusLive('addressCountry');
+        break;
+      case 'addressGovernorate':
+        _addressGovernorateId = value;
+        _setAddressDistricts(item);
+        _focusLive('addressGovernorate');
+        break;
+      case 'addressDistrict':
+        _addressDistrictId = value;
+        _focusLive('addressDistrict');
+        break;
+      case 'isCoveredBySocialWelfare':
+        _socialWelfare = value == 'true' || _normalizeArabicForMatch(_text(item)) == _normalizeArabicForMatch('نعم');
+        _focusLive('isCoveredBySocialWelfare');
+        break;
+      default:
+        c[key]?.text = value;
+        _focusLive(key);
+    }
+    _liveSyncKey.currentState?.pushValues(_liveValues());
+    if (mounted) setState(() {});
+  }
+
+  Widget _dropdownVoiceMic(String key) => Listener(
+    behavior: HitTestBehavior.opaque,
+    onPointerDown: (_) => _markMicPointerDown(),
+    child: IconButton(
+      tooltip: 'اختيار ${labels[key] ?? key} بالصوت',
+      onPressed: () => _startDropdownVoice(key),
+      icon: Icon(
+        _speechListening && _activeVoiceField == key ? Icons.mic_rounded : Icons.mic_none_rounded,
+        color: _speechListening && _activeVoiceField == key ? Colors.red : null,
+      ),
+    ),
+  );
+
+  Map<String, dynamic>? _matchDropdownOption(String key, String spoken) {
+    final target = _normalizeArabicForMatch(spoken);
+    if (target.isEmpty) return null;
+    final items = _dropdownOptionsForVoice(key);
+    for (final item in items) {
+      if (_normalizeArabicForMatch(_text(item)) == target ||
+          _normalizeArabicForMatch(_value(item)) == target) return item;
+    }
+
+    // يدعم نطق الاسم الكامل أو كلمة مميزة منه، مع رفض التطابقات الملتبسة.
+    final targetTokens = target.split(' ').where((x) => x.length >= 2).toSet();
+    int bestScore = 0;
+    Map<String, dynamic>? best;
+    bool tied = false;
+    for (final item in items) {
+      final label = _normalizeArabicForMatch(_text(item));
+      final value = _normalizeArabicForMatch(_value(item));
+      if (label.isEmpty) continue;
+      if (label.contains(target) || target.contains(label) ||
+          (value.isNotEmpty && (value.contains(target) || target.contains(value)))) {
+        final score = target.length + (label == target ? 1000 : 0);
+        if (score > bestScore) { bestScore = score; best = item; tied = false; }
+        else if (score == bestScore) { tied = true; }
+        continue;
+      }
+      final tokens = label.split(' ').where((x) => x.length >= 2).toSet();
+      final overlap = targetTokens.intersection(tokens).length;
+      if (overlap > bestScore) { bestScore = overlap; best = item; tied = false; }
+      else if (overlap > 0 && overlap == bestScore) { tied = true; }
+    }
+    return bestScore > 0 && !tied ? best : null;
+  }
+
+  String _normalizeSpokenWord(String word) {
+    var out = _normalizeArabicForMatch(word).replaceAll(' ', '');
+    const exact = {'واحد', 'واحدة', 'واحده'};
+    if (out.startsWith('و') && out.length > 1 && !exact.contains(out)) out = out.substring(1);
+    return out;
+  }
+
+  int? _smallArabicNumber(String raw) {
+    final word = _normalizeSpokenWord(raw);
+    const units = <String, int>{
+      'صفر': 0, 'واحد': 1, 'واحدة': 1, 'واحده': 1, 'احد': 1,
+      'اثنان': 2, 'اثنين': 2, 'اثنتان': 2, 'اثنتين': 2, 'اثنتا': 2,
+      'اثنتي': 2, 'اثن': 2, 'ثنين': 2, 'ثنتين': 2,
+      'ثلاثة': 3, 'ثلاث': 3, 'ثلاثه': 3, 'اربعة': 4, 'اربع': 4,
+      'اربعه': 4, 'أربعة': 4, 'خمسة': 5, 'خمس': 5, 'خمسه': 5,
+      'ستة': 6, 'سته': 6, 'ست': 6, 'سبعة': 7, 'سبع': 7, 'سبعه': 7,
+      'ثمانية': 8, 'ثماني': 8, 'تمانية': 8, 'تمانيه': 8, 'ثمنية': 8,
+      'تسعة': 9, 'تسع': 9, 'تسعه': 9, 'عشرة': 10, 'عشر': 10,
+      'مائة': 100, 'مائه': 100, 'مئة': 100, 'ميه': 100,
+      'مائتين': 200, 'مئتين': 200, 'ثلاثمائة': 300, 'ثلاثمائه': 300,
+      'اربعمائة': 400, 'اربعمائه': 400, 'أربعمائة': 400, 'خمسمائة': 500,
+      'خمسمائه': 500, 'ستمائة': 600, 'ستمائه': 600, 'سبعمائة': 700,
+      'سبعمائه': 700, 'ثمانمائة': 800, 'ثمانمائه': 800,
+      'تسعمائة': 900, 'تسعمائه': 900,
+      'احدعشر': 11, 'احدعشرة': 11, 'اثناشر': 12, 'اثنعشر': 12,
+      'عشرين': 20, 'عشرون': 20, 'ثلاثين': 30, 'ثلاثون': 30,
+      'اربعين': 40, 'اربعون': 40, 'خمسين': 50, 'خمسون': 50,
+      'ستين': 60, 'ستون': 60, 'سبعين': 70, 'سبعون': 70,
+      'ثمانين': 80, 'ثمانون': 80, 'تسعين': 90, 'تسعون': 90,
+    };
+    if (units.containsKey(word)) return units[word];
+    final digits = _normalizeDigits(word);
+    return RegExp(r'^\d{1,4}$').hasMatch(digits) ? int.tryParse(digits) : null;
+  }
+
+  int? _arabicYearValue(List<String> words) {
+    var total = 0;
+    var found = false;
+    for (var i = 0; i < words.length; i++) {
+      final word = _normalizeSpokenWord(words[i]);
+      if (word.isEmpty || word == 'و') continue;
+      if (word == 'الف' || word == 'الاف') { total += 1000; found = true; continue; }
+      if (word == 'مائة' || word == 'مائه' || word == 'مئه' || word == 'مئة' || word == 'ميه') { total += 100; found = true; continue; }
+      const hundreds = <String, int>{
+        'مائتين': 200, 'مئتين': 200, 'ثلاثمائه': 300, 'اربعمائه': 400,
+        'خمسمائه': 500, 'ستمائه': 600, 'سبعمائه': 700, 'ثمانمائه': 800,
+        'تسعمائه': 900,
+      };
+      if (hundreds.containsKey(word)) { total += hundreds[word]!; found = true; continue; }
+
+      // بعض خدمات الإملاء تفصل العدد المركب: «تسع مئة» بدلاً من «تسعمائة».
+      final next = i + 1 < words.length ? _normalizeSpokenWord(words[i + 1]) : '';
+      const hundredWords = {'مائة', 'مائه', 'مئه', 'مئة', 'ميه'};
+      final leadingNumber = _smallArabicNumber(word);
+      if (leadingNumber != null && leadingNumber >= 2 && leadingNumber <= 9 && hundredWords.contains(next)) {
+        total += leadingNumber * 100;
+        found = true;
+        i++;
+        continue;
+      }
+
+      final n = _smallArabicNumber(word);
+      if (n != null) { total += n; found = true; continue; }
+      final numeric = RegExp(r'\d{3,4}').firstMatch(_normalizeDigits(word));
+      if (numeric != null) { total += int.parse(numeric.group(0)!); found = true; }
+    }
+    return found ? total : null;
+  }
+
+  DateTime? _parseSpokenDate(String raw, String key) {
+    final normalizedDigits = _normalizeDigits(raw);
+    final digitGroups = RegExp(r'\d+').allMatches(normalizedDigits)
+        .map((m) => int.tryParse(m.group(0)!)).whereType<int>().toList();
+    int? day, month, year;
+    if (digitGroups.length >= 3) {
+      day = digitGroups[0]; month = digitGroups[1]; year = digitGroups[2];
+    } else {
+      final cleaned = raw.replaceAll(RegExp(r'[,،;؛/\\|]+'), ' ')
+          .replaceAll('-', ' ').replaceAll('ـ', ' ').trim();
+      final words = cleaned.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      if (words.length < 3) return null;
+      day = _smallArabicNumber(words[0]);
+      month = _smallArabicNumber(words[1]);
+      year = _arabicYearValue(words.sublist(2));
+    }
+    if (day == null || month == null || year == null) return null;
+    if (year < 100) year += year >= 50 ? 1900 : 2000;
+    if (year < 1900 || year > DateTime.now().year || month < 1 || month > 12 || day < 1 || day > 31) return null;
+    final date = DateTime(year, month, day);
+    if (date.year != year || date.month != month || date.day != day) return null;
+    if (key == 'dateOfBirth' && date.isAfter(DateTime.now())) return null;
+    return date;
+  }
+
+  void _applySpokenDate(String key, DateTime date) {
+    final value = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    c[key]?.text = value;
+    _liveSyncKey.currentState?.pushValues(_liveValues());
+    if (mounted) setState(() {});
+    _showVoiceMessage('تم إدخال ${labels[key] ?? 'التاريخ'}: ${date.day}-${date.month}-${date.year}');
+  }
+
+  bool _handleSpecialVoiceResult(String key, String raw, {required bool isFinal}) {
+    if (_dropdownVoiceFields.contains(key)) {
+      if (!isFinal || _voiceDropdownTarget != key) return true;
+      final matched = _matchDropdownOption(key, raw);
+      if (matched == null) {
+        if (!_specialVoiceFailureShown) {
+          _specialVoiceFailureShown = true;
+          _showVoiceMessage('لم أتعرف على قيمة من قائمة «${labels[key] ?? key}». انطق الاسم الكامل أو كلمة مميزة منه.');
+        }
+        return true;
+      }
+      _applyDropdownVoiceChoice(key, matched);
+      _voiceDropdownTarget = null;
+      _specialVoiceFailureShown = false;
+      if (_voiceDropdownDialogOpen && mounted) Navigator.of(context, rootNavigator: true).pop();
+      _requestSpeechStop();
+      if (mounted) setState(() {});
+      return true;
+    }
+    if (_dateVoiceFields.contains(key)) {
+      if (!isFinal) return true;
+      final parsed = _parseSpokenDate(raw, key);
+      if (parsed == null) {
+        if (!_specialVoiceFailureShown) {
+          _specialVoiceFailureShown = true;
+          _showVoiceMessage('لم أتمكن من فهم التاريخ. انطق اليوم ثم رقم الشهر ثم السنة، مثل: ستة، واحد، ألف وتسعمائة وتسعة وسبعون.');
+        }
+        return true;
+      }
+      _specialVoiceFailureShown = false;
+      _applySpokenDate(key, parsed);
+      _requestSpeechStop();
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _startDropdownVoice(String key) async {
+    if (_activeVoiceField == key && _activeVoiceSessionId != null) {
+      _voiceDropdownTarget = null;
+      if (_voiceDropdownDialogOpen && mounted) Navigator.of(context, rootNavigator: true).pop();
+      _requestSpeechStop();
+      return;
+    }
+    if (!await _ensureMicrophoneAccess() || !mounted) return;
+    final items = _dropdownOptionsForVoice(key);
+    if (items.isEmpty) {
+      _showVoiceMessage('لا توجد قيم متاحة في قائمة ${labels[key] ?? key}.');
+      return;
+    }
+    _voiceDropdownTarget = key;
+    _specialVoiceFailureShown = false;
+    _voiceDropdownDialogOpen = true;
+    unawaited(showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('انطق قيمة ${labels[key] ?? key}', textAlign: TextAlign.center),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('انطق الاسم الكامل أو كلمة مميزة من القيمة. سيختار التطبيق أقرب تطابق واضح.', textAlign: TextAlign.center),
+            const SizedBox(height: 10),
+            SizedBox(height: 320, child: ListView(shrinkWrap: true, children: items.map((item) => ListTile(
+              title: Text(_text(item), textAlign: TextAlign.right),
+              onTap: () {
+                _applyDropdownVoiceChoice(key, item);
+                _voiceDropdownTarget = null;
+                _voiceDropdownDialogOpen = false;
+                Navigator.of(dialogContext).pop();
+                _requestSpeechStop();
+                if (mounted) setState(() {});
+              },
+            )).toList())),
+          ]),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('إلغاء'))],
+      ),
+    ).then<void>((_) {
+      _voiceDropdownDialogOpen = false;
+      if (_voiceDropdownTarget == key) {
+        _voiceDropdownTarget = null;
+        if (_activeVoiceField == key) _requestSpeechStop();
+      }
+    }));
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (mounted && _voiceDropdownTarget == key) await _toggleVoiceInput(key);
+  }
+
+  Future<void> _startDateVoice(String key) async {
+    if (!await _ensureMicrophoneAccess() || !mounted) return;
+    _specialVoiceFailureShown = false;
+    await _startVoiceSession(key);
   }
 
   String _cleanArabicSpeech(String value) {
@@ -1025,6 +1169,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final sessionId = ++_nextVoiceSessionId;
     _activeVoiceSessionId = sessionId;
     _activeVoiceField = key;
+    _specialVoiceFailureShown = false;
     _scrollVoiceFieldIntoView(key);
     _speechStopRequested = false;
     if (mounted) {
@@ -1040,30 +1185,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           if (!mounted || !_usingLegacyVoice || _activeVoiceSessionId != sessionId) return;
           final raw = '${result.recognizedWords ?? ''}'.trim();
           if (raw.isEmpty) return;
-          if (key.startsWith('__dropdown__')) {
-            if (result.finalResult == true) {
-              final target = _voiceDropdownTarget ?? key.substring('__dropdown__'.length);
-              final matched = _matchSpokenDropdownValue(target, raw);
-              if (matched != null) {
-                c[target]!.text = matched;
-                _focusLive(target);
-                setState(() {});
-                _voiceDropdownDialogOpen = false;
-                if (Navigator.of(context, rootNavigator: true).canPop()) Navigator.of(context, rootNavigator: true).pop();
-              } else {
-                _showVoiceMessage('لم أجد قيمة مطابقة. أعد المحاولة واذكر القيمة أو كلمة مميزة منها.');
-              }
-              _finishLegacyVoiceSessionAndStartPending();
-            }
-            return;
-          }
-          if (key == 'dateOfBirth' || key == 'issuingDate') {
-            if (result.finalResult == true) {
-              final parsed = _parseSpokenDate(raw);
-              if (parsed != null) { c[key]!.text = parsed; _focusLive(key); setState(() {}); }
-              else _showVoiceMessage('لم أتمكن من فهم التاريخ. انطق اليوم ثم رقم الشهر ثم السنة.');
-              _finishLegacyVoiceSessionAndStartPending();
-            }
+          if (_handleSpecialVoiceResult(key, raw, isFinal: result.finalResult == true)) {
+            if (result.finalResult == true && _speechStopRequested) _finishLegacyVoiceSessionAndStartPending();
             return;
           }
           final text = _numericVoiceFields.contains(key)
@@ -1121,50 +1244,32 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       if (!_speechListening) setState(() => _speechListening = true);
     }
 
-    if (type == 'result' && key.startsWith('__dropdown__')) {
-      final target = _voiceDropdownTarget ?? key.substring('__dropdown__'.length);
-      final candidates = <String>[
-        '${event['text'] ?? ''}',
-        if (event['alternates'] is List) ...((event['alternates'] as List).map((e) => '$e')),
-      ].where((x) => x.trim().isNotEmpty);
-      String? matched;
-      for (final candidate in candidates) {
-        matched = _matchSpokenDropdownValue(target, candidate);
-        if (matched != null) break;
-      }
-      if (matched != null) {
-        final matchedItems = _voiceDropdownItems.where((item) => _value(item) == matched).toList();
-        if (matchedItems.isEmpty) return;
-        final matchedItem = matchedItems.first;
-        _applyVoiceDropdownChoice(target, matchedItem);
-        _voiceDropdownDialogOpen = false;
-        if (Navigator.of(context, rootNavigator: true).canPop()) {
-          Navigator.of(context, rootNavigator: true).pop();
-        }
-        _finishVoiceSessionAndStartPending();
-      } else if (type == 'result') {
-        _showVoiceMessage('لم أجد قيمة مطابقة. أعد المحاولة واذكر القيمة أو كلمة مميزة منها.');
-      }
-    } else if ((key == 'dateOfBirth' || key == 'issuingDate') && (type == 'partial' || type == 'result')) {
-      if (type == 'result') {
-        final parsed = _parseSpokenDate('${event['text'] ?? ''}');
-        if (parsed != null) {
-          c[key]!.text = parsed;
-          _focusLive(key);
-          setState(() {});
-        } else {
-          _showVoiceMessage('لم أتمكن من فهم التاريخ. انطق اليوم ثم رقم الشهر ثم السنة، مثل: ستة، واحد، ألف وتسعمائة وتسعة وسبعون.');
-        }
-        _finishVoiceSessionAndStartPending();
-      }
-    } else if (type == 'partial' || type == 'result') {
+    if (type == 'partial' || type == 'result') {
       final alternates = (event['alternates'] is List)
           ? (event['alternates'] as List).map((e) => '$e').toList()
           : <String>[];
       final candidates = <String>[
         '${event['text'] ?? ''}',
         ...alternates,
-      ].map((e) => e.trim()).where((e) => e.isNotEmpty);
+      ].map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+
+      if (_dropdownVoiceFields.contains(key) || _dateVoiceFields.contains(key)) {
+        if (candidates.isNotEmpty) {
+          if (type == 'result' && _dropdownVoiceFields.contains(key) && _voiceDropdownTarget == key) {
+            final matchCandidates = candidates.where((candidate) => _matchDropdownOption(key, candidate) != null).toList();
+            final match = matchCandidates.isEmpty ? null : matchCandidates.first;
+            _handleSpecialVoiceResult(key, match ?? candidates.first, isFinal: true);
+          } else if (type == 'result' && _dateVoiceFields.contains(key)) {
+            final parsedCandidates = candidates.where((candidate) => _parseSpokenDate(candidate, key) != null).toList();
+            final parsedCandidate = parsedCandidates.isEmpty ? null : parsedCandidates.first;
+            _handleSpecialVoiceResult(key, parsedCandidate ?? candidates.first, isFinal: true);
+          } else {
+            _handleSpecialVoiceResult(key, candidates.first, isFinal: type == 'result');
+          }
+        }
+        if (type == 'result' && _speechStopRequested) _finishVoiceSessionAndStartPending();
+        return;
+      }
 
       String text = '';
       for (final raw in candidates) {
@@ -1215,6 +1320,18 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
     if (type == 'stopped' && !_speechStopRequested) {
       setState(() => _speechListening = false);
+      final shouldRetrySpecial =
+          (_dropdownVoiceFields.contains(key) && _voiceDropdownTarget == key) ||
+          (_dateVoiceFields.contains(key) && _specialVoiceFailureShown);
+      if (shouldRetrySpecial) {
+        Timer(Duration(milliseconds: AppCore.voiceRestartDelayMs), () {
+          if (!mounted || _activeVoiceSessionId != sessionId || _speechStopRequested) return;
+          final stillNeeded =
+              (_dropdownVoiceFields.contains(key) && _voiceDropdownTarget == key) ||
+              (_dateVoiceFields.contains(key) && _specialVoiceFailureShown);
+          if (stillNeeded) unawaited(_startVoiceSession(key));
+        });
+      }
     }
   }
 
@@ -1237,6 +1354,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final sessionId = ++_nextVoiceSessionId;
     _activeVoiceSessionId = sessionId;
     _activeVoiceField = key;
+    _specialVoiceFailureShown = false;
     _scrollVoiceFieldIntoView(key);
     _speechStopRequested = false;
     if (mounted) {
@@ -1319,13 +1437,22 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   bool _isVoiceFieldCurrentlyVisible(String key) {
-    if (!_voiceFields.contains(key) && !_numericVoiceFields.contains(key)) return false;
+    if (!_voiceFields.contains(key) && !_numericVoiceFields.contains(key) &&
+        !_dropdownVoiceFields.contains(key) && !_dateVoiceFields.contains(key)) return false;
     if (key == 'nationalId') return _isNationalId;
     if (key == 'idNumber' || key == 'jinsiyaIdNumber' || key == 'recordNumber' || key == 'pageNumber') return _isCivilId;
     if (key == 'birthCertificateNumber') return _isBirthCertificate;
     if (key == 'otherIdNumber') return _isOtherId;
     if (key == 'nameOfDocument') return _isBirthCertificate || _isOtherId || _isCivilId;
-    return c.containsKey(key);
+    if (key == 'issuingDate' || key == 'issuingCountry' || key == 'issuer' ||
+        key == 'recordNumber' || key == 'pageNumber' || key == 'jinsiyaIdNumber' ||
+        key == 'nameOfDocument') return _isCivilId || _isBirthCertificate || _isOtherId;
+    if (key == 'stageId') return stages.isNotEmpty;
+    if (key == 'classRoomId') return rooms.isNotEmpty;
+    if (key == 'addressCountry') return _addressCountries.isNotEmpty;
+    if (key == 'addressGovernorate') return _addressGovernorates.isNotEmpty;
+    if (key == 'addressDistrict') return _addressDistricts.isNotEmpty;
+    return c.containsKey(key) || key == 'isCoveredBySocialWelfare';
   }
 
   List<String> _currentVoiceSequence() => _voiceSequentialOrder
@@ -1357,6 +1484,19 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (_activeVoiceSessionId != null) _requestSpeechStop();
   }
 
+  Future<void> _activateSequentialVoiceField(String key) async {
+    if (_dropdownVoiceFields.contains(key)) {
+      await _startDropdownVoice(key);
+      return;
+    }
+    if (_activeVoiceSessionId != null) {
+      _pendingVoiceField = key;
+      _requestSpeechStop(nextField: key);
+    } else {
+      await _startVoiceSession(key);
+    }
+  }
+
   Future<void> _advanceSequentialVoice() async {
     if (!_voiceSequentialMode || saving) return;
     if (!AppCore.voiceInputEnabled) {
@@ -1377,12 +1517,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final next = sequence[nextIndex];
     if (mounted) setState(() => _sequentialVoiceIndex = nextIndex);
 
-    if (_activeVoiceSessionId != null) {
-      _pendingVoiceField = next;
-      _requestSpeechStop(nextField: next);
-    } else {
-      await _startVoiceSession(next);
-    }
+    await _activateSequentialVoiceField(next);
   }
 
   Future<void> _retreatSequentialVoice() async {
@@ -1404,12 +1539,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final previous = sequence[previousIndex];
     if (mounted) setState(() => _sequentialVoiceIndex = previousIndex);
 
-    if (_activeVoiceSessionId != null) {
-      _pendingVoiceField = previous;
-      _requestSpeechStop(nextField: previous);
-    } else {
-      await _startVoiceSession(previous);
-    }
+    await _activateSequentialVoiceField(previous);
   }
 
   void _markVoiceArrowPointerDown() {
@@ -1574,13 +1704,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     TextInputType? keyboard,
   }) {
     return TextFormField(
-      key: _voiceFieldKeys.containsKey(key) || _voiceFields.contains(key) || _numericVoiceFields.contains(key)
+      key: _voiceFieldKeys.containsKey(key) || _voiceFields.contains(key) || _numericVoiceFields.contains(key) || _dateVoiceFields.contains(key)
           ? _voiceFieldKey(key)
           : null,
       controller: c[key],
       maxLines: maxLines,
       keyboardType: keyboard,
-      readOnly: key == 'dateOfBirth' || key == 'issuingDate',
+      readOnly: _dateVoiceFields.contains(key),
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       textDirection: TextDirection.rtl,
       decoration: InputDecoration(
@@ -1596,34 +1726,34 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
-        suffixIcon: (_voiceFields.contains(key) || _numericVoiceFields.contains(key) || key == 'dateOfBirth' || key == 'issuingDate')
-            ? Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: (_) => _markMicPointerDown(),
-                child: IconButton(
-                  tooltip: _speechListening && _activeVoiceField == key
-                      ? 'إيقاف التسجيل'
-                      : ((key == 'dateOfBirth' || key == 'issuingDate')
-                          ? 'نطق التاريخ: اليوم ثم الشهر ثم السنة'
-                          : (_numericVoiceFields.contains(key)
-                              ? 'الإدخال الصوتي للأرقام عبر Google'
-                              : 'الإدخال الصوتي بالعربية عبر Google')),
-                  onPressed: () => _toggleVoiceInput(key),
-                  icon: Icon(
-                    _speechListening && _activeVoiceField == key
-                        ? Icons.mic_rounded
-                        : Icons.mic_none_rounded,
-                    color: _speechListening && _activeVoiceField == key
-                        ? Colors.red
-                        : null,
+        suffixIconConstraints: _dateVoiceFields.contains(key) ? const BoxConstraints(minWidth: 96, minHeight: 48) : null,
+        suffixIcon: (_voiceFields.contains(key) || _numericVoiceFields.contains(key) || _dateVoiceFields.contains(key))
+            ? Row(mainAxisSize: MainAxisSize.min, children: [
+                if (_dateVoiceFields.contains(key)) IconButton(
+                  tooltip: 'اختيار التاريخ من التقويم',
+                  onPressed: () => _pickDate(key),
+                  icon: const Icon(Icons.calendar_month_outlined),
+                ),
+                Listener(
+                  behavior: HitTestBehavior.opaque,
+                  onPointerDown: (_) => _markMicPointerDown(),
+                  child: IconButton(
+                    tooltip: _speechListening && _activeVoiceField == key
+                        ? 'إيقاف التسجيل'
+                        : (_dateVoiceFields.contains(key) ? 'نطق التاريخ: اليوم ثم الشهر ثم السنة' : (_numericVoiceFields.contains(key) ? 'الإدخال الصوتي للأرقام عبر Google' : 'الإدخال الصوتي بالعربية عبر Google')),
+                    onPressed: () => _toggleVoiceInput(key),
+                    icon: Icon(
+                      _speechListening && _activeVoiceField == key ? Icons.mic_rounded : Icons.mic_none_rounded,
+                      color: _speechListening && _activeVoiceField == key ? Colors.red : null,
+                    ),
                   ),
                 ),
-              )
+              ])
             : null,
       ),
       validator: null,
       onChanged: (_) => _liveSyncKey.currentState?.pushValues(_liveValues()),
-      onTap: (key == 'dateOfBirth' || key == 'issuingDate') ? () => _pickDate(key) : () => _focusLive(key),
+      onTap: _dateVoiceFields.contains(key) ? () => _pickDate(key) : () => _focusLive(key),
     );
   }
 
@@ -1658,15 +1788,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
-        suffixIcon: Listener(
-          behavior: HitTestBehavior.opaque,
-          onPointerDown: (_) => _markMicPointerDown(),
-          child: IconButton(
-            tooltip: 'اختيار ${labels[key] ?? key} بالصوت',
-            icon: const Icon(Icons.mic_none_rounded),
-            onPressed: () => _openVoiceDropdown(key, values),
-          ),
-        ),
+        suffixIcon: _dropdownVoiceFields.contains(key) ? _dropdownVoiceMic(key) : null,
       ),
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       items: values
@@ -2233,6 +2355,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                     _section('العنوان', [
                       _addressDropdown(
                         label: 'الدولة',
+                        voiceKey: 'addressCountry',
                         value: _addressCountryId,
                         items: _addressCountries,
                         onChanged: (v) {
@@ -2248,6 +2371,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                       const SizedBox(height: 10),
                       _addressDropdown(
                         label: 'المحافظة',
+                        voiceKey: 'addressGovernorate',
                         value: _addressGovernorateId,
                         items: _addressGovernorates,
                         onChanged: (v) {
@@ -2263,6 +2387,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                       const SizedBox(height: 10),
                       _addressDropdown(
                         label: 'القضاء',
+                        voiceKey: 'addressDistrict',
                         value: _addressDistrictId,
                         items: _addressDistricts,
                         onChanged: (v) {
@@ -2393,16 +2518,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     return DropdownButtonFormField<bool>(
       value: _socialWelfare,
       isExpanded: true,
-      decoration: _decoration('مشمول بمنحة الرعاية الاجتماعية؟').copyWith(
-        suffixIcon: IconButton(
-          tooltip: 'اختيار حالة الرعاية بالصوت',
-          icon: const Icon(Icons.mic_none_rounded),
-          onPressed: () => _openVoiceDropdown('isCoveredBySocialWelfare', const [
-            {'value': 'false', 'displayName': 'لا'},
-            {'value': 'true', 'displayName': 'نعم'},
-          ]),
-        ),
-      ),
+      decoration: _decoration('مشمول بمنحة الرعاية الاجتماعية؟').copyWith(suffixIcon: _dropdownVoiceMic('isCoveredBySocialWelfare')),
       style: const TextStyle(
         fontWeight: FontWeight.bold,
         color: Colors.black87,
@@ -2427,6 +2543,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   Widget _addressDropdown({
     required String label,
+    required String voiceKey,
     required String? value,
     required List<Map<String, dynamic>> items,
     required ValueChanged<String?> onChanged,
@@ -2436,16 +2553,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       value: safe,
       isExpanded: true,
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-      decoration: _decoration(label).copyWith(
-        suffixIcon: IconButton(
-          tooltip: 'اختيار $label بالصوت',
-          icon: const Icon(Icons.mic_none_rounded),
-          onPressed: () => _openVoiceDropdown(
-            label == 'الدولة' ? 'addressCountry' : (label == 'المحافظة' ? 'addressGovernorate' : 'addressDistrict'),
-            items,
-          ),
-        ),
-      ),
+      decoration: _decoration(label).copyWith(suffixIcon: _dropdownVoiceMic(voiceKey)),
       items: items
           .map((x) => DropdownMenuItem<String>(
                 value: _value(x),
@@ -2461,7 +2569,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   Widget _selectStage() => DropdownButtonFormField<String>(
         value: stageId,
         isExpanded: true,
-        decoration: _decoration('الصف الدراسي').copyWith(labelStyle: const TextStyle(fontWeight: FontWeight.bold), suffixIcon: IconButton(icon: const Icon(Icons.mic_none_rounded), tooltip: 'اختيار الصف بالصوت', onPressed: () => _openVoiceDropdown('stageId', stages))),
+        decoration: _decoration('الصف الدراسي').copyWith(labelStyle: const TextStyle(fontWeight: FontWeight.bold), suffixIcon: _dropdownVoiceMic('stageId')),
         items: stages
             .map(
               (x) => DropdownMenuItem(
@@ -2478,7 +2586,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   Widget _selectRoom() => DropdownButtonFormField<String>(
         value: roomId,
         isExpanded: true,
-        decoration: _decoration('الشعبة').copyWith(labelStyle: const TextStyle(fontWeight: FontWeight.bold), suffixIcon: IconButton(icon: const Icon(Icons.mic_none_rounded), tooltip: 'اختيار الشعبة بالصوت', onPressed: () => _openVoiceDropdown('classRoomId', rooms))),
+        decoration: _decoration('الشعبة').copyWith(labelStyle: const TextStyle(fontWeight: FontWeight.bold), suffixIcon: _dropdownVoiceMic('classRoomId')),
         items: rooms
             .map(
               (x) => DropdownMenuItem(
