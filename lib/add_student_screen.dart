@@ -995,7 +995,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       }
 
       if (text.isNotEmpty && _dropdownVoiceFields.contains(key) && type == 'result') {
-        _applyVoiceDropdownSelection(key, text);
+        final selected = _applyVoiceDropdownSelection(key, text);
+        if (!selected && _voiceSelectionSheetContext != null) {
+          _showVoiceMessage('لم أتعرف على «$text» كقيمة في هذه القائمة. أعد النطق أو اخترها يدويًا.');
+        }
       } else if (text.isNotEmpty && _dateVoiceFields.contains(key) && type == 'result') {
         final parsed = _parseSpokenDate(text);
         if (parsed != null) {
@@ -1192,11 +1195,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     return s.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
-  void _applyVoiceDropdownSelection(String key, String spoken) {
+  bool _applyVoiceDropdownSelection(String key, String spoken) {
     final spokenNorm = _normalizeVoiceMatch(spoken);
-    if (spokenNorm.isEmpty) return;
+    if (spokenNorm.isEmpty) return false;
     final items = _voiceOptionsForKey(key);
-    if (items.isEmpty) return;
+    if (items.isEmpty) return false;
 
     Map<String, dynamic>? best;
     var bestScore = -1;
@@ -1204,18 +1207,27 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       final name = _normalizeVoiceMatch(_text(item));
       if (name.isEmpty) continue;
       var score = 0;
-      if (spokenNorm == name) score = 1000;
-      else if (spokenNorm.contains(name)) score = 800 + name.length;
-      else if (name.contains(spokenNorm)) score = 600 + spokenNorm.length;
-      else {
-        final words = name.split(' ');
-        for (final w in words) {
-          if (w.length >= 2 && spokenNorm.contains(w)) score = score < 400 ? 400 + w.length : score;
+      if (spokenNorm == name) {
+        score = 1000;
+      } else if (spokenNorm.contains(name)) {
+        score = 800 + name.length;
+      } else if (name.contains(spokenNorm)) {
+        score = 600 + spokenNorm.length;
+      } else {
+        for (final word in name.split(' ')) {
+          if (word.length >= 2 && spokenNorm.contains(word)) {
+            score = score < 400 ? 400 + word.length : score;
+          }
         }
       }
-      if (score > bestScore) { bestScore = score; best = item; }
+      if (score > bestScore) {
+        bestScore = score;
+        best = item;
+      }
     }
-    if (best == null || bestScore < 400) return;
+    // لا نغلق قائمة الاختيارات عند عدم العثور على تطابق؛ يبقى بإمكان المستخدم
+    // إعادة النطق أو اختيار القيمة يدويًا دون فقدان الصفحة أو القائمة.
+    if (best == null || bestScore < 400) return false;
 
     final value = _value(best);
     if (key == 'isCoveredBySocialWelfare') {
@@ -1229,28 +1241,38 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       setState(() => roomId = value);
       _focusLive(key);
     } else if (key == 'addressCountry') {
-      final item = _addressCountries.firstWhere((x) => _value(x) == value, orElse: () => <String,dynamic>{});
-      if (item.isNotEmpty) {
-        setState(() { _addressCountryId = value; _setAddressGovernorates(item); });
-        _focusLive(key);
-      }
+      final item = _addressCountries.firstWhere(
+        (x) => _value(x) == value,
+        orElse: () => <String, dynamic>{},
+      );
+      if (item.isEmpty) return false;
+      setState(() {
+        _addressCountryId = value;
+        _setAddressGovernorates(item);
+      });
+      _focusLive(key);
     } else if (key == 'addressGovernorate') {
-      final item = _addressGovernorates.firstWhere((x) => _value(x) == value, orElse: () => <String,dynamic>{});
-      if (item.isNotEmpty) {
-        setState(() { _addressGovernorateId = value; _setAddressDistricts(item); });
-        _focusLive(key);
-      }
+      final item = _addressGovernorates.firstWhere(
+        (x) => _value(x) == value,
+        orElse: () => <String, dynamic>{},
+      );
+      if (item.isEmpty) return false;
+      setState(() {
+        _addressGovernorateId = value;
+        _setAddressDistricts(item);
+      });
+      _focusLive(key);
     } else if (key == 'addressDistrict') {
       setState(() => _addressDistrictId = value);
       _focusLive(key);
     } else {
       final controller = c[key];
-      if (controller != null) {
-        setState(() => controller.text = value);
-        _focusLive(key);
-      }
+      if (controller == null) return false;
+      setState(() => controller.text = value);
+      _focusLive(key);
     }
     _closeVoiceOptions();
+    return true;
   }
 
   Future<void> _openVoiceOptions(String key) async {
@@ -1283,7 +1305,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   return ListTile(
                     leading: Icon(selected ? Icons.check_circle : Icons.radio_button_unchecked, color: selected ? Colors.green : Colors.grey),
                     title: Text(_text(item), style: const TextStyle(fontWeight: FontWeight.bold)),
-                    onTap: () { _applyVoiceDropdownSelection(key, _text(item)); _pendingVoiceField = null; _requestSpeechStop(); Navigator.of(sheetContext).pop(); },
+                    onTap: () {
+                      // _applyVoiceDropdownSelection يغلق نافذة الخيارات بنفسه.
+                      // لا تنفذ pop ثانية هنا، وإلا ستُغلق الصفحة الأم (إضافة طالب).
+                      _pendingVoiceField = null;
+                      _requestSpeechStop();
+                      _applyVoiceDropdownSelection(key, _text(item));
+                    },
                   );
                 },
               ),
