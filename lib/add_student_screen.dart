@@ -779,17 +779,28 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   );
 
   Map<String, dynamic>? _matchDropdownOption(String key, String spoken) {
-    final target = _normalizeArabicForMatch(spoken);
+    var target = _normalizeArabicForMatch(spoken);
     if (target.isEmpty) return null;
+    // تجاهل كلمات تمهيدية قد تضيفها خدمة التعرف الصوتي.
+    target = target.replaceAll(RegExp(r'^(?:اختيار|القيمة|هي|هو)\s+'), '').trim();
     final items = _dropdownOptionsForVoice(key);
+    if (items.isEmpty) return null;
 
-    // التطابق الكامل أولاً.
-    for (final item in items) {
-      if (_normalizeArabicForMatch(_text(item)) == target ||
-          _normalizeArabicForMatch(_value(item)) == target) return item;
-    }
+    String compact(String value) => _normalizeArabicForMatch(value)
+        .replaceAll(RegExp(r'\bال'), '')
+        .replaceAll(' ', '');
 
-    // السماح بنطق القيمة كاملة أو جزء مميز منها، مع رفض أفضلية متعادلة.
+    // التطابق الكامل بعد التطبيع هو الأكثر موثوقية.
+    final exact = items.where((item) {
+      final label = _normalizeArabicForMatch(_text(item));
+      final value = _normalizeArabicForMatch(_value(item));
+      return label == target || value == target || compact(label) == compact(target);
+    }).toList();
+    if (exact.length == 1) return exact.first;
+    if (exact.length > 1) return null;
+
+    final targetTokens = target.split(' ').where((x) => x.length >= 2).toSet();
+    if (targetTokens.isEmpty) return null;
     int bestScore = 0;
     Map<String, dynamic>? best;
     bool tied = false;
@@ -797,19 +808,30 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       final label = _normalizeArabicForMatch(_text(item));
       final value = _normalizeArabicForMatch(_value(item));
       if (label.isEmpty) continue;
-      if (label.contains(target) || target.contains(label) ||
-          (value.isNotEmpty && (value.contains(target) || target.contains(value)))) {
-        final score = target.length + (label == target ? 1000 : 0);
-        if (score > bestScore) { bestScore = score; best = item; tied = false; }
-        else if (score == bestScore) { tied = true; }
-        continue;
+      final labelCompact = compact(label);
+      final targetCompact = compact(target);
+      int score = 0;
+      if (labelCompact.length >= 3 && targetCompact.length >= 3 &&
+          (labelCompact.contains(targetCompact) || targetCompact.contains(labelCompact))) {
+        score = 100 + (labelCompact.length < targetCompact.length ? labelCompact.length : targetCompact.length);
+      } else {
+        final tokens = label.split(' ').where((x) => x.length >= 2).toSet();
+        final overlap = targetTokens.intersection(tokens).length;
+        if (overlap > 0) {
+          // فضّل التطابق الذي يغطي أكبر نسبة من كلمات الخيار المنطوق.
+          score = overlap * 10 + ((overlap == tokens.length) ? 3 : 0);
+        }
+        if (value.isNotEmpty && compact(value) == targetCompact) score += 100;
       }
-      final tokens = label.split(' ').where((x) => x.length >= 2).toSet();
-      final targetTokens = target.split(' ').where((x) => x.length >= 2).toSet();
-      final overlap = targetTokens.intersection(tokens).length;
-      if (overlap > bestScore) { bestScore = overlap; best = item; tied = false; }
-      else if (overlap > 0 && overlap == bestScore) { tied = true; }
+      if (score > bestScore) {
+        bestScore = score;
+        best = item;
+        tied = false;
+      } else if (score > 0 && score == bestScore && _value(item) != _value(best ?? {})) {
+        tied = true;
+      }
     }
+    // كلمة مميزة واحدة مقبولة فقط إذا قادت إلى خيار واحد دون التباس.
     return bestScore > 0 && !tied ? best : null;
   }
 
@@ -883,20 +905,59 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   DateTime? _parseSpokenDate(String raw, String key) {
-    final normalizedDigits = _normalizeDigits(raw);
+    final normalizedDigits = _normalizeDigits(raw).trim();
     final digitGroups = RegExp(r'\d+').allMatches(normalizedDigits)
         .map((m) => int.tryParse(m.group(0)!)).whereType<int>().toList();
     int? day, month, year;
-    if (digitGroups.length >= 3) {
-      day = digitGroups[0]; month = digitGroups[1]; year = digitGroups[2];
+
+    // يقبل yyyy-MM-dd مباشرة، إضافة إلى dd-MM-yyyy وdd MM yyyy.
+    final iso = RegExp(r'^\s*(\d{4})[-/ .](\d{1,2})[-/ .](\d{1,2})\s*$')
+        .firstMatch(normalizedDigits);
+    if (iso != null) {
+      year = int.tryParse(iso.group(1)!);
+      month = int.tryParse(iso.group(2)!);
+      day = int.tryParse(iso.group(3)!);
+    } else if (digitGroups.length >= 3) {
+      if (digitGroups[0] >= 1900 && digitGroups[0] <= DateTime.now().year) {
+        year = digitGroups[0]; month = digitGroups[1]; day = digitGroups[2];
+      } else {
+        day = digitGroups[0]; month = digitGroups[1]; year = digitGroups[2];
+      }
     } else {
-      final cleaned = raw.replaceAll(RegExp(r'[,،;؛/\\|]+'), ' ')
+      final cleaned = _normalizeArabicForMatch(raw)
+          .replaceAll(RegExp(r'[,،;؛/\\|]+'), ' ')
           .replaceAll('-', ' ').replaceAll('ـ', ' ').trim();
       final words = cleaned.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
       if (words.length < 3) return null;
-      day = _smallArabicNumber(words[0]);
-      month = _smallArabicNumber(words[1]);
-      year = _arabicYearValue(words.sublist(2));
+
+      const months = <String, int>{
+        'كانون الثاني': 1, 'يناير': 1, 'شباط': 2, 'فبراير': 2,
+        'اذار': 3, 'مارس': 3, 'نيسان': 4, 'ابريل': 4,
+        'ايار': 5, 'مايو': 5, 'حزيران': 6, 'يونيو': 6,
+        'تموز': 7, 'يوليو': 7, 'اب': 8, 'اغسطس': 8,
+        'ايلول': 9, 'سبتمبر': 9, 'تشرين الاول': 10, 'اكتوبر': 10,
+        'تشرين الثاني': 11, 'نوفمبر': 11, 'كانون الاول': 12, 'ديسمبر': 12,
+      };
+      int? monthIndex;
+      int monthWordCount = 1;
+      for (var i = 0; i < words.length; i++) {
+        final single = months[words[i]];
+        if (single != null) { month = single; monthIndex = i; monthWordCount = 1; break; }
+        if (i + 1 < words.length) {
+          final pair = months['${words[i]} ${words[i + 1]}'];
+          if (pair != null) { month = pair; monthIndex = i; monthWordCount = 2; break; }
+        }
+      }
+      if (monthIndex != null) {
+        final before = words.sublist(0, monthIndex);
+        final after = words.sublist(monthIndex + monthWordCount);
+        if (before.isNotEmpty) day = _smallArabicNumber(before.last);
+        if (after.isNotEmpty) year = _arabicYearValue(after);
+      } else {
+        day = _smallArabicNumber(words[0]);
+        month = _smallArabicNumber(words[1]);
+        year = _arabicYearValue(words.sublist(2));
+      }
     }
     if (day == null || month == null || year == null) return null;
     if (year < 100) year += year >= 50 ? 1900 : 2000;
@@ -1257,12 +1318,28 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       if (_dropdownVoiceFields.contains(key) || _dateVoiceFields.contains(key)) {
         if (candidates.isNotEmpty) {
           if (type == 'result' && _dropdownVoiceFields.contains(key) && _voiceDropdownTarget == key) {
-            final matchCandidates = candidates.where((candidate) => _matchDropdownOption(key, candidate) != null).toList();
-            final match = matchCandidates.isEmpty ? null : matchCandidates.first;
-            _handleSpecialVoiceResult(key, match ?? candidates.first, isFinal: true);
+            Map<String, dynamic>? matchedOption;
+            for (final candidate in candidates) {
+              matchedOption = _matchDropdownOption(key, candidate);
+              if (matchedOption != null) break;
+            }
+            if (matchedOption != null) {
+              _applyDropdownVoiceChoice(key, matchedOption);
+              _voiceDropdownTarget = null;
+              _specialVoiceFailureShown = false;
+              if (_voiceDropdownDialogOpen && mounted) {
+                Navigator.of(context, rootNavigator: true).pop();
+              }
+              _requestSpeechStop();
+              if (mounted) setState(() {});
+            } else {
+              _handleSpecialVoiceResult(key, candidates.first, isFinal: true);
+            }
           } else if (type == 'result' && _dateVoiceFields.contains(key)) {
-            final parsedCandidates = candidates.where((candidate) => _parseSpokenDate(candidate, key) != null).toList();
-            final parsedCandidate = parsedCandidates.isEmpty ? null : parsedCandidates.first;
+            String? parsedCandidate;
+            for (final candidate in candidates) {
+              if (_parseSpokenDate(candidate, key) != null) { parsedCandidate = candidate; break; }
+            }
             _handleSpecialVoiceResult(key, parsedCandidate ?? candidates.first, isFinal: true);
           } else {
             _handleSpecialVoiceResult(key, candidates.first, isFinal: type == 'result');
