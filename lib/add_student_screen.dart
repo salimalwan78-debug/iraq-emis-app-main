@@ -585,19 +585,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   Future<void> _pickDate(String key) async {
-    final current = (c[key]?.text ?? '').trim();
-    DateTime? initialParsed = DateTime.tryParse(current);
-    final displayDate = RegExp(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$').firstMatch(current);
-    if (initialParsed == null && displayDate != null) {
-      final day = int.tryParse(displayDate.group(1)!);
-      final month = int.tryParse(displayDate.group(2)!);
-      final year = int.tryParse(displayDate.group(3)!);
-      if (day != null && month != null && year != null) {
-        final candidate = DateTime(year, month, day);
-        if (candidate.year == year && candidate.month == month && candidate.day == day) initialParsed = candidate;
-      }
-    }
-    final initial = initialParsed ?? DateTime.now();
+    final currentDate = c[key]?.text ?? '';
+    final displayMatch = RegExp(r'^(\d{1,2})-(\d{1,2})-(\d{4})$').firstMatch(currentDate);
+    final initial = displayMatch != null
+        ? DateTime.tryParse('${displayMatch.group(3)}-${displayMatch.group(2)!.padLeft(2, '0')}-${displayMatch.group(1)!.padLeft(2, '0')}') ?? DateTime.now()
+        : DateTime.tryParse(currentDate) ?? DateTime.now();
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -607,7 +599,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       locale: const Locale('ar'),
     );
     if (picked == null || !mounted) return;
-    c[key]!.text = _formatDateForField(picked);
+    c[key]!.text =
+        '${picked.day.toString().padLeft(2, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.year.toString().padLeft(4, '0')}';
     _focusLive(key);
     setState(() {});
   }
@@ -798,10 +791,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (items.isEmpty) return null;
 
     String compact(String value) => _normalizeArabicForMatch(value)
-        .split(' ')
-        .where((part) => part.isNotEmpty)
-        .map((part) => part.startsWith('ال') && part.length > 2 ? part.substring(2) : part)
-        .join('');
+        .replaceAll(RegExp(r'\bال'), '')
+        .replaceAll(' ', '');
 
     // التطابق الكامل بعد التطبيع هو الأكثر موثوقية.
     final exact = items.where((item) {
@@ -942,32 +933,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     return date;
   }
 
-  String _formatDateForField(DateTime date) =>
-      '${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year.toString().padLeft(4, '0')}';
-
-  String? _dateForApi(String? raw) {
-    final value = (raw ?? '').trim();
-    if (value.isEmpty) return null;
-    final match = RegExp(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$').firstMatch(value);
-    if (match != null) {
-      final day = int.parse(match.group(1)!);
-      final month = int.parse(match.group(2)!);
-      final year = int.parse(match.group(3)!);
-      final date = DateTime(year, month, day);
-      if (date.year == year && date.month == month && date.day == day) {
-        return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
-      }
-      return value;
-    }
-    final iso = DateTime.tryParse(value);
-    if (iso != null) {
-      return '${iso.year.toString().padLeft(4, '0')}-${iso.month.toString().padLeft(2, '0')}-${iso.day.toString().padLeft(2, '0')}';
-    }
-    return value;
-  }
-
   void _applySpokenDate(String key, DateTime date) {
-    final value = _formatDateForField(date);
+    final value = '${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year.toString().padLeft(4, '0')}';
     c[key]?.value = TextEditingValue(
       text: value,
       selection: TextSelection.collapsed(offset: value.length),
@@ -975,6 +942,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _liveSyncKey.currentState?.pushValues(_liveValues());
     if (mounted) setState(() {});
     _showVoiceMessage('تم إدخال ${labels[key] ?? 'التاريخ'}: $value');
+  }
+
+  String _dateForApi(String? raw) {
+    final value = (raw ?? '').trim();
+    final display = RegExp(r'^(\d{1,2})-(\d{1,2})-(\d{4})$').firstMatch(value);
+    if (display != null) {
+      return '${display.group(3)}-${display.group(2)!.padLeft(2, '0')}-${display.group(1)!.padLeft(2, '0')}';
+    }
+    return value;
   }
 
   bool _handleSpecialVoiceResult(String key, String raw, {required bool isFinal}) {
@@ -1337,10 +1313,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
               _handleSpecialVoiceResult(key, candidates.first, isFinal: true);
             }
           } else if (type == 'result' && _dateVoiceFields.contains(key)) {
-            String? parsedCandidate;
-            for (final candidate in candidates) {
-              if (_parseSpokenDate(candidate, key) != null) { parsedCandidate = candidate; break; }
-            }
+            final parsedCandidates = candidates.where((candidate) => _parseSpokenDate(candidate, key) != null).toList();
+            final parsedCandidate = parsedCandidates.isEmpty ? null : parsedCandidates.first;
             _handleSpecialVoiceResult(key, parsedCandidate ?? candidates.first, isFinal: true);
           } else {
             _handleSpecialVoiceResult(key, candidates.first, isFinal: type == 'result');
@@ -1863,6 +1837,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
 
     return DropdownButtonFormField<String>(
+      key: ValueKey<String>('voice-select-$key-$current'),
       value: current.isEmpty ? null : current,
       isExpanded: true,
       decoration: InputDecoration(
@@ -2022,7 +1997,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'mothersFatherName': _n('mothersFatherName') ?? '',
         'mothersGrandFatherName': _n('mothersGrandFatherName') ?? '',
         'imageUrl': '',
-        'dateOfBirth': _dateForApi(_n('dateOfBirth')) ?? '',
+        'dateOfBirth': _dateForApi(_n('dateOfBirth')),
         'gender': int.parse(c['gender']!.text),
         'nationality': _n('nationality') ?? 'العراق',
         'countryOfBirth': _n('countryOfBirth') ?? 'العراق',
@@ -2640,6 +2615,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }) {
     final safe = items.any((x) => _value(x) == value) ? value : null;
     return DropdownButtonFormField<String>(
+      key: ValueKey<String>('voice-address-$voiceKey-${safe ?? ''}'),
       value: safe,
       isExpanded: true,
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
@@ -2657,6 +2633,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   Widget _selectStage() => DropdownButtonFormField<String>(
+        key: ValueKey<String>('voice-stage-${stageId ?? ''}'),
         value: stageId,
         isExpanded: true,
         decoration: _decoration('الصف الدراسي').copyWith(labelStyle: const TextStyle(fontWeight: FontWeight.bold), suffixIcon: _dropdownVoiceMic('stageId')),
@@ -2674,6 +2651,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       );
 
   Widget _selectRoom() => DropdownButtonFormField<String>(
+        key: ValueKey<String>('voice-room-${roomId ?? ''}'),
         value: roomId,
         isExpanded: true,
         decoration: _decoration('الشعبة').copyWith(labelStyle: const TextStyle(fontWeight: FontWeight.bold), suffixIcon: _dropdownVoiceMic('classRoomId')),
