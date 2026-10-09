@@ -711,10 +711,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       return label == target || value == target || compact(label) == compact(target);
     }).toList();
     if (exact.length == 1) return exact.first;
-    if (exact.length > 1) return exact.first; // معالجة القوائم الكبيرة باختيار أول مطابقة واضحة
+    if (exact.length > 1) return exact.first;
 
     final targetTokens = target.split(' ').where((x) => x.length >= 2).toSet();
-    if (targetTokens.isEmpty) return items.firstOrNull; // مرونة إضافية للقوائم الكبيرة جداً
+    if (targetTokens.isEmpty) return items.firstOrNull;
     
     int bestScore = 0;
     Map<String, dynamic>? best;
@@ -762,6 +762,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       'ستة': 6, 'سته': 6, 'ست': 6, 'سبعة': 7, 'سبع': 7, 'سبعه': 7,
       'ثمانية': 8, 'ثماني': 8, 'تمانية': 8, 'تمانيه': 8, 'ثمنية': 8,
       'تسعة': 9, 'تسع': 9, 'تسعه': 9, 'عشرة': 10, 'عشر': 10,
+      'الفين': 2000, 'ألفين': 2000,
       'مائة': 100, 'مائه': 100, 'مئة': 100, 'ميه': 100,
       'مائتين': 200, 'مئتين': 200, 'ثلاثمائة': 300, 'ثلاثمائه': 300,
       'اربعمائة': 400, 'اربعمائه': 400, 'أربعمائة': 400, 'خمسمائة': 500,
@@ -785,6 +786,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     for (var i = 0; i < words.length; i++) {
       final word = _normalizeSpokenWord(words[i]);
       if (word.isEmpty || word == 'و') continue;
+      if (word == 'الفين' || word == 'ألفين') { total += 2000; found = true; continue; }
       if (word == 'الف' || word == 'الاف') { total += 1000; found = true; continue; }
       if (word == 'مائة' || word == 'مائه' || word == 'مئه' || word == 'مئة' || word == 'ميه') { total += 100; found = true; continue; }
       const hundreds = <String, int>{
@@ -1868,11 +1870,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             if (stageDetails != null) ...[const SizedBox(height: 10), _stageInfo()],
                           ]),
                           _section('العنوان', [
+                            // تم إلغاء رمز الميكروفون من حقل الدولة هنا
                             _addressDropdown(
                               label: 'الدولة',
                               voiceKey: 'addressCountry',
                               value: _addressCountryId,
                               items: _addressCountries,
+                              showMic: false,
                               onChanged: (v) {
                                 final item = _addressCountries.where((x) => _value(x) == v).toList();
                                 if (item.isEmpty) return;
@@ -2018,14 +2022,23 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     );
   }
 
-  Widget _addressDropdown({required String label, required String voiceKey, required String? value, required List<Map<String, dynamic>> items, required ValueChanged<String?> onChanged}) {
+  Widget _addressDropdown({
+    required String label,
+    required String voiceKey,
+    required String? value,
+    required List<Map<String, dynamic>> items,
+    required ValueChanged<String?> onChanged,
+    bool showMic = true,
+  }) {
     final safe = items.any((x) => _value(x) == value) ? value : null;
     return DropdownButtonFormField<String>(
       key: ValueKey<String>('voice-address-$voiceKey-${safe ?? ''}'),
       value: safe,
       isExpanded: true,
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-      decoration: _decoration(label).copyWith(suffixIcon: _dropdownVoiceMic(voiceKey)),
+      decoration: _decoration(label).copyWith(
+        suffixIcon: showMic && _dropdownVoiceFields.contains(voiceKey) ? _dropdownVoiceMic(voiceKey) : null,
+      ),
       items: items.map((x) => DropdownMenuItem<String>(value: _value(x), child: Text(_text(x), style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
       onChanged: onChanged,
     );
@@ -2044,7 +2057,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         key: ValueKey<String>('voice-room-${roomId ?? ''}'),
         value: roomId,
         isExpanded: true,
-        // تم حذف رمز الميكروفون من حقل الشعبة بناءً على الطلب
         decoration: _decoration('الشعبة'),
         items: rooms.map((x) => DropdownMenuItem(value: _value(x), child: Text(_text(x), style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
         onChanged: (v) { setState(() => roomId = v); _focusLive('classRoomId'); },
