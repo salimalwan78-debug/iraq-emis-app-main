@@ -786,9 +786,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final items = _dropdownOptionsForVoice(key);
     if (items.isEmpty) return null;
 
-    String compact(String value) => _normalizeArabicForMatch(value)
-        .replaceAll(RegExp(r'\bال'), '')
-        .replaceAll(' ', '');
+    String compact(String value) {
+      var normalized = _normalizeArabicForMatch(value);
+      // Remove the Arabic definite article at word boundaries (\b is unreliable
+      // for Arabic letters in Dart regular expressions).
+      normalized = normalized.replaceAll(RegExp(r'(^|\s)ال'), r'$1');
+      return normalized.replaceAll(' ', '');
+    }
 
     // التطابق الكامل بعد التطبيع هو الأكثر موثوقية.
     final exact = items.where((item) {
@@ -847,7 +851,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     const units = <String, int>{
       'صفر': 0, 'واحد': 1, 'واحدة': 1, 'واحده': 1, 'احد': 1,
       'اثنان': 2, 'اثنين': 2, 'اثنتان': 2, 'اثنتين': 2, 'اثنتا': 2,
-      'اثنتي': 2, 'اثن': 2, 'ثنين': 2, 'ثنتين': 2,
+      'اثنتي': 2, 'اثن': 2, 'ثنين': 2, 'ثنتين': 2, 'ثنينه': 2,
       'ثلاثة': 3, 'ثلاث': 3, 'ثلاثه': 3, 'اربعة': 4, 'اربع': 4,
       'اربعه': 4, 'أربعة': 4, 'خمسة': 5, 'خمس': 5, 'خمسه': 5,
       'ستة': 6, 'سته': 6, 'ست': 6, 'سبعة': 7, 'سبع': 7, 'سبعه': 7,
@@ -858,9 +862,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       'اربعمائة': 400, 'اربعمائه': 400, 'أربعمائة': 400, 'خمسمائة': 500,
       'خمسمائه': 500, 'ستمائة': 600, 'ستمائه': 600, 'سبعمائة': 700,
       'سبعمائه': 700, 'ثمانمائة': 800, 'ثمانمائه': 800,
-      'تسعمائة': 900, 'تسعمائه': 900,
+      'تسعمائة': 900, 'تسعمائه': 900, 'تسعمية': 900, 'تسعمئه': 900,
       'احدعشر': 11, 'احدعشرة': 11, 'اثناشر': 12, 'اثنعشر': 12,
-      'عشرين': 20, 'عشرون': 20, 'ثلاثين': 30, 'ثلاثون': 30,
+      'عشرين': 20, 'عشرون': 20, 'عشرينه': 20, 'ثلاثين': 30, 'ثلاثون': 30,
       'اربعين': 40, 'اربعون': 40, 'خمسين': 50, 'خمسون': 50,
       'ستين': 60, 'ستون': 60, 'سبعين': 70, 'سبعون': 70,
       'ثمانين': 80, 'ثمانون': 80, 'تسعين': 90, 'تسعون': 90,
@@ -876,18 +880,18 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     for (var i = 0; i < words.length; i++) {
       final word = _normalizeSpokenWord(words[i]);
       if (word.isEmpty || word == 'و') continue;
-      if (word == 'الف' || word == 'الاف') { total += 1000; found = true; continue; }
-      if (word == 'مائة' || word == 'مائه' || word == 'مئه' || word == 'مئة' || word == 'ميه') { total += 100; found = true; continue; }
+      if (word == 'الف' || word == 'الاف' || word == 'الفين') { total += word == 'الفين' ? 2000 : 1000; found = true; continue; }
+      if (word == 'مائة' || word == 'مائه' || word == 'مئه' || word == 'مئة' || word == 'ميه' || word == 'مية' || word == 'ميا') { total += 100; found = true; continue; }
       const hundreds = <String, int>{
-        'مائتين': 200, 'مئتين': 200, 'ثلاثمائه': 300, 'اربعمائه': 400,
-        'خمسمائه': 500, 'ستمائه': 600, 'سبعمائه': 700, 'ثمانمائه': 800,
-        'تسعمائه': 900,
+        'مائتين': 200, 'مئتين': 200, 'ثلاثمائه': 300, 'ثلاثمية': 300, 'اربعمائه': 400, 'اربعمية': 400,
+        'خمسمائه': 500, 'خمسمية': 500, 'ستمائه': 600, 'ستممية': 600, 'ستمئة': 600, 'سبعمائه': 700, 'سبعمية': 700, 'ثمانمائه': 800,
+        'تسعمائه': 900, 'تسعمية': 900, 'تسعمئه': 900,
       };
       if (hundreds.containsKey(word)) { total += hundreds[word]!; found = true; continue; }
 
       // بعض خدمات الإملاء تفصل العدد المركب: «تسع مئة» بدلاً من «تسعمائة».
       final next = i + 1 < words.length ? _normalizeSpokenWord(words[i + 1]) : '';
-      const hundredWords = {'مائة', 'مائه', 'مئه', 'مئة', 'ميه'};
+      const hundredWords = {'مائة', 'مائه', 'مئه', 'مئة', 'ميه', 'مية'};
       final leadingNumber = _smallArabicNumber(word);
       if (leadingNumber != null && leadingNumber >= 2 && leadingNumber <= 9 && hundredWords.contains(next)) {
         total += leadingNumber * 100;
@@ -927,7 +931,20 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       final cleaned = _normalizeArabicForMatch(raw)
           .replaceAll(RegExp(r'[,،;؛/\\|]+'), ' ')
           .replaceAll('-', ' ').replaceAll('ـ', ' ').trim();
-      final words = cleaned.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      var words = cleaned.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      // Arabic ASR often joins the conjunction to the next number: «وتسعة وسبعون».
+      // Split it only when the remainder is a recognized number token, preserving normal words.
+      const numberStarts = <String>{'واحد','واحدة','احد','اثنان','اثنين','اثنتين','ثلاثة','ثلاث','اربعة','اربع','خمسة','خمس','ستة','سته','ست','سبعة','سبع','ثمانية','تمانية','تسعة','تسع','عشرة','عشر','عشرين','ثلاثين','اربعين','خمسين','ستين','سبعين','ثمانين','تسعين','مائة','مائه','مئه','مئة','ميه','مية','تسعمائه','تسعمية','الف'};
+      final expanded = <String>[];
+      for (final token in words) {
+        final normalized = _normalizeSpokenWord(token);
+        if (token.startsWith('و') && token.length > 2 && numberStarts.contains(normalized)) {
+          expanded.add(normalized);
+        } else {
+          expanded.add(token);
+        }
+      }
+      words = expanded;
       if (words.length < 3) return null;
 
       const months = <String, int>{
@@ -1877,7 +1894,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
-        suffixIcon: _dropdownVoiceFields.contains(key) ? _dropdownVoiceMic(key) : null,
+        suffixIcon: _dropdownVoiceFields.contains(key) && key != 'maritalStatus' ? _dropdownVoiceMic(key) : null,
       ),
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       items: values
