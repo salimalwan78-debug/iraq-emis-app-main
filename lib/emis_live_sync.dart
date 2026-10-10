@@ -113,7 +113,12 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
             final reloaded = await _injectAuthentication();
             if (reloaded) return;
             await _installBridge();
-            widget.onStatus?.call('المزامنة اللحظية مع EMIS مفعّلة');
+            // The page may render the edit form after its first load event.
+            // Request fresh schema and dropdowns after the form's async data.
+            await Future<void>.delayed(const Duration(milliseconds: 500));
+            await refreshSchema();
+            await Future<void>.delayed(const Duration(milliseconds: 700));
+            widget.onStatus?.call('تم فتح نموذج EMIS وجلب بنيته وخياراته الحالية');
           },
           onWebResourceError: (error) {
             widget.onStatus?.call(
@@ -217,21 +222,34 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
 
     const textOf = (el) => {
       if (!el) return '';
-      const attrs = ['aria-label','placeholder','name','id','data-cy','data-test'];
-      for (const a of attrs) {
-        try { const v=el.getAttribute(a); if(v) return v; } catch(e) {}
-      }
-      try {
-        const lab=el.closest('label');
-        if(lab && lab.innerText) return lab.innerText;
-      } catch(e) {}
+      // Prefer the human-readable EMIS label over generated Vue/Quasar IDs.
+      // Generated IDs are often technically unique but useless as field titles.
       try {
         const parent=el.closest('.q-field');
         if(parent){
-          const q=parent.querySelector('.q-field__label,.q-field__native-label,label');
-          if(q && q.innerText) return q.innerText;
+          const q=parent.querySelector('.q-field__label,.q-field__native-label,[data-label]');
+          if(q && (q.innerText || q.textContent)) return String(q.innerText || q.textContent).trim();
+          const aria=parent.getAttribute('aria-label');
+          if(aria) return aria.trim();
         }
       } catch(e) {}
+      try {
+        const id=el.getAttribute('id');
+        if(id){
+          const lab=document.querySelector('label[for="'+CSS.escape(id)+'"]');
+          if(lab && (lab.innerText || lab.textContent)) return String(lab.innerText || lab.textContent).trim();
+        }
+      } catch(e) {}
+      try {
+        const lab=el.closest('label');
+        if(lab && (lab.innerText || lab.textContent)) return String(lab.innerText || lab.textContent).trim();
+      } catch(e) {}
+      for (const a of ['aria-label','placeholder','data-label']) {
+        try { const v=el.getAttribute(a); if(v && v.trim()) return v.trim(); } catch(e) {}
+      }
+      for (const a of ['name','id','data-cy','data-test']) {
+        try { const v=el.getAttribute(a); if(v && v.trim()) return v.trim(); } catch(e) {}
+      }
       return '';
     };
 
@@ -252,10 +270,19 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         const aa=(aliases[k]||[]).map(norm);
         if(cs.some(c=>aa.some(a=>c===a || c.includes(a) || a.includes(c)))) return k;
       }
+      // Dynamic EMIS fields often have generated IDs. Prefer their visible
+      // label as the key so Flutter can show a meaningful title and find the
+      // same field again when the user edits it.
+      const label=String(textOf(el) || '').trim();
+      const q=el.closest ? el.closest('.q-field') : null;
+      const generatedId=!!(q && (el.getAttribute('id') || '').match(/^(q-|input-|select-)/i));
+      if(label && (!el.getAttribute('name') || generatedId)) return label;
       const raw=(el.getAttribute('name') || el.getAttribute('id') || el.getAttribute('data-cy') || el.getAttribute('data-test') || '').trim();
-      if(!raw) return '';
-      const cleaned=raw.replace(/\[(\d+)\]/g,'_\$1').replace(/[^a-zA-Z0-9_]/g,'_').replace(/_+/g,'_').replace(/^_+|_+\$/g,'');
-      return cleaned ? cleaned.charAt(0).toLowerCase()+cleaned.slice(1) : '';
+      if(raw){
+        const cleaned=raw.replace(/\[(\d+)\]/g,'_\$1').replace(/[^a-zA-Z0-9_]/g,'_').replace(/_+/g,'_').replace(/^_+|_+\$/g,'');
+        if(cleaned) return cleaned.charAt(0).toLowerCase()+cleaned.slice(1);
+      }
+      return label;
     };
 
     const readValue = (el) => {
@@ -292,8 +319,26 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         schema[key]={label:String(label).trim(),type:kind,required:!!el.required || String(el.getAttribute('aria-required')||'')==='true',value:String(readValue(el)||''),options:opts};
       });
       const b=window.__EMIS_APP_BRIDGE__;
-      const schemaSerial=JSON.stringify(schema);
-      if(schemaSerial!==b.schemaLast){ b.schemaLast=schemaSerial; if(Object.keys(schema).length) send('schema',{fields:schema,url:location.href}); }
+      // Values are sent in snapshots; schema events are only for structural
+      // changes. Including values here caused every keystroke to reopen all
+      // dropdowns and prevented reliable live editing.
+      const schemaShape={};
+      Object.keys(schema).forEach(k=>{
+        const meta=Object.assign({},schema[k]);
+        delete meta.value;
+        schemaShape[k]=meta;
+      });
+      const schemaSerial=JSON.stringify(schemaShape);
+      if(schemaSerial!==b.schemaLast){
+        b.schemaLast=schemaSerial;
+        if(Object.keys(schema).length) {
+          send('schema',{fields:schema,url:location.href});
+          // EMIS uses Quasar QSelect controls which are not native <select>s.
+          // Read their live menu options after the current DOM/schema settles.
+          const selectKeys=Object.keys(schema).filter(k=>schema[k] && schema[k].type==='select');
+          if(selectKeys.length) setTimeout(()=>collectOptions(selectKeys),180);
+        }
+      }
       const serial=JSON.stringify(fields);
       if(serial!==b.last){ b.last=serial; send('snapshot',{fields:fields,url:location.href}); }
     };
@@ -315,12 +360,14 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve,ms));
 
     const findField = (key) => {
+      const wanted=norm(key);
       const aa=(aliases[key]||[]).map(norm);
-      if(!aa.length) return null;
       const all=[...document.querySelectorAll('.q-field, input,textarea,select,[contenteditable="true"]')];
       for(const el of all){
+        const dynamicKey=norm(fieldKey(el));
         const cs=candidates(el);
-        if(cs.some(c=>aa.some(a=>c===a || c.includes(a) || a.includes(c)))) return el.classList?.contains('q-field') ? el : (el.closest('.q-field') || el);
+        if(dynamicKey===wanted || cs.some(c=>aa.some(a=>c===a || c.includes(a) || a.includes(c))))
+          return el.classList?.contains('q-field') ? el : (el.closest('.q-field') || el);
       }
       return null;
     };
@@ -332,13 +379,42 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         field.scrollIntoView({block:'center',inline:'nearest'});
         const clickable=field.querySelector('.q-field__control,.q-field__native') || field;
         clickable.click();
-        await sleep(120);
-        const menuItems=[...document.querySelectorAll('.q-menu .q-item, .q-menu [role="option"]')];
-        const values=menuItems.map(x=>String(x.innerText || x.textContent || '').trim()).filter(Boolean);
+        // EMIS loads several option lists asynchronously. Wait for the menu,
+        // not a fixed short delay that often captured only the selected item.
+        let menuItems=[];
+        for(let attempt=0;attempt<12;attempt++){
+          await sleep(100);
+          menuItems=[...document.querySelectorAll('.q-menu .q-item, .q-menu [role="option"], [role="listbox"] [role="option"]')];
+          if(menuItems.length) break;
+        }
+        const values=new Set();
+        const collect=()=>{
+          [...document.querySelectorAll('.q-menu .q-item, .q-menu [role="option"], [role="listbox"] [role="option"]')]
+            .forEach(x=>{
+              const text=String(x.innerText || x.textContent || '').replace(/\s+/g,' ').trim();
+              if(text && !/^(اختر|select|search)$/i.test(text)) values.add(text);
+            });
+        };
+        collect();
+        // Quasar may virtualize long lists; scroll the menu and accumulate
+        // visible rows so the app receives more than the currently selected row.
+        const menu=document.querySelector('.q-menu .q-virtual-scroll__content, .q-menu .scroll, .q-menu [role="listbox"]');
+        if(menu){
+          for(let i=0;i<10;i++){
+            const before=values.size;
+            menu.scrollTop=menu.scrollTop+Math.max(160,menu.clientHeight*0.8);
+            await sleep(100);
+            collect();
+            if(menu.scrollTop+menu.clientHeight>=menu.scrollHeight-2 && values.size===before) break;
+          }
+        }
         document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
-        await sleep(60);
-        return [...new Set(values)];
-      } catch(e) { return []; }
+        await sleep(80);
+        return [...values];
+      } catch(e) {
+        try { document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); } catch(_) {}
+        return [];
+      }
     };
 
     const collectOptions = async (keys) => {
@@ -356,15 +432,15 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
     window.__EMIS_APP_BRIDGE__.setFields = (values) => {
       const vals=values || {};
       for(const [key,value] of Object.entries(vals)){
+        const wanted=norm(key);
         const aa=(aliases[key]||[]).map(norm);
-        if(!aa.length) continue;
         const all=[...document.querySelectorAll(
           'input,textarea,select,[contenteditable="true"]'
         )];
         let best=null;
         for(const el of all){
           const cs=candidates(el);
-          if(cs.some(c=>aa.some(a=>c===a || c.includes(a) || a.includes(c)))){
+          if(norm(fieldKey(el))===wanted || cs.some(c=>aa.some(a=>c===a || c.includes(a) || a.includes(c)))){
             best=el; break;
           }
         }
@@ -373,30 +449,39 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
           const qfield=best.closest ? best.closest('.q-field') : null;
           const qnative=qfield ? qfield.querySelector('.q-field__native') : null;
           if(qfield && qnative && qfield.classList.contains('q-select')){
+            const wanted=norm(String(value ?? ''));
+            const current=norm(qnative.value || qfield.querySelector('.q-field__native')?.value || '');
+            if(current===wanted) continue;
             qfield.scrollIntoView({block:'center',inline:'nearest'});
             (qfield.querySelector('.q-field__control') || qnative || qfield).click();
             setTimeout(()=>{
-              const wanted=norm(String(value ?? ''));
               const items=[...document.querySelectorAll('.q-menu .q-item, .q-menu [role="option"]')];
-              const item=items.find(o=>norm(o.innerText||o.textContent||'')===wanted || norm(o.innerText||o.textContent||'').includes(wanted));
+              const item=items.find(o=>{
+                const text=norm(o.innerText||o.textContent||'');
+                const attrs=['data-value','data-id','value','aria-label'].map(a=>norm(o.getAttribute(a)||''));
+                return text===wanted || text.includes(wanted) || attrs.includes(wanted);
+              });
               if(item) item.click();
-            },80);
+              else document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+            },100);
           } else if(best.tagName==='SELECT'){
             const wanted=String(value ?? '');
             const option=[...best.options].find(o =>
               String(o.value)===wanted || norm(o.textContent)===norm(wanted)
             );
-            if(option){
+            if(option && (best.value!==option.value || norm(best.options[best.selectedIndex]?.textContent)!==norm(value))){
               best.value=option.value;
               best.dispatchEvent(new Event('input',{bubbles:true}));
               best.dispatchEvent(new Event('change',{bubbles:true}));
             }
           } else if(best.isContentEditable){
+            if(norm(best.textContent)===norm(String(value ?? ''))) continue;
             best.textContent=String(value ?? '');
             best.dispatchEvent(new InputEvent('input',{
               bubbles:true,inputType:'insertText',data:String(value ?? '')
             }));
           } else {
+            if(String(best.value ?? '')===String(value ?? '')) continue;
             nativeSet(best,value ?? '');
           }
         } catch(e) {}
@@ -405,15 +490,15 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
     };
 
     window.__EMIS_APP_BRIDGE__.focusField = (key) => {
+      const wanted=norm(key);
       const aa=(aliases[key]||[]).map(norm);
-      if(!aa.length) return false;
       const all=[...document.querySelectorAll(
         'input,textarea,select,[contenteditable="true"]'
       )];
       let best=null;
       for(const el of all){
         const cs=candidates(el);
-        if(cs.some(c=>aa.some(a=>c===a || c.includes(a) || a.includes(c)))){
+        if(norm(fieldKey(el))===wanted || cs.some(c=>aa.some(a=>c===a || c.includes(a) || a.includes(c)))){
           best=el; break;
         }
       }
@@ -458,6 +543,23 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       }
       const id=norm(b.recordId);
       if(!id) return false;
+      // The edit screen now opens the exact EMIS edit URL from the moment
+      // the user taps Edit. Do not search/click a management table again.
+      const currentPath=norm(location.pathname);
+      if(currentPath.includes('/management/edit/') && currentPath.includes(id)){
+        b.opened=true;
+        send('status',{message:'تم تحميل نموذج تعديل المعلم من EMIS وجاري جلب القيم والخيارات الحالية'});
+        const selectKeys=()=>{
+          const schema=window.__EMIS_APP_BRIDGE__;
+          const all=[...document.querySelectorAll('input,textarea,select,[contenteditable="true"]')];
+          const keys=[...new Set(all.map(el=>fieldKey(el)).filter(Boolean))];
+          return keys.filter(k=>{const f=findField(k);return !!(f && (f.classList.contains('q-select') || f.querySelector('.q-select') || f.querySelector('select')));});
+        };
+        [500,1200,2400,4200].forEach(delay=>setTimeout(()=>{
+          scan(); collectOptions(selectKeys());
+        },delay));
+        return true;
+      }
       const rows=[...document.querySelectorAll('tr')];
       const row=rows.find(r=>norm(r.innerText).includes(id));
       if(row){
@@ -565,12 +667,14 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
 
   @override
   Widget build(BuildContext context) {
+    // Keep a realistic mobile viewport. A 1x1 WebView breaks responsive EMIS
+    // forms and causes Quasar dropdown menus to be clipped or fail to render.
     return IgnorePointer(
       child: Opacity(
         opacity: 0.01,
         child: SizedBox(
-          width: 1,
-          height: 1,
+          width: 390,
+          height: 720,
           child: WebViewWidget(controller: controller),
         ),
       ),
