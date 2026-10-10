@@ -751,9 +751,9 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
     if (_isDateField(key)) {
       return Padding(
-        key: ValueKey('date-$key'),
         padding: const EdgeInsets.only(bottom: 15),
         child: TextFormField(
+          key: ValueKey('date-$key'),
           controller: _dateControllers.putIfAbsent(
             key,
             () => TextEditingController(text: _formatDateValue(value?.toString() ?? '')),
@@ -809,9 +809,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       readOnly: false,
       requiredField: _isRequired(key, owner),
       onChanged: (v) => owner[key] = v,
-      onMic: key != 'notes' && _speechEnabledFields.contains(key)
-          ? () => _toggleFieldMic(owner, key)
-          : null,
+      onMic: _speechEnabledFields.contains(key) ? () => _toggleFieldMic(owner, key) : null,
       micActive: _speechListening && _activeSpeechKey == key,
     );
   }
@@ -1043,14 +1041,14 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     for (var i = 0; i < children.length;) {
       // Date inputs occupy a full row so the complete yyyy-mm-dd value is visible.
       final current = children[i];
-      final isDate = current.key is ValueKey &&
+      final isDate = current is TextFormField && current.key is ValueKey &&
           (current.key as ValueKey).value.toString().startsWith('date-');
       if (isDate) {
         rows.add(SizedBox(width: double.infinity, child: current));
         i++;
       } else {
         final next = i + 1 < children.length ? children[i + 1] : const SizedBox();
-        final nextIsDate = next.key is ValueKey &&
+        final nextIsDate = next is TextFormField && next.key is ValueKey &&
             (next.key as ValueKey).value.toString().startsWith('date-');
         if (nextIsDate) {
           rows.add(SizedBox(width: double.infinity, child: current));
@@ -1663,6 +1661,48 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         }
       }
 
+      // EMIS DateOnly fields must be sent as an ISO calendar date (yyyy-MM-dd),
+      // and this endpoint validates the edited record under the `student` key.
+      final studentPayload = Map<String, dynamic>.from(_studentData!);
+      String? dateOnly(dynamic value) {
+        if (value == null) return null;
+        final raw = value.toString().trim();
+        if (raw.isEmpty) return null;
+        final iso = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})').firstMatch(raw);
+        if (iso != null) {
+          final year = int.parse(iso.group(1)!);
+          final month = int.parse(iso.group(2)!);
+          final day = int.parse(iso.group(3)!);
+          final parsed = DateTime.tryParse('$year-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}');
+          if (parsed == null || parsed.year != year || parsed.month != month || parsed.day != day) return null;
+          return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+        }
+        final dmy = RegExp(r'^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$').firstMatch(raw);
+        if (dmy != null) {
+          final day = int.parse(dmy.group(1)!);
+          final month = int.parse(dmy.group(2)!);
+          final year = int.parse(dmy.group(3)!);
+          final parsed = DateTime.tryParse('$year-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}');
+          if (parsed == null || parsed.year != year || parsed.month != month || parsed.day != day) return null;
+          return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+        }
+        return null;
+      }
+
+      final normalizedBirthDate = dateOnly(studentPayload['dateOfBirth']);
+      if (normalizedBirthDate == null) {
+        throw Exception('يرجى إدخال تاريخ ميلاد صحيح بالصيغة yyyy-mm-dd');
+      }
+      studentPayload['dateOfBirth'] = normalizedBirthDate;
+      if (studentPayload['identification'] is Map) {
+        final identification = Map<String, dynamic>.from(studentPayload['identification'] as Map);
+        final issuingDate = identification['issuingDate'];
+        if (issuingDate != null && issuingDate.toString().trim().isNotEmpty) {
+          identification['issuingDate'] = dateOnly(issuingDate);
+        }
+        studentPayload['identification'] = identification;
+      }
+
       final response = await http.post(
         Uri.parse(
           'https://emis.moedu.gov.iq/api/student/updatestudent',
@@ -1672,7 +1712,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: jsonEncode(_studentData),
+        body: jsonEncode({'student': studentPayload}),
       );
 
       if (!mounted) return;
