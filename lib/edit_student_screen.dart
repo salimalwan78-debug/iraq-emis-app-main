@@ -447,8 +447,8 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
   String _formatTypedDate(String value) {
     final digits = value.replaceAll(RegExp(r'[^0-9٠-٩۰-۹]'), '')
-      .replaceAll(RegExp('[٠-٩]'), (m) => String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x0660 + 48))
-      .replaceAll(RegExp('[۰-۹]'), (m) => String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x06F0 + 48));
+      .replaceAllMapped(RegExp('[٠-٩]'), (Match m) => String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x0660 + 48))
+      .replaceAllMapped(RegExp('[۰-۹]'), (Match m) => String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x06F0 + 48));
     final limited = digits.length > 8 ? digits.substring(0, 8) : digits;
     var out = limited.substring(0, limited.length >= 2 ? 2 : limited.length);
     if (limited.length > 2) out += '-${limited.substring(2, limited.length >= 4 ? 4 : limited.length)}';
