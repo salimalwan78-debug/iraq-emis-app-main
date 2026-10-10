@@ -45,6 +45,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
   String? _activeSpeechKey;
   bool _speechListening = false;
   String? _speechError;
+  final Map<String, TextEditingController> _dateControllers = {};
   final Set<String> _speechEnabledFields = {'name','fatherName','grandFatherName','fathersGrandFatherName','surName','motherName','mothersFatherName','mothersGrandFatherName','homeTown','notes','issuer','nameOfDocument','town','area','quarter','street','address1','address2','closestLocation','homePhoneNumber','censusNumber','dateOfBirth','idNumber','jinsiyaIdNumber','recordNumber','pageNumber','birthCertificateNumber','otherIdNumber'};
 
 
@@ -391,11 +392,28 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     final type = event['type']?.toString();
     if (type == 'partial' || type == 'result') {
       final raw = (event['text'] ?? event['result'] ?? event['transcript'] ?? '').toString();
-      if (raw.isNotEmpty && _activeSpeechOwner != null && _activeSpeechKey != null) {
-        final key = _activeSpeechKey!;
-        final normalized = _isDateField(key) ? _normalizeRecognizedDate(raw) : raw;
+      if (raw.isEmpty || _activeSpeechOwner == null || _activeSpeechKey == null) return;
+
+      final key = _activeSpeechKey!;
+      if (_isDateField(key)) {
+        // Partial speech results often contain only fragments of a date.
+        // Never replace the field until a complete, valid date is recognized.
+        final normalized = _normalizeRecognizedDate(raw);
+        if (normalized == null) return;
+        final controller = _dateControllers[key];
+        if (controller != null) {
+          controller.value = TextEditingValue(
+            text: normalized,
+            selection: TextSelection.collapsed(offset: normalized.length),
+          );
+        }
         setState(() {
           _activeSpeechOwner![key] = normalized;
+          _speechError = null;
+        });
+      } else {
+        setState(() {
+          _activeSpeechOwner![key] = raw;
           _speechError = null;
         });
       }
@@ -447,25 +465,38 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     }
   }
 
-  String _normalizeRecognizedDate(String raw) {
-    final value = raw.trim().replaceAll('／', '/');
+  String? _normalizeRecognizedDate(String raw) {
+    final value = raw.trim().replaceAll('／', '/').replaceAll('٫', '.');
     var m = RegExp(r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$').firstMatch(value);
     if (m != null) {
-      final year = m.group(1)!;
+      final year = int.parse(m.group(1)!);
       var month = int.parse(m.group(2)!);
       var day = int.parse(m.group(3)!);
-      // Speech services sometimes return yyyy-dd-MM. Correct it when the
-      // middle component cannot be a month but the final component can.
-      if (month > 12 && day >= 1 && day <= 12) {
-        final swap = month;
+
+      // Correct yyyy-dd-MM only when the middle component cannot be a month.
+      if (month > 12 && month <= 31 && day >= 1 && day <= 12) {
+        final temp = month;
         month = day;
-        day = swap;
+        day = temp;
       }
-      return '$year-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      final date = DateTime(year, month, day);
+      if (date.year != year || date.month != month || date.day != day) return null;
+      return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
     }
+
     m = RegExp(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$').firstMatch(value);
-    if (m != null) return '${m.group(3)}-${m.group(2)!.padLeft(2, '0')}-${m.group(1)!.padLeft(2, '0')}';
-    return value.replaceAll('/', '-');
+    if (m != null) {
+      // Spoken day-month-year is normalized to the app's yyyy-MM-dd format.
+      final day = int.parse(m.group(1)!);
+      final month = int.parse(m.group(2)!);
+      final year = int.parse(m.group(3)!);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      final date = DateTime(year, month, day);
+      if (date.year != year || date.month != month || date.day != day) return null;
+      return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+    }
+    return null;
   }
 
   String _formatDateValue(String value) {
@@ -565,9 +596,12 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       locale: const Locale('ar'),
     );
     if (picked != null && mounted) {
-      setState(() {
-        owner[key] = '${picked.year.toString().padLeft(4,'0')}-${picked.month.toString().padLeft(2,'0')}-${picked.day.toString().padLeft(2,'0')}';
-      });
+      final formatted = '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+      _dateControllers.putIfAbsent(key, () => TextEditingController()).value = TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+      setState(() => owner[key] = formatted);
     }
   }
 
@@ -588,8 +622,11 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       return Padding(
         padding: const EdgeInsets.only(bottom: 15),
         child: TextFormField(
-          key: ValueKey('date-$key-${value ?? ''}'),
-          initialValue: _formatDateValue(value?.toString() ?? ''),
+          key: ValueKey('date-$key'),
+          controller: _dateControllers.putIfAbsent(
+            key,
+            () => TextEditingController(text: _formatDateValue(value?.toString() ?? '')),
+          ),
           keyboardType: TextInputType.number,
           inputFormatters: [TextInputFormatter.withFunction((oldValue, newValue) { final formatted = _formatTypedDate(newValue.text); return TextEditingValue(text: formatted, selection: TextSelection.collapsed(offset: formatted.length)); })],
           onChanged: (v) => owner[key] = v,
@@ -1195,6 +1232,10 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     if (segmenter != null) {
       segmenter.close();
     }
+    for (final controller in _dateControllers.values) {
+      controller.dispose();
+    }
+    _dateControllers.clear();
     super.dispose();
   }
 
