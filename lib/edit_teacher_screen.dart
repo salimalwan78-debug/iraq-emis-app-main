@@ -31,7 +31,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   bool _loading = true;
   bool _saving = false;
   final GlobalKey<EmisLiveSyncState> _liveSyncKey = GlobalKey<EmisLiveSyncState>();
-  Timer? _liveTimer;
   String _liveStatus = 'المزامنة الحية مع EMIS قيد التشغيل';
   String? _error;
   Map<String, dynamic>? _employee;
@@ -58,8 +57,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'gender': '/selectoption/Gender',
     'nationality': '/selectoption/بلد الولادة',
     'motherTongue': '/selectoption/لغة',
+    'maritalStatus': '/selectoption/الحالة الاجتماعية',
     'bloodGroup': '/selectoption/فصيلة الدم',
     'religion': '/selectoption/الديانة',
+    'educationLevel': '/selectoption/تحصیل الدراسي',
     'positionType': '/SelectOption/نوع الوظيفة',
   };
 
@@ -120,13 +121,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   @override
   void initState() {
     super.initState();
-    _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _load();
   }
 
   @override
   void dispose() {
-    _liveTimer?.cancel();
     _selfieSegmenter?.close();
     for (final controller in _c.values) {
       controller.dispose();
@@ -145,23 +144,42 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   void _focusLive(String key) {
     _liveSyncKey.currentState?.focusField(key);
-    _liveSyncKey.currentState?.pushValues(_liveValues());
   }
 
-  void _pushLive() {
-    _liveSyncKey.currentState?.pushValues({
-      for (final entry in _c.entries) entry.key: entry.value.text,
-    });
+  // Keep the API value in the app controller, but send the visible label to
+  // the EMIS page when the native dropdown stores an ID and EMIS uses QSelect.
+  void _pushFieldLive(String key, String value) {
+    var liveValue = value;
+    for (final option in _options[key] ?? const <Map<String, dynamic>>[]) {
+      if ('${_optionValue(option) ?? ''}' == value) {
+        liveValue = _optionText(option);
+        break;
+      }
+    }
+    _liveSyncKey.currentState?.pushValues({key: liveValue});
   }
 
   void _applyLiveSnapshot(Map<String, String> values) {
     bool changed = false;
     for (final entry in values.entries) {
       final controller = _c[entry.key];
-      if (controller != null && controller.text != entry.value) {
+      if (controller == null) continue;
+      var syncedValue = entry.value;
+      // EMIS QSelect reports the displayed label, while the update API may
+      // require the option ID. Translate labels back to the existing API value.
+      for (final option in _options[entry.key] ?? const <Map<String, dynamic>>[]) {
+        if (_optionText(option).trim() == entry.value.trim()) {
+          final apiValue = _optionValue(option);
+          if (apiValue != null && '$apiValue'.trim().isNotEmpty) {
+            syncedValue = '$apiValue';
+            break;
+          }
+        }
+      }
+      if (controller.text != syncedValue) {
         controller.value = TextEditingValue(
-          text: entry.value,
-          selection: TextSelection.collapsed(offset: entry.value.length),
+          text: syncedValue,
+          selection: TextSelection.collapsed(offset: syncedValue.length),
         );
         changed = true;
       }
@@ -174,19 +192,39 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     incoming.forEach((key, values) {
       if (values.isEmpty) return;
       final existing = _options[key] ?? <Map<String, dynamic>>[];
-      for (final label in values) {
-        if (!existing.any((o) => _optionText(o) == label)) {
-          existing.add(<String, dynamic>{'value': label, 'displayName': label});
-          changed = true;
+      final live = values.map((label) => <String, dynamic>{'value': label, 'displayName': label}).toList();
+      // Keep API-backed IDs/labels when present, but replace prior live-only
+      // entries so options from a previous dependent selection do not linger.
+      final apiBacked = existing.where((o) => o['_liveOnly'] != true).toList();
+      final merged = <Map<String, dynamic>>[...apiBacked];
+      for (final item in live) {
+        if (!merged.any((o) => _optionText(o) == _optionText(item))) {
+          item['_liveOnly'] = true;
+          merged.add(item);
         }
       }
-      _options[key] = existing;
+      if (jsonEncode(existing) != jsonEncode(merged)) changed = true;
+      _options[key] = merged;
     });
     if (changed && mounted) setState(() {});
   }
 
   void _applyLiveSchema(Map<String, Map<String, dynamic>> incoming) {
     bool changed = false;
+    // A schema snapshot describes the current EMIS form, not an append-only
+    // list. Remove fields that disappeared after changing identity/employment
+    // type so stale fields are not left visible in the app.
+    final incomingKeys = incoming.keys.map((k) => k.trim()).where((k) => k.isNotEmpty).toSet();
+    final removed = _liveSchema.keys.where((key) => !incomingKeys.contains(key)).toList();
+    for (final key in removed) {
+      _liveSchema.remove(key);
+      if (_liveDiscoveredFields.remove(key)) {
+        _labels.remove(key);
+        _options.remove(key);
+        _c.remove(key)?.dispose();
+      }
+      changed = true;
+    }
     for (final entry in incoming.entries) {
       final key = entry.key.trim();
       if (key.isEmpty) continue;
@@ -219,11 +257,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           }
         }
         if (parsed.isNotEmpty) {
-          final old = _options[key] ?? <Map<String, dynamic>>[];
-          for (final item in parsed) {
-            if (!old.any((o) => '${_optionValue(o)}' == '${_optionValue(item)}')) old.add(item);
-          }
-          _options[key] = old;
+          final oldJson = jsonEncode(_options[key] ?? <Map<String, dynamic>>[]);
+          _options[key] = parsed;
+          if (oldJson != jsonEncode(parsed)) changed = true;
         }
       }
     }
@@ -485,7 +521,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white.withOpacity(0.03) : Colors.white,
       ),
       validator: null,
-      onChanged: (_) => _liveSyncKey.currentState?.pushValues(_liveValues()),
+      onChanged: (_) => _pushFieldLive(key, controller.text),
       onTap: readOnly && (key == 'dateOfBirth' || key == 'dateOfStartWorking' || key == 'graduationYear' || key == 'statusDate')
           ? () { _focusLive(key); _pickDate(key); }
           : () => _focusLive(key),
@@ -523,6 +559,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       onTap: () => _focusLive(key),
       onChanged: (value) {
         setState(() => _c[key]!.text = value ?? '');
+        _pushFieldLive(key, value ?? '');
         _focusLive(key);
         if (key == 'employmentType') {
           _liveSyncKey.currentState?.refreshOptions(['employeeCategory', 'classification', 'currentPosition', 'positionType', 'status']);
@@ -1282,7 +1319,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             bottom: 0,
             child: EmisLiveSync(
               key: _liveSyncKey,
-              url: 'https://emis.moedu.gov.iq/centers/schools/${widget.schoolId}/individuals/teachers/management',
+              url: 'https://emis.moedu.gov.iq/centers/schools/${widget.schoolId}/individuals/teachers/management/edit/${widget.teacherId}',
               mode: 'edit',
               entity: 'teacher',
               token: widget.token,
