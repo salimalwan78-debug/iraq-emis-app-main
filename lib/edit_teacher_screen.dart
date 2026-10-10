@@ -192,7 +192,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       if (key.isEmpty) continue;
       final meta = Map<String, dynamic>.from(entry.value);
       final previousMeta = _liveSchema[key];
-      final previousShape = previousMeta == null ? null : Map<String, dynamic>.from(previousMeta)..remove('value');
+      final previousShape = previousMeta == null ? null : (Map<String, dynamic>.from(previousMeta)..remove('value'));
       final currentShape = Map<String, dynamic>.from(meta)..remove('value');
       if (previousShape == null || jsonEncode(previousShape) != jsonEncode(currentShape)) changed = true;
       _liveSchema[key] = meta;
