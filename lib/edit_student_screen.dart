@@ -4,12 +4,15 @@ import 'dart:io';
 
 import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
 import 'emis_live_sync.dart';
 
 import 'app_core.dart';
+import 'google_speech_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class EditStudentScreen extends StatefulWidget {
   final String token;
@@ -35,6 +38,15 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
   Map<String, dynamic>? _studentData;
   File? _pickedImage;
+  StreamSubscription<Map<String, dynamic>>? _speechSubscription;
+  int _speechSessionCounter = 0;
+  int? _activeSpeechSession;
+  Map<String, dynamic>? _activeSpeechOwner;
+  String? _activeSpeechKey;
+  bool _speechListening = false;
+  String? _speechError;
+  final Set<String> _speechEnabledFields = {'name','fatherName','grandFatherName','fathersGrandFatherName','surName','motherName','mothersFatherName','mothersGrandFatherName','homeTown','notes','issuer','nameOfDocument','town','area','quarter','street','address1','address2','closestLocation','homePhoneNumber','censusNumber','dateOfBirth','idNumber','jinsiyaIdNumber','recordNumber','pageNumber','birthCertificateNumber','otherIdNumber'};
+
 
   // ============================================================
   // EMIS LIVE REFERENCE DATA
@@ -117,6 +129,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
   @override
   void initState() {
     super.initState();
+    _speechSubscription = GoogleSpeechService.events.listen(_onSpeechEvent);
     _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _fetchStudentData();
   }
@@ -373,6 +386,76 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     });
   }
 
+  void _onSpeechEvent(Map<String, dynamic> event) {
+    if (!mounted || event['sessionId'] != _activeSpeechSession) return;
+    final type = event['type']?.toString();
+    if (type == 'partial' || type == 'result') {
+      final raw = (event['text'] ?? event['result'] ?? event['transcript'] ?? '').toString();
+      if (raw.isNotEmpty && _activeSpeechOwner != null && _activeSpeechKey != null) {
+        setState(() {
+          _activeSpeechOwner![_activeSpeechKey!] = raw;
+          _speechError = null;
+        });
+      }
+    } else if (type == 'error') {
+      setState(() { _speechError = (event['message'] ?? 'تعذر التعرف على الكلام').toString(); _speechListening = false; });
+      _activeSpeechSession = null;
+    } else if (type == 'stopped' || type == 'end') {
+      setState(() => _speechListening = false);
+      _activeSpeechSession = null;
+    } else if (type == 'listening' || type == 'begin') {
+      setState(() { _speechListening = true; _speechError = null; });
+    }
+  }
+
+  Future<void> _toggleFieldMic(Map<String, dynamic> owner, String key) async {
+    if (!AppCore.voiceInputEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('الميكروفون مغلق من الإعدادات.')));
+      return;
+    }
+    if (_activeSpeechSession != null) {
+      await GoogleSpeechService.stopListening();
+      setState(() => _speechListening = false);
+      _activeSpeechSession = null;
+      if (_activeSpeechKey == key) return;
+    }
+    final permission = await Permission.microphone.request();
+    if (!permission.isGranted) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('يرجى السماح للتطبيق باستخدام الميكروفون.')));
+      return;
+    }
+    try {
+      final info = await GoogleSpeechService.getInfo();
+      if (info['available'] == false) throw Exception('خدمة التعرف الصوتي غير متاحة على الجهاز.');
+      final id = ++_speechSessionCounter;
+      _activeSpeechSession = id;
+      _activeSpeechOwner = owner;
+      _activeSpeechKey = key;
+      final started = await GoogleSpeechService.startListening(sessionId: id, locale: 'ar-IQ');
+      if (!started) {
+        _activeSpeechSession = null;
+        throw Exception('تعذر بدء الاستماع. تحقق من خدمة التعرف الصوتي على الهاتف.');
+      }
+      if (mounted) setState(() { _speechListening = true; _speechError = null; });
+    } catch (e) {
+      if (mounted) {
+        setState(() { _speechListening = false; _speechError = e.toString(); });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر تشغيل الميكروفون: $e')));
+      }
+    }
+  }
+
+  String _formatTypedDate(String value) {
+    final digits = value.replaceAll(RegExp(r'[^0-9٠-٩۰-۹]'), '')
+      .replaceAll(RegExp('[٠-٩]'), (m) => String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x0660 + 48))
+      .replaceAll(RegExp('[۰-۹]'), (m) => String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x06F0 + 48));
+    final limited = digits.length > 8 ? digits.substring(0, 8) : digits;
+    var out = limited.substring(0, limited.length >= 2 ? 2 : limited.length);
+    if (limited.length > 2) out += '-${limited.substring(2, limited.length >= 4 ? 4 : limited.length)}';
+    if (limited.length > 4) out += '-${limited.substring(4)}';
+    return out;
+  }
+
   String _label(String key) => _officialArabicNames[key] ?? key;
 
   bool _isDateField(String key) => <String>{
@@ -473,13 +556,19 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       return Padding(
         padding: const EdgeInsets.only(bottom: 15),
         child: TextFormField(
-          controller: TextEditingController(text: value?.toString() ?? ''),
-          readOnly: true,
-          onTap: () { _focusLive(key); _pickDate(owner, key); },
+          key: ValueKey('date-$key-${value ?? ''}'),
+          initialValue: value?.toString() ?? '',
+          keyboardType: TextInputType.number,
+          inputFormatters: [TextInputFormatter.withFunction((oldValue, newValue) { final formatted = _formatTypedDate(newValue.text); return TextEditingValue(text: formatted, selection: TextSelection.collapsed(offset: formatted.length)); })],
+          onChanged: (v) => owner[key] = v,
+          onTap: () => _focusLive(key),
           style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
           decoration: InputDecoration(
             labelText: _isRequired(key, owner) ? '${_label(key)} *' : _label(key),
-            suffixIcon: const Icon(Icons.calendar_month),
+            suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(tooltip: 'الإدخال الصوتي', onPressed: () => _toggleFieldMic(owner, key), icon: Icon(_speechListening && _activeSpeechKey == key ? Icons.mic : Icons.mic_none, color: _speechListening && _activeSpeechKey == key ? Colors.red : null)),
+              IconButton(tooltip: 'اختيار التاريخ', onPressed: () => _pickDate(owner, key), icon: const Icon(Icons.calendar_month)),
+            ]),
             filled: true, fillColor: isDark ? Colors.black12 : Colors.grey[50],
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
@@ -520,6 +609,8 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       readOnly: false,
       requiredField: _isRequired(key, owner),
       onChanged: (v) => owner[key] = v,
+      onMic: _speechEnabledFields.contains(key) ? () => _toggleFieldMic(owner, key) : null,
+      micActive: _speechListening && _activeSpeechKey == key,
     );
   }
 
@@ -1054,6 +1145,8 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
   @override
   void dispose() {
+    _speechSubscription?.cancel();
+    unawaited(GoogleSpeechService.cancelListening());
     final segmenter = _selfieSegmenter;
     _selfieSegmenter = null;
     if (segmenter != null) {
@@ -1626,7 +1719,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
 // ================================================================
 // NORMAL TEXT FIELD
-// لا يوجد ميكروفون هنا.
+// يدعم الإدخال الصوتي للحقول النصية التي تسمح بها شاشة إضافة الطالب.
 // ================================================================
 
 class PlainTextField extends StatefulWidget {
@@ -1638,6 +1731,8 @@ class PlainTextField extends StatefulWidget {
   final bool readOnly;
   final bool requiredField;
   final VoidCallback? onTap;
+  final VoidCallback? onMic;
+  final bool micActive;
 
   const PlainTextField({
     super.key,
@@ -1649,6 +1744,8 @@ class PlainTextField extends StatefulWidget {
     this.readOnly = false,
     this.requiredField = false,
     this.onTap,
+    this.onMic,
+    this.micActive = false,
   });
 
   @override
@@ -1664,6 +1761,15 @@ class _PlainTextFieldState extends State<PlainTextField> {
     _controller = TextEditingController(
       text: widget.initialValue?.toString() ?? '',
     );
+  }
+
+  @override
+  void didUpdateWidget(covariant PlainTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.initialValue?.toString() ?? '';
+    if (widget.onMic != null && next != _controller.text) {
+      _controller.value = TextEditingValue(text: next, selection: TextSelection.collapsed(offset: next.length));
+    }
   }
 
   @override
@@ -1691,6 +1797,7 @@ class _PlainTextFieldState extends State<PlainTextField> {
           labelStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
           filled: true,
           fillColor: widget.isDark ? Colors.black12 : Colors.grey[50],
+          suffixIcon: widget.onMic == null ? null : IconButton(tooltip: 'الإدخال الصوتي', onPressed: widget.onMic, icon: Icon(widget.micActive ? Icons.mic_rounded : Icons.mic_none_rounded, color: widget.micActive ? Colors.red : null)),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: Colors.grey.shade300),

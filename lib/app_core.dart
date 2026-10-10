@@ -13,13 +13,13 @@ class AppCore {
   static String voiceRecognitionEngine = 'google';
 
   // إعدادات التعرف الصوتي في Android/Google.
-  static bool voiceAutoRestart = true;
-  static int voicePossibleSilenceMs = 12000;
-  static int voiceCompleteSilenceMs = 15000;
-  static int voiceMinimumSpeechMs = 250;
-  static int voiceRestartDelayMs = 700;
-  static int voiceFinalizationTimeoutMs = 1500;
-  static double voiceArrowOpacity = 0.65;
+  static bool voiceAutoRestart = false;
+  static int voicePossibleSilenceMs = 23000;
+  static int voiceCompleteSilenceMs = 23000;
+  static int voiceMinimumSpeechMs = 2500;
+  static int voiceRestartDelayMs = 4100;
+  static int voiceFinalizationTimeoutMs = 2400;
+  static double voiceArrowOpacity = 0.25;
 
   static Future<void> initPreferences() async {
     final prefs = await SharedPreferences.getInstance();
@@ -31,13 +31,13 @@ class AppCore {
     currentVolume = prefs.getDouble('currentVolume') ?? 0.5;
     voiceInputEnabled = prefs.getBool('voiceInputEnabled') ?? true;
     voiceRecognitionEngine = prefs.getString('voiceRecognitionEngine') ?? 'google';
-    voiceAutoRestart = prefs.getBool('voiceAutoRestart') ?? true;
-    voicePossibleSilenceMs = prefs.getInt('voicePossibleSilenceMs') ?? 12000;
-    voiceCompleteSilenceMs = prefs.getInt('voiceCompleteSilenceMs') ?? 15000;
-    voiceMinimumSpeechMs = prefs.getInt('voiceMinimumSpeechMs') ?? 250;
-    voiceRestartDelayMs = prefs.getInt('voiceRestartDelayMs') ?? 700;
-    voiceFinalizationTimeoutMs = prefs.getInt('voiceFinalizationTimeoutMs') ?? 1500;
-    voiceArrowOpacity = prefs.getDouble('voiceArrowOpacity') ?? 0.65;
+    voiceAutoRestart = prefs.getBool('voiceAutoRestart') ?? false;
+    voicePossibleSilenceMs = prefs.getInt('voicePossibleSilenceMs') ?? 23000;
+    voiceCompleteSilenceMs = prefs.getInt('voiceCompleteSilenceMs') ?? 23000;
+    voiceMinimumSpeechMs = prefs.getInt('voiceMinimumSpeechMs') ?? 2500;
+    voiceRestartDelayMs = prefs.getInt('voiceRestartDelayMs') ?? 4100;
+    voiceFinalizationTimeoutMs = prefs.getInt('voiceFinalizationTimeoutMs') ?? 2400;
+    voiceArrowOpacity = prefs.getDouble('voiceArrowOpacity') ?? 0.25;
     voiceArrowOpacity = voiceArrowOpacity.clamp(0.20, 0.90);
     await audioPlayer.setVolume(currentVolume);
 
@@ -138,13 +138,13 @@ class AppCore {
 
   static Future<void> resetVoiceSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    voiceAutoRestart = true;
-    voicePossibleSilenceMs = 12000;
-    voiceCompleteSilenceMs = 15000;
-    voiceMinimumSpeechMs = 250;
-    voiceRestartDelayMs = 700;
-    voiceFinalizationTimeoutMs = 1500;
-    voiceArrowOpacity = 0.65;
+    voiceAutoRestart = false;
+    voicePossibleSilenceMs = 23000;
+    voiceCompleteSilenceMs = 23000;
+    voiceMinimumSpeechMs = 2500;
+    voiceRestartDelayMs = 4100;
+    voiceFinalizationTimeoutMs = 2400;
+    voiceArrowOpacity = 0.25;
     for (final key in [
       'voiceAutoRestart', 'voicePossibleSilenceMs', 'voiceCompleteSilenceMs',
       'voiceMinimumSpeechMs', 'voiceRestartDelayMs', 'voiceFinalizationTimeoutMs',
