@@ -392,7 +392,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
           [...document.querySelectorAll('.q-menu .q-item, .q-menu [role="option"], [role="listbox"] [role="option"]')]
             .forEach(x=>{
               const text=String(x.innerText || x.textContent || '').replace(/\s+/g,' ').trim();
-              if(text && !/^(اختر|select|search)$/i.test(text)) values.add(text);
+              if(text && !/^(اختر|select|search)\$/i.test(text)) values.add(text);
             });
         };
         collect();
