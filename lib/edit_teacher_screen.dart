@@ -49,16 +49,26 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   String? _addressGovernorateId;
   String? _addressDistrictId;
 
-  static const _commonOptionEndpoints = <String, String>{
-    'countryOfBirth': '/selectoption/بلد الولادة',
-    'idType': '/selectoption/IdentificationType',
-    'issuingCountry': '/selectoption/بلد الإصدار',
-    'gender': '/selectoption/Gender',
-    'nationality': '/selectoption/بلد الولادة',
-    'motherTongue': '/selectoption/لغة',
-    'bloodGroup': '/selectoption/فصيلة الدم',
-    'religion': '/selectoption/الديانة',
-    'positionType': '/SelectOption/نوع الوظيفة',
+  // Keep the option endpoints aligned with AddTeacherScreen and the
+  // endpoints observed in the EMIS browser network recording. Some labels
+  // have legacy spelling/casing on the server, so candidates are tried in order.
+  static const _commonOptionEndpoints = <String, List<String>>{
+    'countryOfBirth': ['/selectoption/بلد الولادة'],
+    'idType': ['/selectoption/IdentificationType'],
+    'issuingCountry': ['/selectoption/بلد الإصدار'],
+    'gender': ['/selectoption/Gender'],
+    'nationality': ['/selectoption/بلد الولادة'],
+    'motherTongue': ['/selectoption/لغة'],
+    'maritalStatus': ['/selectoption/الحالة الاجتماعية'],
+    'bloodGroup': ['/selectoption/فصيلة الدم'],
+    'religion': ['/selectoption/الديانة'],
+    'employmentType': ['/selectoption/نوع التوظيف'],
+    'employeeCategory': ['/selectoption/فئة الموظف'],
+    'classification': ['/selectoption/التصنيف'],
+    'status': ['/selectoption/الحالة الوظيفية'],
+    'currentPosition': ['/selectoption/المنصب الحالي'],
+    'educationLevel': ['/selectoption/تحصیل الدراسي', '/selectoption/التحصيل الدراسي'],
+    'positionType': ['/SelectOption/نوع الوظيفة'],
   };
 
   static const _labels = <String, String>{
@@ -171,8 +181,23 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     bool changed = false;
     incoming.forEach((key, values) {
       if (values.isEmpty) return;
-      _options[key] = values.map((v) => <String, dynamic>{'value': v, 'displayName': v}).toList();
-      changed = true;
+      final existing = _options.putIfAbsent(key, () => <Map<String, dynamic>>[]);
+      for (final raw in values) {
+        final value = raw.trim();
+        if (value.isEmpty) continue;
+        // The hidden EMIS page reports visible labels, while the API may
+        // provide a numeric/string identifier plus displayName. Keep the API
+        // identifiers intact and only append labels that are truly missing.
+        final alreadyPresent = existing.any((item) {
+          final itemValue = '${item['value'] ?? item['id'] ?? item['code'] ?? ''}'.trim();
+          final itemLabel = '${item['displayName'] ?? item['label'] ?? item['name'] ?? item['text'] ?? itemValue}'.trim();
+          return itemValue == value || itemLabel == value;
+        });
+        if (!alreadyPresent) {
+          existing.add(<String, dynamic>{'value': value, 'displayName': value});
+          changed = true;
+        }
+      }
     });
     if (changed && mounted) setState(() {});
   }
@@ -299,10 +324,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return s.length >= 10 ? s.substring(0, 10) : s;
   }
 
-  List<String> _optionEndpointCandidates(String key) {
-    if (key == 'positionType') return const ['/SelectOption/نوع الوظيفة'];
-    return _commonOptionEndpoints.containsKey(key) ? <String>[_commonOptionEndpoints[key]!] : const [];
-  }
+  List<String> _optionEndpointCandidates(String key) =>
+      _commonOptionEndpoints[key] ?? const <String>[];
 
   Future<void> _loadOption(String key) async {
     for (final endpoint in _optionEndpointCandidates(key)) {
@@ -392,22 +415,41 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     );
   }
 
-  List<String> _stringOptions(String key, {List<String> fallback = const []}) {
-    final result = <String>[];
-    for (final item in _options[key] ?? const <Map<String, dynamic>>[]) {
-      final value = item['value'] ?? item['displayName'] ?? item['name'];
-      if (value != null && '$value'.trim().isNotEmpty) result.add('$value');
+  List<Map<String, String>> _dropdownOptions(
+    String key, {
+    List<String> fallback = const [],
+  }) {
+    final result = <Map<String, String>>[];
+    final seen = <String>{};
+
+    void add(String value, String label) {
+      final normalizedValue = value.trim();
+      final normalizedLabel = label.trim();
+      if (normalizedValue.isEmpty || !seen.add(normalizedValue)) return;
+      result.add({'value': normalizedValue, 'label': normalizedLabel.isEmpty ? normalizedValue : normalizedLabel});
     }
+
+    for (final item in _options[key] ?? const <Map<String, dynamic>>[]) {
+      final value = item['value'] ?? item['id'] ?? item['code'] ?? item['displayName'] ?? item['name'];
+      final label = item['displayName'] ?? item['label'] ?? item['name'] ?? item['text'] ?? value;
+      if (value != null) add('$value', '$label');
+    }
+
     if (key == 'classification') {
       for (final item in _classificationFallback()) {
-        if (!result.contains(item)) result.add(item);
+        add(item, item);
       }
     }
     for (final item in fallback) {
-      if (!result.contains(item)) result.add(item);
+      add(item, item);
     }
+
+    // Preserve a saved value if the API no longer returns it, but do not
+    // replace the server's full option list with the saved value.
     final current = _c[key]?.text.trim() ?? '';
-    if (current.isNotEmpty && !result.contains(current)) result.insert(0, current);
+    if (current.isNotEmpty && !seen.contains(current)) {
+      result.insert(0, {'value': current, 'label': current});
+    }
     return result;
   }
 
@@ -437,10 +479,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   Widget _selectField(String key, {bool required = false, List<String> fallback = const []}) {
-    if (key == 'idType') { _c[key]!.text = '12'; }
-    final values = _stringOptions(key, fallback: fallback);
+    final options = _dropdownOptions(key, fallback: fallback);
+    final selected = _selected(key);
+    final safeValue = options.any((item) => item['value'] == selected) ? selected : null;
     return DropdownButtonFormField<String>(
-      value: _selected(key),
+      value: safeValue,
       isExpanded: true,
       decoration: InputDecoration(
         labelText: _labels[key],
@@ -450,7 +493,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white.withOpacity(0.03) : Colors.white,
       ),
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-      items: (key == 'idType' ? <String>['12'] : values).map((v) => DropdownMenuItem<String>(value: v, child: Text(key == 'idType' ? 'البطاقة الوطنية الموحدة' : v, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
+      items: options.map((item) => DropdownMenuItem<String>(
+        value: item['value'],
+        child: Text(item['label']!, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
+      )).toList(),
       onTap: () => _focusLive(key),
       onChanged: (value) { setState(() => _c[key]!.text = value ?? ''); _focusLive(key); if (key == 'employmentType') _liveSyncKey.currentState?.refreshOptions(['classification']); },
       validator: null,
