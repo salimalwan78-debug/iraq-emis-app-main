@@ -254,7 +254,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       }
       const raw=(el.getAttribute('name') || el.getAttribute('id') || el.getAttribute('data-cy') || el.getAttribute('data-test') || '').trim();
       if(!raw) return '';
-      const cleaned=raw.replace(/\[(\d+)\]/g,'_$1').replace(/[^a-zA-Z0-9_]/g,'_').replace(/_+/g,'_').replace(/^_+|_+$/g,'');
+      const cleaned=raw.replace(/\[(\d+)\]/g,'_\$1').replace(/[^a-zA-Z0-9_]/g,'_').replace(/_+/g,'_').replace(/^_+|_+\$/g,'');
       return cleaned ? cleaned.charAt(0).toLowerCase()+cleaned.slice(1) : '';
     };
 
