@@ -1767,9 +1767,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             const SizedBox(height: 10),
                             _textField('mothersGrandFatherName'),
                             const SizedBox(height: 10),
-                            _select('gender', required: true),
-                            const SizedBox(height: 10),
                             SizedBox(width: double.infinity, child: _textField('dateOfBirth')),
+                            const SizedBox(height: 10),
+                            SizedBox(width: double.infinity, child: _select('gender', required: true)),
                             const SizedBox(height: 10),
                             Row(
                               children: [

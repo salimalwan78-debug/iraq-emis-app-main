@@ -450,7 +450,19 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
   String _normalizeRecognizedDate(String raw) {
     final value = raw.trim().replaceAll('／', '/');
     var m = RegExp(r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$').firstMatch(value);
-    if (m != null) return '${m.group(1)}-${m.group(2)!.padLeft(2, '0')}-${m.group(3)!.padLeft(2, '0')}';
+    if (m != null) {
+      final year = m.group(1)!;
+      var month = int.parse(m.group(2)!);
+      var day = int.parse(m.group(3)!);
+      // Speech services sometimes return yyyy-dd-MM. Correct it when the
+      // middle component cannot be a month but the final component can.
+      if (month > 12 && day >= 1 && day <= 12) {
+        final swap = month;
+        month = day;
+        day = swap;
+      }
+      return '$year-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+    }
     m = RegExp(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$').firstMatch(value);
     if (m != null) return '${m.group(3)}-${m.group(2)!.padLeft(2, '0')}-${m.group(1)!.padLeft(2, '0')}';
     return value.replaceAll('/', '-');
@@ -913,7 +925,11 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       ], isDark),
       _studentSection('البيانات الشخصية', [
         field('dateOfBirth'),
+      ], isDark),
+      _studentSection('الجنس', [
         field('gender'),
+      ], isDark),
+      _studentSection('البيانات الشخصية', [
         field('nationality'),
         field('countryOfBirth'),
         field('homeTown'),
