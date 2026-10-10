@@ -242,10 +242,10 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
             const clone=q.cloneNode(true);
             clone.querySelectorAll('i,svg,.q-icon,[class*=icon],button').forEach(n=>n.remove());
             const label=String(clone.innerText || clone.textContent || '').replace(/\s+/g,' ').trim();
-            if(label && !/^(arrow_drop_down|expand_more|keyboard_arrow_down)$/i.test(label)) return label;
+            if(label && !/^(arrow_drop_down|expand_more|keyboard_arrow_down)\$/i.test(label)) return label;
           }
           const aria=parent.getAttribute('aria-label');
-          if(aria && !/^(arrow_drop_down|expand_more|keyboard_arrow_down)$/i.test(aria.trim())) return aria.trim();
+          if(aria && !/^(arrow_drop_down|expand_more|keyboard_arrow_down)\$/i.test(aria.trim())) return aria.trim();
         }
       } catch(e) {}
       try {
@@ -408,7 +408,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
               const clone=x.cloneNode(true);
               clone.querySelectorAll('i,svg,.q-icon,[class*=icon],button').forEach(n=>n.remove());
               const label=String(clone.innerText || clone.textContent || '').replace(/\s+/g,' ').trim();
-              if(!label || /^(اختر|select|search|arrow_drop_down|expand_more)$/i.test(label)) return;
+              if(!label || /^(اختر|select|search|arrow_drop_down|expand_more)\$/i.test(label)) return;
               const value=String(x.getAttribute('data-value') || x.getAttribute('data-id') || x.getAttribute('value') || x.getAttribute('aria-valuetext') || label).trim();
               const signature=value+'|'+label;
               if(!seen.has(signature)){seen.add(signature);values.push({value:value,label:label});}
