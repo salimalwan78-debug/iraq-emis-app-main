@@ -751,9 +751,9 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
     if (_isDateField(key)) {
       return Padding(
+        key: ValueKey('date-$key'),
         padding: const EdgeInsets.only(bottom: 15),
         child: TextFormField(
-          key: ValueKey('date-$key'),
           controller: _dateControllers.putIfAbsent(
             key,
             () => TextEditingController(text: _formatDateValue(value?.toString() ?? '')),
@@ -809,7 +809,9 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       readOnly: false,
       requiredField: _isRequired(key, owner),
       onChanged: (v) => owner[key] = v,
-      onMic: _speechEnabledFields.contains(key) ? () => _toggleFieldMic(owner, key) : null,
+      onMic: key != 'notes' && _speechEnabledFields.contains(key)
+          ? () => _toggleFieldMic(owner, key)
+          : null,
       micActive: _speechListening && _activeSpeechKey == key,
     );
   }
@@ -1041,14 +1043,14 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     for (var i = 0; i < children.length;) {
       // Date inputs occupy a full row so the complete yyyy-mm-dd value is visible.
       final current = children[i];
-      final isDate = current is TextFormField && current.key is ValueKey &&
+      final isDate = current.key is ValueKey &&
           (current.key as ValueKey).value.toString().startsWith('date-');
       if (isDate) {
         rows.add(SizedBox(width: double.infinity, child: current));
         i++;
       } else {
         final next = i + 1 < children.length ? children[i + 1] : const SizedBox();
-        final nextIsDate = next is TextFormField && next.key is ValueKey &&
+        final nextIsDate = next.key is ValueKey &&
             (next.key as ValueKey).value.toString().startsWith('date-');
         if (nextIsDate) {
           rows.add(SizedBox(width: double.infinity, child: current));
