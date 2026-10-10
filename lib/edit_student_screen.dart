@@ -396,16 +396,21 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
       final key = _activeSpeechKey!;
       if (_isDateField(key)) {
-        // Same date interpretation as Add Student: parse Arabic spoken numbers
-        // and digit groups, then apply only a complete valid date.
-        final parsed = _parseSpokenDate(raw, key);
-        if (parsed == null) return;
-        _applySpokenDate(key, parsed);
-        final normalized = '${parsed.year.toString().padLeft(4, '0')}-'
-            '${parsed.month.toString().padLeft(2, '0')}-'
-            '${parsed.day.toString().padLeft(2, '0')}';
-        _activeSpeechOwner![key] = normalized;
-        _speechError = null;
+        // Partial speech results often contain only fragments of a date.
+        // Never replace the field until a complete, valid date is recognized.
+        final normalized = _normalizeRecognizedDate(raw);
+        if (normalized == null) return;
+        final controller = _dateControllers[key];
+        if (controller != null) {
+          controller.value = TextEditingValue(
+            text: normalized,
+            selection: TextSelection.collapsed(offset: normalized.length),
+          );
+        }
+        setState(() {
+          _activeSpeechOwner![key] = normalized;
+          _speechError = null;
+        });
       } else {
         setState(() {
           _activeSpeechOwner![key] = raw;
@@ -481,168 +486,13 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     return out.toString();
   }
 
-  bool get _isNationalId => c['idType']!.text == '12';
-  bool get _isCivilId => c['idType']!.text == '3';
-  bool get _isBirthCertificate => c['idType']!.text == '22';
-  bool get _isOtherId => c['idType']!.text == '16';
-
-  void _showVoiceMessage(String message) {
-    if (!mounted) return;
-    setState(() => _speechError = message);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.orange),
-    );
-  }
-
-  String _normalizeArabicForMatch(String value) {
-    var out = value.toLowerCase().trim();
-    out = out.replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '');
-    out = out.replaceAll('أ', 'ا').replaceAll('إ', 'ا').replaceAll('آ', 'ا');
-    out = out.replaceAll('ى', 'ي').replaceAll('ة', 'ه');
-    out = out.replaceAll(RegExp(r'[^\u0600-\u06FFa-z0-9 ]'), ' ');
-    out = out.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return out;
-  }
-
-  List<Map<String, dynamic>> _dropdownOptionsForVoice(String key) {
-    final all = <Map<String, dynamic>>[];
-    switch (key) {
-      case 'stageId': all.addAll(stages); break;
-      case 'classRoomId': all.addAll(rooms); break;
-      case 'addressCountry': all.addAll(_addressCountries); break;
-      case 'addressGovernorate': all.addAll(_addressGovernorates); break;
-      case 'addressDistrict': all.addAll(_addressDistricts); break;
-      case 'isCoveredBySocialWelfare':
-        all.addAll(const [
-          {'value': false, 'displayName': 'لا'},
-          {'value': true, 'displayName': 'نعم'},
-        ]);
-        break;
-      default: all.addAll(options[key] ?? []);
-    }
-    if (key == 'studyLanguage') {
-      all.add({'value': 'العربية', 'displayName': 'العربية'});
-    }
-    final current = switch (key) {
-      'stageId' => stageId ?? '',
-      'classRoomId' => roomId ?? '',
-      'addressCountry' => _addressCountryId ?? '',
-      'addressGovernorate' => _addressGovernorateId ?? '',
-      'addressDistrict' => _addressDistrictId ?? '',
-      'isCoveredBySocialWelfare' => _socialWelfare.toString(),
-      _ => c[key]?.text.trim() ?? '',
-    };
-    if (current.isNotEmpty && !all.any((item) => _value(item) == current)) {
-      all.add({'value': current, 'displayName': current});
-    }
-    final seen = <String>{};
-    return all.where((item) {
-      final value = _value(item).trim();
-      return value.isNotEmpty && seen.add(value);
-    }).toList();
-  }
-
-  void _applyDropdownVoiceChoice(String key, Map<String, dynamic> item) {
-    final value = _value(item);
-    switch (key) {
-      case 'stageId':
-        unawaited(_stageChanged(value));
-        break;
-      case 'classRoomId':
-        roomId = value;
-        _focusLive('classRoomId');
-        break;
-      case 'addressCountry':
-        _addressCountryId = value;
-        _setAddressGovernorates(item);
-        _focusLive('addressCountry');
-        break;
-      case 'addressGovernorate':
-        _addressGovernorateId = value;
-        _setAddressDistricts(item);
-        _focusLive('addressGovernorate');
-        break;
-      case 'addressDistrict':
-        _addressDistrictId = value;
-        _focusLive('addressDistrict');
-        break;
-      case 'isCoveredBySocialWelfare':
-        _socialWelfare = value == 'true' || _normalizeArabicForMatch(_text(item)) == _normalizeArabicForMatch('نعم');
-        _focusLive('isCoveredBySocialWelfare');
-        break;
-      default:
-        c[key]?.text = value;
-        _focusLive(key);
-    }
-    _liveSyncKey.currentState?.pushValues(_liveValues());
-    if (mounted) setState(() {});
-  }
-
-  Widget _dropdownVoiceMic(String key) => Listener(
-    behavior: HitTestBehavior.opaque,
-    onPointerDown: (_) => _markMicPointerDown(),
-    child: IconButton(
-      tooltip: 'اختيار ${labels[key] ?? key} بالصوت',
-      onPressed: () => _startDropdownVoice(key),
-      icon: Icon(
-        _speechListening && _activeVoiceField == key ? Icons.mic_rounded : Icons.mic_none_rounded,
-        color: _speechListening && _activeVoiceField == key ? Colors.red : null,
-      ),
-    ),
-  );
-
-  Map<String, dynamic>? _matchDropdownOption(String key, String spoken) {
-    var target = _normalizeArabicForMatch(spoken);
-    if (target.isEmpty) return null;
-    target = target.replaceAll(RegExp(r'^(?:اختيار|القيمة|هي|هو)\s+'), '').trim();
-    final items = _dropdownOptionsForVoice(key);
-    if (items.isEmpty) return null;
-
-    String compact(String value) => _normalizeArabicForMatch(value)
-        .replaceAll(RegExp(r'\bال'), '')
-        .replaceAll(' ', '');
-
-    final exact = items.where((item) {
-      final label = _normalizeArabicForMatch(_text(item));
-      final value = _normalizeArabicForMatch(_value(item));
-      return label == target || value == target || compact(label) == compact(target);
-    }).toList();
-    if (exact.length == 1) return exact.first;
-    if (exact.length > 1) return exact.first;
-
-    final targetTokens = target.split(' ').where((x) => x.length >= 2).toSet();
-    if (targetTokens.isEmpty) return items.firstOrNull;
-    
-    int bestScore = 0;
-    Map<String, dynamic>? best;
-    for (final item in items) {
-      final label = _normalizeArabicForMatch(_text(item));
-      final value = _normalizeArabicForMatch(_value(item));
-      if (label.isEmpty) continue;
-      final labelCompact = compact(label);
-      final targetCompact = compact(target);
-      int score = 0;
-      if (labelCompact.length >= 3 && targetCompact.length >= 3 &&
-          (labelCompact.contains(targetCompact) || targetCompact.contains(labelCompact))) {
-        score = 100 + (labelCompact.length < targetCompact.length ? labelCompact.length : targetCompact.length);
-      } else {
-        final tokens = label.split(' ').where((x) => x.length >= 2).toSet();
-        final overlap = targetTokens.intersection(tokens).length;
-        if (overlap > 0) {
-          score = overlap * 10 + ((overlap == tokens.length) ? 3 : 0);
-        }
-        if (value.isNotEmpty && compact(value) == targetCompact) score += 100;
-      }
-      if (score > bestScore) {
-        bestScore = score;
-        best = item;
-      }
-    }
-    return best ?? (items.isNotEmpty ? items.first : null);
-  }
-
   String _normalizeSpokenWord(String word) {
-    var out = _normalizeArabicForMatch(word).replaceAll(' ', '');
+    var out = word.toLowerCase()
+        .replaceAll(RegExp(r'[ًٌٍَُِّْـٰ]'), '')
+        .replaceAll('أ', 'ا').replaceAll('إ', 'ا').replaceAll('آ', 'ا')
+        .replaceAll('ى', 'ي').replaceAll('ة', 'ه')
+        .replaceAll(RegExp(r'[^\u0600-\u06FFa-z0-9٠-٩۰-۹]'), '')
+        .replaceAll(' ', '');
     const exact = {'واحد', 'واحدة', 'واحده'};
     if (out.startsWith('و') && out.length > 1 && !exact.contains(out)) out = out.substring(1);
     return out;
@@ -740,16 +590,45 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     return date;
   }
 
-  void _applySpokenDate(String key, DateTime date) {
-    final value = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    c[key]?.value = TextEditingValue(
-      text: value,
-      selection: TextSelection.collapsed(offset: value.length),
-    );
-    _liveSyncKey.currentState?.pushValues(_liveValues());
-    if (mounted) setState(() {});
-  }
+  String? _normalizeRecognizedDate(String raw) {
+    final value = raw.trim().replaceAll('／', '/').replaceAll('٫', '.');
+    var m = RegExp(r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$').firstMatch(value);
+    if (m != null) {
+      final year = int.parse(m.group(1)!);
+      var month = int.parse(m.group(2)!);
+      var day = int.parse(m.group(3)!);
 
+      // Correct yyyy-dd-MM only when the middle component cannot be a month.
+      if (month > 12 && month <= 31 && day >= 1 && day <= 12) {
+        final temp = month;
+        month = day;
+        day = temp;
+      }
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      final date = DateTime(year, month, day);
+      if (date.year != year || date.month != month || date.day != day) return null;
+      return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+    }
+
+    m = RegExp(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$').firstMatch(value);
+    if (m != null) {
+      // Spoken day-month-year is normalized to the app's yyyy-MM-dd format.
+      final day = int.parse(m.group(1)!);
+      final month = int.parse(m.group(2)!);
+      final year = int.parse(m.group(3)!);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      final date = DateTime(year, month, day);
+      if (date.year != year || date.month != month || date.day != day) return null;
+      return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+    }
+    final spokenDate = _parseSpokenDate(raw, 'dateOfBirth');
+    if (spokenDate != null) {
+      return '${spokenDate.year.toString().padLeft(4, '0')}-'
+          '${spokenDate.month.toString().padLeft(2, '0')}-'
+          '${spokenDate.day.toString().padLeft(2, '0')}';
+    }
+    return null;
+  }
 
   String _formatDateValue(String value) {
     final v = value.trim();
@@ -880,23 +759,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
             () => TextEditingController(text: _formatDateValue(value?.toString() ?? '')),
           ),
           keyboardType: TextInputType.number,
-          inputFormatters: [TextInputFormatter.withFunction((oldValue, newValue) {
-            final cursorOffset = newValue.selection.baseOffset.clamp(0, newValue.text.length);
-            final digitsBeforeCursor = newValue.text
-                .substring(0, cursorOffset)
-                .replaceAll(RegExp(r'[^0-9٠-٩۰-۹]'), '')
-                .length;
-            final formatted = _formatTypedDate(newValue.text);
-            var newCursor = digitsBeforeCursor;
-            if (digitsBeforeCursor > 4) newCursor++;
-            if (digitsBeforeCursor > 6) newCursor++;
-            newCursor = newCursor.clamp(0, formatted.length);
-            return TextEditingValue(
-              text: formatted,
-              selection: TextSelection.collapsed(offset: newCursor),
-              composing: TextRange.empty,
-            );
-          })],
+          inputFormatters: [TextInputFormatter.withFunction((oldValue, newValue) { final formatted = _formatTypedDate(newValue.text); return TextEditingValue(text: formatted, selection: TextSelection.collapsed(offset: formatted.length)); })],
           onChanged: (v) => owner[key] = v,
           onTap: () => _focusLive(key),
           style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
@@ -1178,12 +1041,6 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     for (var i = 0; i < children.length;) {
       // Date inputs occupy a full row so the complete yyyy-mm-dd value is visible.
       final current = children[i];
-      // A single field in a section occupies the full row. This is especially
-      // important for the birth-date field so yyyy-MM-dd stays readable.
-      if (i == children.length - 1) {
-        rows.add(SizedBox(width: double.infinity, child: current));
-        i++;
-      } else {
       final isDate = current is TextFormField && current.key is ValueKey &&
           (current.key as ValueKey).value.toString().startsWith('date-');
       if (isDate) {
@@ -1202,7 +1059,6 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
           ]));
           i += 2;
         }
-      }
       }
       if (i < children.length) rows.add(const SizedBox(height: 12));
     }
