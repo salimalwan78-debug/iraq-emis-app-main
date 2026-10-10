@@ -41,6 +41,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   final Map<String, TextEditingController> _c = {};
   final Map<String, List<Map<String, dynamic>>> _options = {};
+  final Map<String, Map<String, dynamic>> _liveSchema = {};
+  final Set<String> _liveDiscoveredFields = {};
 
   List<Map<String, dynamic>> _addressCountries = [];
   List<Map<String, dynamic>> _addressGovernorates = [];
@@ -49,29 +51,19 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   String? _addressGovernorateId;
   String? _addressDistrictId;
 
-  // Keep the option endpoints aligned with AddTeacherScreen and the
-  // endpoints observed in the EMIS browser network recording. Some labels
-  // have legacy spelling/casing on the server, so candidates are tried in order.
-  static const _commonOptionEndpoints = <String, List<String>>{
-    'countryOfBirth': ['/selectoption/بلد الولادة'],
-    'idType': ['/selectoption/IdentificationType'],
-    'issuingCountry': ['/selectoption/بلد الإصدار'],
-    'gender': ['/selectoption/Gender'],
-    'nationality': ['/selectoption/بلد الولادة'],
-    'motherTongue': ['/selectoption/لغة'],
-    'maritalStatus': ['/selectoption/الحالة الاجتماعية'],
-    'bloodGroup': ['/selectoption/فصيلة الدم'],
-    'religion': ['/selectoption/الديانة'],
-    'employmentType': ['/selectoption/نوع التوظيف'],
-    'employeeCategory': ['/selectoption/فئة الموظف'],
-    'classification': ['/selectoption/التصنيف'],
-    'status': ['/selectoption/الحالة الوظيفية'],
-    'currentPosition': ['/selectoption/المنصب الحالي'],
-    'educationLevel': ['/selectoption/تحصیل الدراسي', '/selectoption/التحصيل الدراسي'],
-    'positionType': ['/SelectOption/نوع الوظيفة'],
+  static const _commonOptionEndpoints = <String, String>{
+    'countryOfBirth': '/selectoption/بلد الولادة',
+    'idType': '/selectoption/IdentificationType',
+    'issuingCountry': '/selectoption/بلد الإصدار',
+    'gender': '/selectoption/Gender',
+    'nationality': '/selectoption/بلد الولادة',
+    'motherTongue': '/selectoption/لغة',
+    'bloodGroup': '/selectoption/فصيلة الدم',
+    'religion': '/selectoption/الديانة',
+    'positionType': '/SelectOption/نوع الوظيفة',
   };
 
-  static const _labels = <String, String>{
+  static final Map<String, String> _labels = <String, String>{
     'name': 'الإسم',
     'fatherName': 'إسم الأب',
     'grandFatherName': 'اسم والد الأب',
@@ -181,24 +173,60 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     bool changed = false;
     incoming.forEach((key, values) {
       if (values.isEmpty) return;
-      final existing = _options.putIfAbsent(key, () => <Map<String, dynamic>>[]);
-      for (final raw in values) {
-        final value = raw.trim();
-        if (value.isEmpty) continue;
-        // The hidden EMIS page reports visible labels, while the API may
-        // provide a numeric/string identifier plus displayName. Keep the API
-        // identifiers intact and only append labels that are truly missing.
-        final alreadyPresent = existing.any((item) {
-          final itemValue = '${item['value'] ?? item['id'] ?? item['code'] ?? ''}'.trim();
-          final itemLabel = '${item['displayName'] ?? item['label'] ?? item['name'] ?? item['text'] ?? itemValue}'.trim();
-          return itemValue == value || itemLabel == value;
-        });
-        if (!alreadyPresent) {
-          existing.add(<String, dynamic>{'value': value, 'displayName': value});
+      final existing = _options[key] ?? <Map<String, dynamic>>[];
+      for (final label in values) {
+        if (!existing.any((o) => _optionText(o) == label)) {
+          existing.add(<String, dynamic>{'value': label, 'displayName': label});
           changed = true;
         }
       }
+      _options[key] = existing;
     });
+    if (changed && mounted) setState(() {});
+  }
+
+  void _applyLiveSchema(Map<String, Map<String, dynamic>> incoming) {
+    bool changed = false;
+    for (final entry in incoming.entries) {
+      final key = entry.key.trim();
+      if (key.isEmpty) continue;
+      final meta = Map<String, dynamic>.from(entry.value);
+      final previousMeta = _liveSchema[key];
+      final previousShape = previousMeta == null ? null : Map<String, dynamic>.from(previousMeta)..remove('value');
+      final currentShape = Map<String, dynamic>.from(meta)..remove('value');
+      if (previousShape == null || jsonEncode(previousShape) != jsonEncode(currentShape)) changed = true;
+      _liveSchema[key] = meta;
+      final label = '${meta['label'] ?? key}'.trim();
+      if (!_labels.containsKey(key) && label.isNotEmpty) {
+        _labels[key] = label;
+        _liveDiscoveredFields.add(key);
+      }
+      if (!_c.containsKey(key)) {
+        _c[key] = TextEditingController(text: '${meta['value'] ?? ''}');
+        changed = true;
+      } else if ((_c[key]!.text.isEmpty) && '${meta['value'] ?? ''}'.isNotEmpty) {
+        _c[key]!.text = '${meta['value']}';
+        changed = true;
+      }
+      final rawOptions = meta['options'];
+      if (rawOptions is List && rawOptions.isNotEmpty) {
+        final parsed = <Map<String, dynamic>>[];
+        for (final raw in rawOptions) {
+          if (raw is Map) {
+            final value = '${raw['value'] ?? raw['label'] ?? ''}'.trim();
+            final text = '${raw['label'] ?? raw['value'] ?? ''}'.trim();
+            if (value.isNotEmpty) parsed.add({'value': value, 'displayName': text});
+          }
+        }
+        if (parsed.isNotEmpty) {
+          final old = _options[key] ?? <Map<String, dynamic>>[];
+          for (final item in parsed) {
+            if (!old.any((o) => '${_optionValue(o)}' == '${_optionValue(item)}')) old.add(item);
+          }
+          _options[key] = old;
+        }
+      }
+    }
     if (changed && mounted) setState(() {});
   }
 
@@ -324,8 +352,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return s.length >= 10 ? s.substring(0, 10) : s;
   }
 
-  List<String> _optionEndpointCandidates(String key) =>
-      _commonOptionEndpoints[key] ?? const <String>[];
+  List<String> _optionEndpointCandidates(String key) {
+    if (key == 'positionType') return const ['/SelectOption/نوع الوظيفة'];
+    return _commonOptionEndpoints.containsKey(key) ? <String>[_commonOptionEndpoints[key]!] : const [];
+  }
 
   Future<void> _loadOption(String key) async {
     for (final endpoint in _optionEndpointCandidates(key)) {
@@ -415,47 +445,31 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     );
   }
 
-  List<Map<String, String>> _dropdownOptions(
-    String key, {
-    List<String> fallback = const [],
-  }) {
-    final result = <Map<String, String>>[];
-    final seen = <String>{};
-
-    void add(String value, String label) {
-      final normalizedValue = value.trim();
-      final normalizedLabel = label.trim();
-      if (normalizedValue.isEmpty || !seen.add(normalizedValue)) return;
-      result.add({'value': normalizedValue, 'label': normalizedLabel.isEmpty ? normalizedValue : normalizedLabel});
-    }
-
+  List<String> _stringOptions(String key, {List<String> fallback = const []}) {
+    final result = <String>[];
     for (final item in _options[key] ?? const <Map<String, dynamic>>[]) {
-      final value = item['value'] ?? item['id'] ?? item['code'] ?? item['displayName'] ?? item['name'];
-      final label = item['displayName'] ?? item['label'] ?? item['name'] ?? item['text'] ?? value;
-      if (value != null) add('$value', '$label');
+      final value = item['value'] ?? item['displayName'] ?? item['name'];
+      if (value != null && '$value'.trim().isNotEmpty) result.add('$value');
     }
-
     if (key == 'classification') {
       for (final item in _classificationFallback()) {
-        add(item, item);
+        if (!result.contains(item)) result.add(item);
       }
     }
     for (final item in fallback) {
-      add(item, item);
+      if (!result.contains(item)) result.add(item);
     }
-
-    // Preserve a saved value if the API no longer returns it, but do not
-    // replace the server's full option list with the saved value.
     final current = _c[key]?.text.trim() ?? '';
-    if (current.isNotEmpty && !seen.contains(current)) {
-      result.insert(0, {'value': current, 'label': current});
-    }
+    if (current.isNotEmpty && !result.contains(current)) result.insert(0, current);
     return result;
   }
 
   String? _selected(String key) => _c[key]?.text.trim().isEmpty == true ? null : _c[key]?.text.trim();
 
   Widget _textField(String key, {bool required = false, int maxLines = 1, TextInputType? keyboardType, bool readOnly = false}) {
+    if (_liveSchema[key]?['type'] == 'select') {
+      return _selectField(key, required: required || _liveSchema[key]?['required'] == true);
+    }
     final controller = _c[key]!;
     return TextFormField(
       controller: controller,
@@ -479,11 +493,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   Widget _selectField(String key, {bool required = false, List<String> fallback = const []}) {
-    final options = _dropdownOptions(key, fallback: fallback);
-    final selected = _selected(key);
-    final safeValue = options.any((item) => item['value'] == selected) ? selected : null;
+    final values = _stringOptions(key, fallback: fallback);
     return DropdownButtonFormField<String>(
-      value: safeValue,
+      value: _selected(key),
       isExpanded: true,
       decoration: InputDecoration(
         labelText: _labels[key],
@@ -493,14 +505,58 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.white.withOpacity(0.03) : Colors.white,
       ),
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-      items: options.map((item) => DropdownMenuItem<String>(
-        value: item['value'],
-        child: Text(item['label']!, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
-      )).toList(),
+      items: (() {
+        final raw = _options[key] ?? <Map<String, dynamic>>[];
+        final mapped = <DropdownMenuItem<String>>[];
+        for (final item in raw) {
+          final value = '${_optionValue(item) ?? ''}'.trim();
+          final label = _optionText(item).trim();
+          if (value.isNotEmpty && !mapped.any((x) => x.value == value)) {
+            mapped.add(DropdownMenuItem<String>(value: value, child: Text(label.isEmpty ? value : label, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold))));
+          }
+        }
+        for (final value in values) {
+          if (!mapped.any((x) => x.value == value)) mapped.add(DropdownMenuItem<String>(value: value, child: Text(value, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold))));
+        }
+        return mapped;
+      })(),
       onTap: () => _focusLive(key),
-      onChanged: (value) { setState(() => _c[key]!.text = value ?? ''); _focusLive(key); if (key == 'employmentType') _liveSyncKey.currentState?.refreshOptions(['classification']); },
+      onChanged: (value) {
+        setState(() => _c[key]!.text = value ?? '');
+        _focusLive(key);
+        if (key == 'employmentType') {
+          _liveSyncKey.currentState?.refreshOptions(['employeeCategory', 'classification', 'currentPosition', 'positionType', 'status']);
+          Future<void>.delayed(const Duration(milliseconds: 250), () => _liveSyncKey.currentState?.refreshSchema());
+        }
+        if (key == 'idType') {
+          _liveSyncKey.currentState?.refreshOptions(['issuingCountry', 'nationalId', 'employeeIdNumber', 'familyNumber']);
+          Future<void>.delayed(const Duration(milliseconds: 250), () => _liveSyncKey.currentState?.refreshSchema());
+        }
+      },
       validator: null,
     );
+  }
+
+  bool _showIdentityField(String key) {
+    const identityKeys = <String>{'idType', 'issuingCountry', 'nationalId', 'employeeIdNumber', 'familyNumber'};
+    final hasLiveIdentitySchema = _liveSchema.keys.any(identityKeys.contains);
+    if (!hasLiveIdentitySchema) return true;
+    return _liveSchema.containsKey(key);
+  }
+
+  List<Widget> _buildDiscoveredFields() {
+    final fields = <Widget>[];
+    for (final key in _liveDiscoveredFields) {
+      final meta = _liveSchema[key] ?? const <String, dynamic>{};
+      final type = '${meta['type'] ?? 'text'}';
+      if (type == 'select') {
+        fields.add(_selectField(key, required: meta['required'] == true));
+      } else {
+        fields.add(_textField(key, required: meta['required'] == true, maxLines: type == 'textarea' ? 3 : 1, readOnly: type == 'date'));
+      }
+    }
+    if (fields.isEmpty) return const <Widget>[];
+    return <Widget>[_section('حقول مكتشفة مباشرة من EMIS', fields)];
   }
 
   Widget _section(String title, List<Widget> children) {
@@ -1131,11 +1187,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                               _textField('notes', maxLines: 3),
                             ]),
                             _section('وثيقة التعريف', [
-                              _selectField('idType', required: true),
-                              _selectField('issuingCountry', required: true),
-                              _textField('nationalId', required: true, keyboardType: TextInputType.number),
-                              _textField('employeeIdNumber', keyboardType: TextInputType.number),
-                              _textField('familyNumber', keyboardType: TextInputType.number),
+                              if (_showIdentityField('idType')) _selectField('idType', required: true),
+                              if (_showIdentityField('issuingCountry')) _selectField('issuingCountry', required: true),
+                              if (_showIdentityField('nationalId')) _textField('nationalId', required: true, keyboardType: TextInputType.number),
+                              if (_showIdentityField('employeeIdNumber')) _textField('employeeIdNumber', keyboardType: TextInputType.number),
+                              if (_showIdentityField('familyNumber')) _textField('familyNumber', keyboardType: TextInputType.number),
                             ]),
                             _section('البيانات الوظيفية', [
                               _selectField('employmentType', required: true),
@@ -1205,6 +1261,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                               _textField('email', keyboardType: TextInputType.emailAddress),
                               _textField('mobilePhoneNumber', keyboardType: TextInputType.phone),
                             ]),
+                            ..._buildDiscoveredFields(),
                             const SizedBox(height: 4),
                             SizedBox(
                               height: 54,
@@ -1233,6 +1290,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
               aliases: _liveAliases(),
               onSnapshot: _applyLiveSnapshot,
               onOptions: _applyLiveOptions,
+              onSchema: _applyLiveSchema,
               onStatus: (v) { if (mounted) setState(() => _liveStatus = v); },
             ),
           ),
