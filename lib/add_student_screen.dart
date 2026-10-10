@@ -799,7 +799,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         .map((m) => int.tryParse(m.group(0)!)).whereType<int>().toList();
     int? day, month, year;
     if (digitGroups.length >= 3) {
-      day = digitGroups[0]; month = digitGroups[1]; year = digitGroups[2];
+      if (digitGroups[0] >= 1900) {
+        year = digitGroups[0]; month = digitGroups[1]; day = digitGroups[2];
+      } else {
+        day = digitGroups[0]; month = digitGroups[1]; year = digitGroups[2];
+      }
     } else {
       final cleaned = raw.replaceAll(RegExp(r'[,،;؛/\\|]+'), ' ')
           .replaceAll('-', ' ').replaceAll('ـ', ' ').trim();
@@ -819,7 +823,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   void _applySpokenDate(String key, DateTime date) {
-    final value = '${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year.toString().padLeft(4, '0')}';
+    final value = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
     c[key]?.value = TextEditingValue(
       text: value,
       selection: TextSelection.collapsed(offset: value.length),
@@ -830,11 +834,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   String _dateForApi(String? raw) {
     final value = (raw ?? '').trim();
-    final display = RegExp(r'^(\d{1,2})-(\d{1,2})-(\d{4})$').firstMatch(value);
+    final iso = RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
+    if (iso) return value;
+    final display = RegExp(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$').firstMatch(value);
     if (display != null) {
       return '${display.group(3)}-${display.group(2)!.padLeft(2, '0')}-${display.group(1)!.padLeft(2, '0')}';
     }
-    return value;
+    return value.replaceAll('/', '-');
   }
 
   bool _handleSpecialVoiceResult(String key, String raw, {required bool isFinal}) {
@@ -1447,27 +1453,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     await _startVoiceSession(key);
   }
 
-  // تنسيق التاريخ اليدوي بدقة: أقصى حد 8 أرقام مع إضافة الشرطات '-' تلقائياً (dd-mm-yyyy)
+  // تنسيق التاريخ اليدوي بصيغة yyyy-mm-dd.
   void _onDateTextChanged(String key, String value) {
     final clean = _normalizeDigits(value).replaceAll(RegExp(r'[^\d]'), '');
     final limited = clean.length > 8 ? clean.substring(0, 8) : clean;
-    var formatted = '';
-    
-    if (limited.length > 0) {
-      formatted += limited.substring(0, limited.length >= 2 ? 2 : limited.length);
-    }
-    if (limited.length > 2) {
-      formatted += '-${limited.substring(2, limited.length >= 4 ? 4 : limited.length)}';
-    }
-    if (limited.length > 4) {
-      formatted += '-${limited.substring(4, limited.length)}';
-    }
-
+    var formatted = limited.substring(0, limited.length >= 4 ? 4 : limited.length);
+    if (limited.length > 4) formatted += '-${limited.substring(4, limited.length >= 6 ? 6 : limited.length)}';
+    if (limited.length > 6) formatted += '-${limited.substring(6)}';
     if (formatted != value) {
-      c[key]?.value = TextEditingValue(
-        text: formatted,
-        selection: TextSelection.collapsed(offset: formatted.length),
-      );
+      c[key]?.value = TextEditingValue(text: formatted, selection: TextSelection.collapsed(offset: formatted.length));
     }
     _liveSyncKey.currentState?.pushValues(_liveValues());
   }
@@ -1773,13 +1767,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             const SizedBox(height: 10),
                             _textField('mothersGrandFatherName'),
                             const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(child: _select('gender', required: true)),
-                                const SizedBox(width: 10),
-                                Expanded(child: _textField('dateOfBirth')),
-                              ],
-                            ),
+                            _select('gender', required: true),
+                            const SizedBox(height: 10),
+                            SizedBox(width: double.infinity, child: _textField('dateOfBirth')),
                             const SizedBox(height: 10),
                             Row(
                               children: [

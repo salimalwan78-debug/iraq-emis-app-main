@@ -392,8 +392,10 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     if (type == 'partial' || type == 'result') {
       final raw = (event['text'] ?? event['result'] ?? event['transcript'] ?? '').toString();
       if (raw.isNotEmpty && _activeSpeechOwner != null && _activeSpeechKey != null) {
+        final key = _activeSpeechKey!;
+        final normalized = _isDateField(key) ? _normalizeRecognizedDate(raw) : raw;
         setState(() {
-          _activeSpeechOwner![_activeSpeechKey!] = raw;
+          _activeSpeechOwner![key] = normalized;
           _speechError = null;
         });
       }
@@ -445,14 +447,32 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     }
   }
 
+  String _normalizeRecognizedDate(String raw) {
+    final value = raw.trim().replaceAll('／', '/');
+    var m = RegExp(r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$').firstMatch(value);
+    if (m != null) return '${m.group(1)}-${m.group(2)!.padLeft(2, '0')}-${m.group(3)!.padLeft(2, '0')}';
+    m = RegExp(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$').firstMatch(value);
+    if (m != null) return '${m.group(3)}-${m.group(2)!.padLeft(2, '0')}-${m.group(1)!.padLeft(2, '0')}';
+    return value.replaceAll('/', '-');
+  }
+
+  String _formatDateValue(String value) {
+    final v = value.trim();
+    final iso = RegExp(r'^(\d{4})[-/]?(\d{2})[-/]?(\d{2})$').firstMatch(v);
+    if (iso != null) return '${iso.group(1)}-${iso.group(2)}-${iso.group(3)}';
+    final dmy = RegExp(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$').firstMatch(v);
+    if (dmy != null) return '${dmy.group(3)}-${dmy.group(2)!.padLeft(2, '0')}-${dmy.group(1)!.padLeft(2, '0')}';
+    return v.replaceAll('/', '-');
+  }
+
   String _formatTypedDate(String value) {
     final digits = value.replaceAll(RegExp(r'[^0-9٠-٩۰-۹]'), '')
       .replaceAllMapped(RegExp('[٠-٩]'), (Match m) => String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x0660 + 48))
       .replaceAllMapped(RegExp('[۰-۹]'), (Match m) => String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x06F0 + 48));
     final limited = digits.length > 8 ? digits.substring(0, 8) : digits;
-    var out = limited.substring(0, limited.length >= 2 ? 2 : limited.length);
-    if (limited.length > 2) out += '-${limited.substring(2, limited.length >= 4 ? 4 : limited.length)}';
-    if (limited.length > 4) out += '-${limited.substring(4)}';
+    var out = limited.substring(0, limited.length >= 4 ? 4 : limited.length);
+    if (limited.length > 4) out += '-${limited.substring(4, limited.length >= 6 ? 6 : limited.length)}';
+    if (limited.length > 6) out += '-${limited.substring(6)}';
     return out;
   }
 
@@ -557,7 +577,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         padding: const EdgeInsets.only(bottom: 15),
         child: TextFormField(
           key: ValueKey('date-$key-${value ?? ''}'),
-          initialValue: value?.toString() ?? '',
+          initialValue: _formatDateValue(value?.toString() ?? ''),
           keyboardType: TextInputType.number,
           inputFormatters: [TextInputFormatter.withFunction((oldValue, newValue) { final formatted = _formatTypedDate(newValue.text); return TextEditingValue(text: formatted, selection: TextSelection.collapsed(offset: formatted.length)); })],
           onChanged: (v) => owner[key] = v,
@@ -838,22 +858,29 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
   List<Widget> _studentGrid(List<Widget> children) {
     final rows = <Widget>[];
-    for (var i = 0; i < children.length; i += 2) {
-      final first = children[i];
-      final second = i + 1 < children.length ? children[i + 1] : const SizedBox();
-      rows.add(
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: first),
-            const SizedBox(width: 10),
-            Expanded(child: second),
-          ],
-        ),
-      );
-      if (i + 2 < children.length) {
-        rows.add(const SizedBox(height: 12));
+    for (var i = 0; i < children.length;) {
+      // Date inputs occupy a full row so the complete yyyy-mm-dd value is visible.
+      final current = children[i];
+      final isDate = current is TextFormField && current.key is ValueKey &&
+          (current.key as ValueKey).value.toString().startsWith('date-');
+      if (isDate) {
+        rows.add(SizedBox(width: double.infinity, child: current));
+        i++;
+      } else {
+        final next = i + 1 < children.length ? children[i + 1] : const SizedBox();
+        final nextIsDate = next is TextFormField && next.key is ValueKey &&
+            (next.key as ValueKey).value.toString().startsWith('date-');
+        if (nextIsDate) {
+          rows.add(SizedBox(width: double.infinity, child: current));
+          i++;
+        } else {
+          rows.add(Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: current), const SizedBox(width: 10), Expanded(child: next),
+          ]));
+          i += 2;
+        }
       }
+      if (i < children.length) rows.add(const SizedBox(height: 12));
     }
     return rows;
   }
