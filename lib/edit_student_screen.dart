@@ -396,21 +396,16 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
       final key = _activeSpeechKey!;
       if (_isDateField(key)) {
-        // Partial speech results often contain only fragments of a date.
-        // Never replace the field until a complete, valid date is recognized.
-        final normalized = _normalizeRecognizedDate(raw);
-        if (normalized == null) return;
-        final controller = _dateControllers[key];
-        if (controller != null) {
-          controller.value = TextEditingValue(
-            text: normalized,
-            selection: TextSelection.collapsed(offset: normalized.length),
-          );
-        }
-        setState(() {
-          _activeSpeechOwner![key] = normalized;
-          _speechError = null;
-        });
+        // Same date interpretation as Add Student: parse Arabic spoken numbers
+        // and digit groups, then apply only a complete valid date.
+        final parsed = _parseSpokenDate(raw, key);
+        if (parsed == null) return;
+        _applySpokenDate(key, parsed);
+        final normalized = '${parsed.year.toString().padLeft(4, '0')}-'
+            '${parsed.month.toString().padLeft(2, '0')}-'
+            '${parsed.day.toString().padLeft(2, '0')}';
+        _activeSpeechOwner![key] = normalized;
+        _speechError = null;
       } else {
         setState(() {
           _activeSpeechOwner![key] = raw;
@@ -465,39 +460,296 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     }
   }
 
-  String? _normalizeRecognizedDate(String raw) {
-    final value = raw.trim().replaceAll('／', '/').replaceAll('٫', '.');
-    var m = RegExp(r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$').firstMatch(value);
-    if (m != null) {
-      final year = int.parse(m.group(1)!);
-      var month = int.parse(m.group(2)!);
-      var day = int.parse(m.group(3)!);
-
-      // Correct yyyy-dd-MM only when the middle component cannot be a month.
-      if (month > 12 && month <= 31 && day >= 1 && day <= 12) {
-        final temp = month;
-        month = day;
-        day = temp;
+  String _normalizeDigits(String value) {
+    const arabicIndic = '٠١٢٣٤٥٦٧٨٩';
+    const easternArabicIndic = '۰۱۲۳۴۵۶۷۸۹';
+    final out = StringBuffer();
+    for (final ch in value.runes) {
+      final c = String.fromCharCode(ch);
+      final a = arabicIndic.indexOf(c);
+      if (a >= 0) {
+        out.write(a);
+        continue;
       }
-      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-      final date = DateTime(year, month, day);
-      if (date.year != year || date.month != month || date.day != day) return null;
-      return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+      final e = easternArabicIndic.indexOf(c);
+      if (e >= 0) {
+        out.write(e);
+        continue;
+      }
+      out.write(c);
     }
-
-    m = RegExp(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$').firstMatch(value);
-    if (m != null) {
-      // Spoken day-month-year is normalized to the app's yyyy-MM-dd format.
-      final day = int.parse(m.group(1)!);
-      final month = int.parse(m.group(2)!);
-      final year = int.parse(m.group(3)!);
-      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-      final date = DateTime(year, month, day);
-      if (date.year != year || date.month != month || date.day != day) return null;
-      return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
-    }
-    return null;
+    return out.toString();
   }
+
+  bool get _isNationalId => c['idType']!.text == '12';
+  bool get _isCivilId => c['idType']!.text == '3';
+  bool get _isBirthCertificate => c['idType']!.text == '22';
+  bool get _isOtherId => c['idType']!.text == '16';
+
+  void _showVoiceMessage(String message) {
+    if (!mounted) return;
+    setState(() => _speechError = message);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.orange),
+    );
+  }
+
+  String _normalizeArabicForMatch(String value) {
+    var out = value.toLowerCase().trim();
+    out = out.replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '');
+    out = out.replaceAll('أ', 'ا').replaceAll('إ', 'ا').replaceAll('آ', 'ا');
+    out = out.replaceAll('ى', 'ي').replaceAll('ة', 'ه');
+    out = out.replaceAll(RegExp(r'[^\u0600-\u06FFa-z0-9 ]'), ' ');
+    out = out.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return out;
+  }
+
+  List<Map<String, dynamic>> _dropdownOptionsForVoice(String key) {
+    final all = <Map<String, dynamic>>[];
+    switch (key) {
+      case 'stageId': all.addAll(stages); break;
+      case 'classRoomId': all.addAll(rooms); break;
+      case 'addressCountry': all.addAll(_addressCountries); break;
+      case 'addressGovernorate': all.addAll(_addressGovernorates); break;
+      case 'addressDistrict': all.addAll(_addressDistricts); break;
+      case 'isCoveredBySocialWelfare':
+        all.addAll(const [
+          {'value': false, 'displayName': 'لا'},
+          {'value': true, 'displayName': 'نعم'},
+        ]);
+        break;
+      default: all.addAll(options[key] ?? []);
+    }
+    if (key == 'studyLanguage') {
+      all.add({'value': 'العربية', 'displayName': 'العربية'});
+    }
+    final current = switch (key) {
+      'stageId' => stageId ?? '',
+      'classRoomId' => roomId ?? '',
+      'addressCountry' => _addressCountryId ?? '',
+      'addressGovernorate' => _addressGovernorateId ?? '',
+      'addressDistrict' => _addressDistrictId ?? '',
+      'isCoveredBySocialWelfare' => _socialWelfare.toString(),
+      _ => c[key]?.text.trim() ?? '',
+    };
+    if (current.isNotEmpty && !all.any((item) => _value(item) == current)) {
+      all.add({'value': current, 'displayName': current});
+    }
+    final seen = <String>{};
+    return all.where((item) {
+      final value = _value(item).trim();
+      return value.isNotEmpty && seen.add(value);
+    }).toList();
+  }
+
+  void _applyDropdownVoiceChoice(String key, Map<String, dynamic> item) {
+    final value = _value(item);
+    switch (key) {
+      case 'stageId':
+        unawaited(_stageChanged(value));
+        break;
+      case 'classRoomId':
+        roomId = value;
+        _focusLive('classRoomId');
+        break;
+      case 'addressCountry':
+        _addressCountryId = value;
+        _setAddressGovernorates(item);
+        _focusLive('addressCountry');
+        break;
+      case 'addressGovernorate':
+        _addressGovernorateId = value;
+        _setAddressDistricts(item);
+        _focusLive('addressGovernorate');
+        break;
+      case 'addressDistrict':
+        _addressDistrictId = value;
+        _focusLive('addressDistrict');
+        break;
+      case 'isCoveredBySocialWelfare':
+        _socialWelfare = value == 'true' || _normalizeArabicForMatch(_text(item)) == _normalizeArabicForMatch('نعم');
+        _focusLive('isCoveredBySocialWelfare');
+        break;
+      default:
+        c[key]?.text = value;
+        _focusLive(key);
+    }
+    _liveSyncKey.currentState?.pushValues(_liveValues());
+    if (mounted) setState(() {});
+  }
+
+  Widget _dropdownVoiceMic(String key) => Listener(
+    behavior: HitTestBehavior.opaque,
+    onPointerDown: (_) => _markMicPointerDown(),
+    child: IconButton(
+      tooltip: 'اختيار ${labels[key] ?? key} بالصوت',
+      onPressed: () => _startDropdownVoice(key),
+      icon: Icon(
+        _speechListening && _activeVoiceField == key ? Icons.mic_rounded : Icons.mic_none_rounded,
+        color: _speechListening && _activeVoiceField == key ? Colors.red : null,
+      ),
+    ),
+  );
+
+  Map<String, dynamic>? _matchDropdownOption(String key, String spoken) {
+    var target = _normalizeArabicForMatch(spoken);
+    if (target.isEmpty) return null;
+    target = target.replaceAll(RegExp(r'^(?:اختيار|القيمة|هي|هو)\s+'), '').trim();
+    final items = _dropdownOptionsForVoice(key);
+    if (items.isEmpty) return null;
+
+    String compact(String value) => _normalizeArabicForMatch(value)
+        .replaceAll(RegExp(r'\bال'), '')
+        .replaceAll(' ', '');
+
+    final exact = items.where((item) {
+      final label = _normalizeArabicForMatch(_text(item));
+      final value = _normalizeArabicForMatch(_value(item));
+      return label == target || value == target || compact(label) == compact(target);
+    }).toList();
+    if (exact.length == 1) return exact.first;
+    if (exact.length > 1) return exact.first;
+
+    final targetTokens = target.split(' ').where((x) => x.length >= 2).toSet();
+    if (targetTokens.isEmpty) return items.firstOrNull;
+    
+    int bestScore = 0;
+    Map<String, dynamic>? best;
+    for (final item in items) {
+      final label = _normalizeArabicForMatch(_text(item));
+      final value = _normalizeArabicForMatch(_value(item));
+      if (label.isEmpty) continue;
+      final labelCompact = compact(label);
+      final targetCompact = compact(target);
+      int score = 0;
+      if (labelCompact.length >= 3 && targetCompact.length >= 3 &&
+          (labelCompact.contains(targetCompact) || targetCompact.contains(labelCompact))) {
+        score = 100 + (labelCompact.length < targetCompact.length ? labelCompact.length : targetCompact.length);
+      } else {
+        final tokens = label.split(' ').where((x) => x.length >= 2).toSet();
+        final overlap = targetTokens.intersection(tokens).length;
+        if (overlap > 0) {
+          score = overlap * 10 + ((overlap == tokens.length) ? 3 : 0);
+        }
+        if (value.isNotEmpty && compact(value) == targetCompact) score += 100;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = item;
+      }
+    }
+    return best ?? (items.isNotEmpty ? items.first : null);
+  }
+
+  String _normalizeSpokenWord(String word) {
+    var out = _normalizeArabicForMatch(word).replaceAll(' ', '');
+    const exact = {'واحد', 'واحدة', 'واحده'};
+    if (out.startsWith('و') && out.length > 1 && !exact.contains(out)) out = out.substring(1);
+    return out;
+  }
+
+  int? _smallArabicNumber(String raw) {
+    final word = _normalizeSpokenWord(raw);
+    const units = <String, int>{
+      'صفر': 0, 'واحد': 1, 'واحدة': 1, 'واحده': 1, 'احد': 1,
+      'اثنان': 2, 'اثنين': 2, 'اثنتان': 2, 'اثنتين': 2, 'اثنتا': 2,
+      'اثنتي': 2, 'اثن': 2, 'ثنين': 2, 'ثنتين': 2,
+      'ثلاثة': 3, 'ثلاث': 3, 'ثلاثه': 3, 'اربعة': 4, 'اربع': 4,
+      'اربعه': 4, 'أربعة': 4, 'خمسة': 5, 'خمس': 5, 'خمسه': 5,
+      'ستة': 6, 'سته': 6, 'ست': 6, 'سبعة': 7, 'سبع': 7, 'سبعه': 7,
+      'ثمانية': 8, 'ثماني': 8, 'تمانية': 8, 'تمانيه': 8, 'ثمنية': 8,
+      'تسعة': 9, 'تسع': 9, 'تسعه': 9, 'عشرة': 10, 'عشر': 10,
+      'الفين': 2000, 'ألفين': 2000,
+      'مائة': 100, 'مائه': 100, 'مئة': 100, 'ميه': 100,
+      'مائتين': 200, 'مئتين': 200, 'ثلاثمائة': 300, 'ثلاثمائه': 300,
+      'اربعمائة': 400, 'اربعمائه': 400, 'أربعمائة': 400, 'خمسمائة': 500,
+      'خمسمائه': 500, 'ستمائة': 600, 'ستمائه': 600, 'سبعمائة': 700,
+      'سبعمائه': 700, 'ثمانمائة': 800, 'ثمانمائه': 800,
+      'تسعمائة': 900, 'تسعمائه': 900,
+      'احدعشر': 11, 'احدعشرة': 11, 'اثناشر': 12, 'اثنعشر': 12,
+      'عشرين': 20, 'عشرون': 20, 'ثلاثين': 30, 'ثلاثون': 30,
+      'اربعين': 40, 'اربعون': 40, 'خمسين': 50, 'خمسون': 50,
+      'ستين': 60, 'ستون': 60, 'سبعين': 70, 'سبعون': 70,
+      'ثمانين': 80, 'ثمانون': 80, 'تسعين': 90, 'تسعون': 90,
+    };
+    if (units.containsKey(word)) return units[word];
+    final digits = _normalizeDigits(word);
+    return RegExp(r'^\d{1,4}$').hasMatch(digits) ? int.tryParse(digits) : null;
+  }
+
+  int? _arabicYearValue(List<String> words) {
+    var total = 0;
+    var found = false;
+    for (var i = 0; i < words.length; i++) {
+      final word = _normalizeSpokenWord(words[i]);
+      if (word.isEmpty || word == 'و') continue;
+      if (word == 'الفين' || word == 'ألفين') { total += 2000; found = true; continue; }
+      if (word == 'الف' || word == 'الاف') { total += 1000; found = true; continue; }
+      if (word == 'مائة' || word == 'مائه' || word == 'مئه' || word == 'مئة' || word == 'ميه') { total += 100; found = true; continue; }
+      const hundreds = <String, int>{
+        'مائتين': 200, 'مئتين': 200, 'ثلاثمائه': 300, 'اربعمائه': 400,
+        'خمسمائه': 500, 'ستمائه': 600, 'سبعمائه': 700, 'ثمانمائه': 800,
+        'تسعمائه': 900,
+      };
+      if (hundreds.containsKey(word)) { total += hundreds[word]!; found = true; continue; }
+
+      final next = i + 1 < words.length ? _normalizeSpokenWord(words[i + 1]) : '';
+      const hundredWords = {'مائة', 'مائه', 'مئه', 'مئة', 'ميه'};
+      final leadingNumber = _smallArabicNumber(word);
+      if (leadingNumber != null && leadingNumber >= 2 && leadingNumber <= 9 && hundredWords.contains(next)) {
+        total += leadingNumber * 100;
+        found = true;
+        i++;
+        continue;
+      }
+
+      final n = _smallArabicNumber(word);
+      if (n != null) { total += n; found = true; continue; }
+      final numeric = RegExp(r'\d{3,4}').firstMatch(_normalizeDigits(word));
+      if (numeric != null) { total += int.parse(numeric.group(0)!); found = true; }
+    }
+    return found ? total : null;
+  }
+
+  DateTime? _parseSpokenDate(String raw, String key) {
+    final normalizedDigits = _normalizeDigits(raw);
+    final digitGroups = RegExp(r'\d+').allMatches(normalizedDigits)
+        .map((m) => int.tryParse(m.group(0)!)).whereType<int>().toList();
+    int? day, month, year;
+    if (digitGroups.length >= 3) {
+      if (digitGroups[0] >= 1900) {
+        year = digitGroups[0]; month = digitGroups[1]; day = digitGroups[2];
+      } else {
+        day = digitGroups[0]; month = digitGroups[1]; year = digitGroups[2];
+      }
+    } else {
+      final cleaned = raw.replaceAll(RegExp(r'[,،;؛/\\|]+'), ' ')
+          .replaceAll('-', ' ').replaceAll('ـ', ' ').trim();
+      final words = cleaned.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      if (words.length < 3) return null;
+      day = _smallArabicNumber(words[0]);
+      month = _smallArabicNumber(words[1]);
+      year = _arabicYearValue(words.sublist(2));
+    }
+    if (day == null || month == null || year == null) return null;
+    if (year < 100) year += year >= 50 ? 1900 : 2000;
+    if (year < 1900 || year > DateTime.now().year || month < 1 || month > 12 || day < 1 || day > 31) return null;
+    final date = DateTime(year, month, day);
+    if (date.year != year || date.month != month || date.day != day) return null;
+    if (key == 'dateOfBirth' && date.isAfter(DateTime.now())) return null;
+    return date;
+  }
+
+  void _applySpokenDate(String key, DateTime date) {
+    final value = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    c[key]?.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+    _liveSyncKey.currentState?.pushValues(_liveValues());
+    if (mounted) setState(() {});
+  }
+
 
   String _formatDateValue(String value) {
     final v = value.trim();
@@ -628,7 +880,23 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
             () => TextEditingController(text: _formatDateValue(value?.toString() ?? '')),
           ),
           keyboardType: TextInputType.number,
-          inputFormatters: [TextInputFormatter.withFunction((oldValue, newValue) { final formatted = _formatTypedDate(newValue.text); return TextEditingValue(text: formatted, selection: TextSelection.collapsed(offset: formatted.length)); })],
+          inputFormatters: [TextInputFormatter.withFunction((oldValue, newValue) {
+            final cursorOffset = newValue.selection.baseOffset.clamp(0, newValue.text.length);
+            final digitsBeforeCursor = newValue.text
+                .substring(0, cursorOffset)
+                .replaceAll(RegExp(r'[^0-9٠-٩۰-۹]'), '')
+                .length;
+            final formatted = _formatTypedDate(newValue.text);
+            var newCursor = digitsBeforeCursor;
+            if (digitsBeforeCursor > 4) newCursor++;
+            if (digitsBeforeCursor > 6) newCursor++;
+            newCursor = newCursor.clamp(0, formatted.length);
+            return TextEditingValue(
+              text: formatted,
+              selection: TextSelection.collapsed(offset: newCursor),
+              composing: TextRange.empty,
+            );
+          })],
           onChanged: (v) => owner[key] = v,
           onTap: () => _focusLive(key),
           style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
@@ -910,6 +1178,12 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     for (var i = 0; i < children.length;) {
       // Date inputs occupy a full row so the complete yyyy-mm-dd value is visible.
       final current = children[i];
+      // A single field in a section occupies the full row. This is especially
+      // important for the birth-date field so yyyy-MM-dd stays readable.
+      if (i == children.length - 1) {
+        rows.add(SizedBox(width: double.infinity, child: current));
+        i++;
+      } else {
       final isDate = current is TextFormField && current.key is ValueKey &&
           (current.key as ValueKey).value.toString().startsWith('date-');
       if (isDate) {
@@ -928,6 +1202,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
           ]));
           i += 2;
         }
+      }
       }
       if (i < children.length) rows.add(const SizedBox(height: 12));
     }
