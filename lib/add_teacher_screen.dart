@@ -192,11 +192,21 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     if (changed && mounted) setState(() {});
   }
 
-  void _applyLiveOptions(Map<String, List<String>> incoming) {
+  void _applyLiveOptions(Map<String, List<Map<String, dynamic>>> incoming) {
     bool changed = false;
     incoming.forEach((key, values) {
       if (values.isEmpty) return;
-      options[key] = values.map((v) => <String, dynamic>{'value': v, 'displayName': v}).toList();
+      final existing = options[key] ?? <Map<String, dynamic>>[];
+      final merged = <Map<String, dynamic>>[...existing.where((o) => o['_liveOnly'] != true)];
+      for (final option in values) {
+        final value = option['value'] ?? option['id'] ?? option['displayName'] ?? option['label'];
+        final label = option['displayName'] ?? option['label'] ?? option['text'] ?? value;
+        if ('$value'.trim().isEmpty) continue;
+        if (!merged.any((o) => '${o['value'] ?? o['id'] ?? ''}' == '$value' || '${o['displayName'] ?? o['label'] ?? ''}' == '$label')) {
+          merged.add({'value': value, 'displayName': label, '_liveOnly': true});
+        }
+      }
+      options[key] = merged;
       changed = true;
     });
     if (changed && mounted) setState(() {});

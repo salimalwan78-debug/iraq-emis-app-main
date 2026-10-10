@@ -187,12 +187,34 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     if (changed && mounted) setState(() {});
   }
 
-  void _applyLiveOptions(Map<String, List<String>> incoming) {
+  String _canonicalLiveKey(String rawKey, [String label = '']) {
+    String norm(String value) => value
+        .replaceAll(RegExp(r'[\u064B-\u065F\u0670]'), '')
+        .replaceAll(RegExp(r'\s+'), '')
+        .toLowerCase();
+    final wantedKey = norm(rawKey);
+    final wantedLabel = norm(label);
+    for (final entry in _labels.entries) {
+      if (norm(entry.key) == wantedKey ||
+          norm(entry.value) == wantedKey ||
+          (wantedLabel.isNotEmpty && norm(entry.value) == wantedLabel)) {
+        return entry.key;
+      }
+    }
+    return rawKey.trim();
+  }
+
+  void _applyLiveOptions(Map<String, List<Map<String, dynamic>>> incoming) {
     bool changed = false;
-    incoming.forEach((key, values) {
+    incoming.forEach((rawKey, values) {
       if (values.isEmpty) return;
+      final key = _canonicalLiveKey(rawKey);
       final existing = _options[key] ?? <Map<String, dynamic>>[];
-      final live = values.map((label) => <String, dynamic>{'value': label, 'displayName': label}).toList();
+      final live = values.map((option) => <String, dynamic>{
+        'value': option['value'] ?? option['id'] ?? option['displayName'] ?? option['label'],
+        'displayName': option['displayName'] ?? option['label'] ?? option['text'] ?? option['value'],
+        '_liveOnly': true,
+      }).where((o) => '${o['value'] ?? ''}'.trim().isNotEmpty).toList();
       // Keep API-backed IDs/labels when present, but replace prior live-only
       // entries so options from a previous dependent selection do not linger.
       final apiBacked = existing.where((o) => o['_liveOnly'] != true).toList();
@@ -214,20 +236,26 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     // A schema snapshot describes the current EMIS form, not an append-only
     // list. Remove fields that disappeared after changing identity/employment
     // type so stale fields are not left visible in the app.
-    final incomingKeys = incoming.keys.map((k) => k.trim()).where((k) => k.isNotEmpty).toSet();
+    final canonicalIncoming = <String, Map<String, dynamic>>{};
+    incoming.forEach((rawKey, rawMeta) {
+      final meta = Map<String, dynamic>.from(rawMeta);
+      final key = _canonicalLiveKey(rawKey, '${meta['label'] ?? ''}');
+      if (key.isNotEmpty) canonicalIncoming[key] = meta;
+    });
+    final incomingKeys = canonicalIncoming.keys.toSet();
     final removed = _liveSchema.keys.where((key) => !incomingKeys.contains(key)).toList();
     for (final key in removed) {
       _liveSchema.remove(key);
       if (_liveDiscoveredFields.remove(key)) {
-        _labels.remove(key);
-        _options.remove(key);
-        _c.remove(key)?.dispose();
+        if (!_commonOptionEndpoints.containsKey(key) && !_labels.containsKey(key)) {
+          _options.remove(key);
+          _c.remove(key)?.dispose();
+        }
       }
       changed = true;
     }
-    for (final entry in incoming.entries) {
-      final key = entry.key.trim();
-      if (key.isEmpty) continue;
+    for (final entry in canonicalIncoming.entries) {
+      final key = entry.key;
       final meta = Map<String, dynamic>.from(entry.value);
       final previousMeta = _liveSchema[key];
       final previousShape = previousMeta == null ? null : (Map<String, dynamic>.from(previousMeta)..remove('value'));
@@ -257,9 +285,16 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           }
         }
         if (parsed.isNotEmpty) {
-          final oldJson = jsonEncode(_options[key] ?? <Map<String, dynamic>>[]);
-          _options[key] = parsed;
-          if (oldJson != jsonEncode(parsed)) changed = true;
+          final existing = _options[key] ?? <Map<String, dynamic>>[];
+          final merged = <Map<String, dynamic>>[...existing.where((o) => o['_liveOnly'] != true)];
+          for (final item in parsed) {
+            if (!merged.any((o) => '${_optionValue(o)}' == '${_optionValue(item)}' || _optionText(o).trim() == _optionText(item).trim())) {
+              merged.add({...item, '_liveOnly': true});
+            }
+          }
+          final oldJson = jsonEncode(existing);
+          _options[key] = merged;
+          if (oldJson != jsonEncode(merged)) changed = true;
         }
       }
     }
@@ -586,6 +621,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     for (final key in _liveDiscoveredFields) {
       final meta = _liveSchema[key] ?? const <String, dynamic>{};
       final type = '${meta['type'] ?? 'text'}';
+      // Known fields already have a native place in the form. Their live
+      // schema updates type/options there instead of creating a duplicate card.
+      if (_labels.containsKey(key) && _c.containsKey(key)) continue;
+      final label = '${meta['label'] ?? _labels[key] ?? key}'.trim();
+      if (label.isEmpty || RegExp(r'^(arrow_drop_down|expand_more|keyboard_arrow_down)$', caseSensitive: false).hasMatch(label)) continue;
       if (type == 'select') {
         fields.add(_selectField(key, required: meta['required'] == true));
       } else {

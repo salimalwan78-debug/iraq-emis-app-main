@@ -15,7 +15,7 @@ class EmisLiveSync extends StatefulWidget {
   final String? recordId;
   final Map<String, List<String>> aliases;
   final ValueChanged<Map<String, String>> onSnapshot;
-  final ValueChanged<Map<String, List<String>>>? onOptions;
+  final ValueChanged<Map<String, List<Map<String, dynamic>>>>? onOptions;
   final ValueChanged<Map<String, Map<String, dynamic>>>? onSchema;
   final ValueChanged<String>? onStatus;
 
@@ -78,12 +78,22 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
             if (type == 'options') {
               final raw = decoded['options'];
               if (raw is! Map) return;
-              final result = <String, List<String>>{};
+              final result = <String, List<Map<String, dynamic>>>{};
               for (final entry in raw.entries) {
                 final key = '${entry.key}'.trim();
                 final list = entry.value;
                 if (key.isEmpty || list is! List) continue;
-                final values = list.map((v) => '$v'.trim()).where((v) => v.isNotEmpty).toSet().toList();
+                final values = <Map<String, dynamic>>[];
+                final seen = <String>{};
+                for (final item in list) {
+                  final option = item is Map
+                      ? Map<String, dynamic>.from(item)
+                      : <String, dynamic>{'value': '$item', 'label': '$item'};
+                  final value = '${option['value'] ?? option['id'] ?? option['label'] ?? ''}'.trim();
+                  final label = '${option['label'] ?? option['displayName'] ?? option['text'] ?? value}'.trim();
+                  if (value.isEmpty || label.isEmpty || !seen.add('$value|$label')) continue;
+                  values.add({'value': value, 'displayName': label});
+                }
                 if (values.isNotEmpty) result[key] = values;
               }
               if (result.isNotEmpty) widget.onOptions?.call(result);
@@ -228,9 +238,14 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         const parent=el.closest('.q-field');
         if(parent){
           const q=parent.querySelector('.q-field__label,.q-field__native-label,[data-label]');
-          if(q && (q.innerText || q.textContent)) return String(q.innerText || q.textContent).trim();
+          if(q){
+            const clone=q.cloneNode(true);
+            clone.querySelectorAll('i,svg,.q-icon,[class*=icon],button').forEach(n=>n.remove());
+            const label=String(clone.innerText || clone.textContent || '').replace(/\s+/g,' ').trim();
+            if(label && !/^(arrow_drop_down|expand_more|keyboard_arrow_down)$/i.test(label)) return label;
+          }
           const aria=parent.getAttribute('aria-label');
-          if(aria) return aria.trim();
+          if(aria && !/^(arrow_drop_down|expand_more|keyboard_arrow_down)$/i.test(aria.trim())) return aria.trim();
         }
       } catch(e) {}
       try {
@@ -379,38 +394,42 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         field.scrollIntoView({block:'center',inline:'nearest'});
         const clickable=field.querySelector('.q-field__control,.q-field__native') || field;
         clickable.click();
-        // EMIS loads several option lists asynchronously. Wait for the menu,
-        // not a fixed short delay that often captured only the selected item.
         let menuItems=[];
-        for(let attempt=0;attempt<12;attempt++){
+        for(let attempt=0;attempt<30;attempt++){
           await sleep(100);
           menuItems=[...document.querySelectorAll('.q-menu .q-item, .q-menu [role="option"], [role="listbox"] [role="option"]')];
           if(menuItems.length) break;
         }
-        const values=new Set();
+        const values=[];
+        const seen=new Set();
         const collect=()=>{
           [...document.querySelectorAll('.q-menu .q-item, .q-menu [role="option"], [role="listbox"] [role="option"]')]
             .forEach(x=>{
-              const text=String(x.innerText || x.textContent || '').replace(/\s+/g,' ').trim();
-              if(text && !/^(اختر|select|search)\$/i.test(text)) values.add(text);
+              const clone=x.cloneNode(true);
+              clone.querySelectorAll('i,svg,.q-icon,[class*=icon],button').forEach(n=>n.remove());
+              const label=String(clone.innerText || clone.textContent || '').replace(/\s+/g,' ').trim();
+              if(!label || /^(اختر|select|search|arrow_drop_down|expand_more)$/i.test(label)) return;
+              const value=String(x.getAttribute('data-value') || x.getAttribute('data-id') || x.getAttribute('value') || x.getAttribute('aria-valuetext') || label).trim();
+              const signature=value+'|'+label;
+              if(!seen.has(signature)){seen.add(signature);values.push({value:value,label:label});}
             });
         };
         collect();
-        // Quasar may virtualize long lists; scroll the menu and accumulate
-        // visible rows so the app receives more than the currently selected row.
         const menu=document.querySelector('.q-menu .q-virtual-scroll__content, .q-menu .scroll, .q-menu [role="listbox"]');
         if(menu){
-          for(let i=0;i<10;i++){
-            const before=values.size;
-            menu.scrollTop=menu.scrollTop+Math.max(160,menu.clientHeight*0.8);
-            await sleep(100);
+          let unchanged=0;
+          for(let i=0;i<80 && unchanged<5;i++){
+            const before=seen.size;
+            menu.scrollTop=Math.min(menu.scrollTop+Math.max(160,menu.clientHeight*0.75),menu.scrollHeight);
+            await sleep(120);
             collect();
-            if(menu.scrollTop+menu.clientHeight>=menu.scrollHeight-2 && values.size===before) break;
+            unchanged=seen.size===before?unchanged+1:0;
+            if(menu.scrollTop+menu.clientHeight>=menu.scrollHeight-2 && unchanged>=2) break;
           }
         }
         document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
         await sleep(80);
-        return [...values];
+        return values;
       } catch(e) {
         try { document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); } catch(_) {}
         return [];
