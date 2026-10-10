@@ -16,6 +16,7 @@ class EmisLiveSync extends StatefulWidget {
   final Map<String, List<String>> aliases;
   final ValueChanged<Map<String, String>> onSnapshot;
   final ValueChanged<Map<String, List<String>>>? onOptions;
+  final ValueChanged<Map<String, Map<String, dynamic>>>? onSchema;
   final ValueChanged<String>? onStatus;
 
   const EmisLiveSync({
@@ -27,6 +28,7 @@ class EmisLiveSync extends StatefulWidget {
     required this.aliases,
     required this.onSnapshot,
     this.onOptions,
+    this.onSchema,
     this.recordId,
     this.onStatus,
   });
@@ -59,6 +61,18 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
             }
             if (type == 'focus') {
               widget.onStatus?.call('مزامنة الحقل: ${decoded['field'] ?? ''}');
+              return;
+            }
+            if (type == 'schema') {
+              final raw = decoded['fields'];
+              if (raw is! Map) return;
+              final schema = <String, Map<String, dynamic>>{};
+              for (final entry in raw.entries) {
+                final key = '${entry.key}'.trim();
+                if (key.isEmpty || entry.value is! Map) continue;
+                schema[key] = Map<String, dynamic>.from(entry.value as Map);
+              }
+              if (schema.isNotEmpty) widget.onSchema?.call(schema);
               return;
             }
             if (type == 'options') {
@@ -184,7 +198,8 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       mode: $mode,
       entity: $entity,
       opened: false,
-      last: ''
+      last: '',
+      schemaLast: ''
     };
 
     const send = (type, payload) => {
@@ -237,7 +252,10 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         const aa=(aliases[k]||[]).map(norm);
         if(cs.some(c=>aa.some(a=>c===a || c.includes(a) || a.includes(c)))) return k;
       }
-      return '';
+      const raw=(el.getAttribute('name') || el.getAttribute('id') || el.getAttribute('data-cy') || el.getAttribute('data-test') || '').trim();
+      if(!raw) return '';
+      const cleaned=raw.replace(/\[(\d+)\]/g,'_$1').replace(/[^a-zA-Z0-9_]/g,'_').replace(/_+/g,'_').replace(/^_+|_+$/g,'');
+      return cleaned ? cleaned.charAt(0).toLowerCase()+cleaned.slice(1) : '';
     };
 
     const readValue = (el) => {
@@ -262,12 +280,22 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         const v=String(readValue(el)||'');
         if(!(key in fields) || v.trim()!=='') fields[key]=v;
       });
-      const serial=JSON.stringify(fields);
+      const schema={};
+      document.querySelectorAll('input,textarea,select,[contenteditable="true"]').forEach(el=>{
+        const key=fieldKey(el); if(!key) return;
+        const tag=String(el.tagName||'').toLowerCase();
+        const q=el.closest ? el.closest('.q-field') : null;
+        const label=textOf(el) || (q && q.querySelector('.q-field__label') ? q.querySelector('.q-field__label').innerText : '') || key;
+        let kind=(tag==='select' || (q && q.classList.contains('q-select'))) ? 'select' : (tag==='textarea' ? 'textarea' : (String(el.type||'').toLowerCase()==='date' ? 'date' : 'text'));
+        let opts=[];
+        if(tag==='select') opts=[...el.options].map(o=>({value:String(o.value||o.textContent||'').trim(),label:String(o.textContent||'').trim()})).filter(o=>o.label);
+        schema[key]={label:String(label).trim(),type:kind,required:!!el.required || String(el.getAttribute('aria-required')||'')==='true',value:String(readValue(el)||''),options:opts};
+      });
       const b=window.__EMIS_APP_BRIDGE__;
-      if(serial!==b.last){
-        b.last=serial;
-        send('snapshot',{fields:fields,url:location.href});
-      }
+      const schemaSerial=JSON.stringify(schema);
+      if(schemaSerial!==b.schemaLast){ b.schemaLast=schemaSerial; if(Object.keys(schema).length) send('schema',{fields:schema,url:location.href}); }
+      const serial=JSON.stringify(fields);
+      if(serial!==b.last){ b.last=serial; send('snapshot',{fields:fields,url:location.href}); }
     };
 
     const nativeSet = (el,value) => {
@@ -323,6 +351,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       return out;
     };
     window.__EMIS_APP_BRIDGE__.collectOptions = (keys) => collectOptions(keys || []);
+    window.__EMIS_APP_BRIDGE__.scanNow = () => scan();
 
     window.__EMIS_APP_BRIDGE__.setFields = (values) => {
       const vals=values || {};
@@ -489,6 +518,13 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
   try { if(window.__EMIS_APP_BRIDGE__ && window.__EMIS_APP_BRIDGE__.collectOptions) window.__EMIS_APP_BRIDGE__.collectOptions($encoded); } catch(e) {}
 })();''';
     try { await controller.runJavaScript(js); } catch (_) {}
+  }
+
+  Future<void> refreshSchema() async {
+    if (!_ready) return;
+    try {
+      await controller.runJavaScript('''(function(){try{if(window.__EMIS_APP_BRIDGE__ && window.__EMIS_APP_BRIDGE__.scanNow) window.__EMIS_APP_BRIDGE__.scanNow();}catch(e){}})();''');
+    } catch (_) {}
   }
 
   Future<void> pushValues(Map<String, String> values) async {
