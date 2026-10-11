@@ -158,40 +158,51 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
     return null;
   }
 
-  bool _gradeBelongsToExam(Map<dynamic, dynamic> grade, String selectedExamId) {
-    final direct = grade['examId'] ?? grade['exam_id'];
-    if (direct != null && '$direct' == selectedExamId) return true;
-    final nested = grade['exam'];
-    if (nested is Map) {
-      final nestedId = nested['id'] ?? nested['examId'] ?? nested['value'];
-      if (nestedId != null && '$nestedId' == selectedExamId) return true;
-    }
-    return false;
-  }
+  // EMIS's MarksManagementTable determines the ignored state from the grade
+  // sentinel for the selected exam: every row must have grade == -3.
+  // This is distinct from exam.isIgnorable, which only means the exam may be ignored.
+  bool? _detectIgnoredStateFromStudents(
+    List<Map<String, dynamic>> rows,
+    String selectedExamId,
+  ) {
+    if (rows.isEmpty) return null;
 
+    var foundSelectedExam = false;
+    var hasMissingSelectedExamGrade = false;
 
-  bool? _findIgnoredStateForExam(dynamic value, String selectedExamId, {int depth = 0}) {
-    if (depth > 5 || value == null) return null;
-    if (value is List) {
-      bool? result;
-      for (final item in value) {
-        final found = _findIgnoredStateForExam(item, selectedExamId, depth: depth + 1);
-        if (found == true) return true;
-        if (found != null) result = false;
+    for (final student in rows) {
+      final rawGrades = student['grades'];
+      if (rawGrades is! List) {
+        hasMissingSelectedExamGrade = true;
+        continue;
       }
-      return result;
-    }
-    if (value is! Map) return null;
 
-    final map = Map<dynamic, dynamic>.from(value);
-    final belongs = _gradeBelongsToExam(map, selectedExamId);
-    if (belongs) return _readIgnoredFlagFromMap(map);
+      Map<dynamic, dynamic>? selectedGrade;
+      for (final item in rawGrades) {
+        if (item is! Map) continue;
+        final gradeMap = Map<dynamic, dynamic>.from(item);
+        final rawExamId = gradeMap['examId'] ?? gradeMap['exam_id'];
+        if (rawExamId != null && '$rawExamId' == selectedExamId) {
+          selectedGrade = gradeMap;
+          break;
+        }
+      }
 
-    for (final entry in map.entries) {
-      final found = _findIgnoredStateForExam(entry.value, selectedExamId, depth: depth + 1);
-      if (found == true) return true;
-      if (found != null) return false;
+      if (selectedGrade == null || !selectedGrade.containsKey('grade')) {
+        hasMissingSelectedExamGrade = true;
+        continue;
+      }
+
+      foundSelectedExam = true;
+      final rawGrade = selectedGrade['grade'];
+      final numericGrade = rawGrade is num ? rawGrade : num.tryParse('$rawGrade');
+      if (numericGrade != -3) {
+        // At least one student is not marked with EMIS's ignored sentinel.
+        return false;
+      }
     }
+
+    if (!hasMissingSelectedExamGrade && foundSelectedExam) return true;
     return null;
   }
 
@@ -217,19 +228,16 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
 
       // Always show an empty input. Existing EMIS grades are intentionally not
       // copied into the editor, so every visit starts with a blank field.
-      bool? detectedIgnored = _readExamIgnored();
+      // The selected exam's ignored state is encoded by EMIS as grade == -3
+      // for every student row (see MarksManagementTable's Ae function).
+      // Do not confuse this with exam.isIgnorable, which only indicates eligibility.
+      bool? detectedIgnored = examId == null
+          ? null
+          : _detectIgnoredStateFromStudents(result, examId!);
+      detectedIgnored ??= _readExamIgnored();
       for (final student in result) {
         final id = int.tryParse('${student['id']}');
         if (id != null) grades[id] = TextEditingController();
-
-        if (examId != null) {
-          final state = _findIgnoredStateForExam(student, examId!);
-          if (state != null) {
-            // حالة الإهمال مرتبطة بالفصل والطالب ضمن الصف/المادة المحددين.
-            // إذا ظهر أي سجل صريح بأنه مهمل، نعامل الاختيار الحالي كمهمَل.
-            detectedIgnored = detectedIgnored == true ? true : state;
-          }
-        }
       }
 
       if (mounted) {
