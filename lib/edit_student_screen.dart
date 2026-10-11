@@ -1067,12 +1067,22 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
   List<Widget> _buildStudentFormSections(bool isDark, Color textColor) {
     final student = _studentData!;
-    final identification = student['identification'] is Map
-        ? Map<String, dynamic>.from(student['identification'])
-        : <String, dynamic>{};
-    final address = student['address'] is Map
-        ? Map<String, dynamic>.from(student['address'])
-        : <String, dynamic>{};
+    // Keep edits attached to the original response maps. Copying these maps
+    // here meant that edits to identification/address were lost on rebuild.
+    final identification = student['identification'] is Map<String, dynamic>
+        ? student['identification'] as Map<String, dynamic>
+        : student['identification'] is Map
+            ? Map<String, dynamic>.from(student['identification'] as Map)
+            : <String, dynamic>{};
+    final address = student['address'] is Map<String, dynamic>
+        ? student['address'] as Map<String, dynamic>
+        : student['address'] is Map
+            ? Map<String, dynamic>.from(student['address'] as Map)
+            : <String, dynamic>{};
+    // Attach normalized nested maps back to the root when the API returns
+    // a non-typed Map, so every field editor updates the actual save payload.
+    student['identification'] = identification;
+    student['address'] = address;
 
     Widget field(String key, [Map<String, dynamic>? owner]) {
       final target = owner ?? student;
@@ -2024,8 +2034,14 @@ class _PlainTextFieldState extends State<PlainTextField> {
   void didUpdateWidget(covariant PlainTextField oldWidget) {
     super.didUpdateWidget(oldWidget);
     final next = widget.initialValue?.toString() ?? '';
-    if (widget.onMic != null && next != _controller.text) {
-      _controller.value = TextEditingValue(text: next, selection: TextSelection.collapsed(offset: next.length));
+    // Synchronize when the underlying model genuinely changes, regardless
+    // of whether this field has a microphone. The model is updated by onChanged;
+    // this prevents stale controller text after parent rebuilds/live refreshes.
+    if (next != _controller.text) {
+      _controller.value = TextEditingValue(
+        text: next,
+        selection: TextSelection.collapsed(offset: next.length),
+      );
     }
   }
 
