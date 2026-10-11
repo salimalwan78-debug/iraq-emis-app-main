@@ -805,7 +805,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         day = digitGroups[0]; month = digitGroups[1]; year = digitGroups[2];
       }
     } else {
-      final cleaned = raw.replaceAll(RegExp(r'[,،;؛/\\|]+'), ' ')
+      final cleaned = raw.replaceAll(RegExp(r'[,。,;؛/\\|]+'), ' ')
           .replaceAll('-', ' ').replaceAll('ـ', ' ').trim();
       final words = cleaned.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
       if (words.length < 3) return null;
@@ -1621,7 +1621,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'lastYearResult': 3,
         'schoolId': int.parse(widget.schoolId),
         'stageId': int.parse(stageId!),
-        'classRoomId': int.parse(roomId!),
+        'classRoomId': (roomId != null && roomId!.isNotEmpty) ? int.parse(roomId!) : null,
         'ageExceptionReason': null,
         'genderExceptionReason': null,
         'address': {
@@ -1690,7 +1690,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if ((_n('grandFatherName') ?? '').isEmpty) return 'يرجى إدخال اسم والد الأب';
     if ((_n('dateOfBirth') ?? '').isEmpty) return 'يرجى إدخال تاريخ التولد';
     if (stageId == null || stageId!.isEmpty) return 'يرجى اختيار الصف الدراسي';
-    if (roomId == null || roomId!.isEmpty) return 'يرجى اختيار الشعبة';
     if (_addressDistrictId == null || _addressDistrictId!.isEmpty) return 'يرجى اختيار القضاء في العنوان';
     return null;
   }
