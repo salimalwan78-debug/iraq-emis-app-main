@@ -805,7 +805,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         day = digitGroups[0]; month = digitGroups[1]; year = digitGroups[2];
       }
     } else {
-      final cleaned = raw.replaceAll(RegExp(r'[,。,;؛/\\|]+'), ' ')
+      final cleaned = raw.replaceAll(RegExp(r'[,،;؛/\\|]+'), ' ')
           .replaceAll('-', ' ').replaceAll('ـ', ' ').trim();
       final words = cleaned.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
       if (words.length < 3) return null;
@@ -832,8 +832,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (mounted) setState(() {});
   }
 
-  String _dateForApi(String? raw) {
+  String? _dateForApi(String? raw) {
     final value = (raw ?? '').trim();
+    if (value.isEmpty) return null;
     final iso = RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
     if (iso) return value;
     final display = RegExp(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$').firstMatch(value);
@@ -932,7 +933,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   String _cleanNumericSpeech(String value) {
-    const arabicIndic = '٠١٢٣٤٥٦٧٨٩';
+    const arabicIndic = '٠١٣٤٥٦٧٨٩';
     const easternArabicIndic = '۰۱۲۳۴۵۶۷۸۹';
     const wordDigits = <String, String>{
       'صفر': '0', 'واحد': '1', 'واحدة': '1', 'اثنان': '2', 'اثنين': '2',
@@ -1453,7 +1454,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     await _startVoiceSession(key);
   }
 
-  // تنسيق التاريخ اليدوي بصيغة yyyy-mm-dd.
   void _onDateTextChanged(String key, String value) {
     final clean = _normalizeDigits(value).replaceAll(RegExp(r'[^\d]'), '');
     final limited = clean.length > 8 ? clean.substring(0, 8) : clean;
