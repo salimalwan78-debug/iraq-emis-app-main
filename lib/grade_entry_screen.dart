@@ -161,12 +161,30 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
   // EMIS's MarksManagementTable determines the ignored state from the grade
   // sentinel for the selected exam: every row must have grade == -3.
   // This is distinct from exam.isIgnorable, which only means the exam may be ignored.
+  Set<String> _examIdCandidates(String selectedExamId) {
+    final candidates = <String>{selectedExamId};
+    final selected = _currentExam;
+    if (selected != null) {
+      // Some EMIS payloads expose both `id` and `examId`; student grade
+      // records may refer to either identifier. Compare all identifiers that
+      // belong to the selected exam, not IDs from other exams/subjects.
+      for (final key in const ['id', 'examId', 'exam_id', 'value']) {
+        final value = selected[key];
+        if (value != null && '$value'.trim().isNotEmpty) {
+          candidates.add('$value'.trim());
+        }
+      }
+    }
+    return candidates;
+  }
+
   bool? _detectIgnoredStateFromStudents(
     List<Map<String, dynamic>> rows,
     String selectedExamId,
   ) {
     if (rows.isEmpty) return null;
 
+    final selectedExamIds = _examIdCandidates(selectedExamId);
     var foundSelectedExam = false;
     var hasMissingSelectedExamGrade = false;
 
@@ -182,7 +200,7 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
         if (item is! Map) continue;
         final gradeMap = Map<dynamic, dynamic>.from(item);
         final rawExamId = gradeMap['examId'] ?? gradeMap['exam_id'];
-        if (rawExamId != null && '$rawExamId' == selectedExamId) {
+        if (rawExamId != null && selectedExamIds.contains('$rawExamId'.trim())) {
           selectedGrade = gradeMap;
           break;
         }
@@ -197,7 +215,8 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
       final rawGrade = selectedGrade['grade'];
       final numericGrade = rawGrade is num ? rawGrade : num.tryParse('$rawGrade');
       if (numericGrade != -3) {
-        // At least one student is not marked with EMIS's ignored sentinel.
+        // A matching record with any value other than -3 proves this exam
+        // is not ignored for all students.
         return false;
       }
     }
