@@ -1738,9 +1738,20 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       } else {
         debugPrint('Update student status: ${response.statusCode}');
         debugPrint('Update student response: ${response.body}');
+        final responseText = response.body.trim();
+        final diagnostic = responseText.isEmpty
+            ? 'لا توجد تفاصيل في استجابة الخادم'
+            : responseText.length > 500
+                ? '${responseText.substring(0, 500)}…'
+                : responseText;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('فشل الحفظ! تأكد من المدخلات'),
+          SnackBar(
+            duration: const Duration(seconds: 12),
+            content: Text(
+              'فشل الحفظ (HTTP ${response.statusCode})\n$diagnostic',
+              maxLines: 6,
+              overflow: TextOverflow.ellipsis,
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -1748,9 +1759,18 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     } catch (e) {
       debugPrint('خطأ في حفظ بيانات الطالب: $e');
       if (mounted) {
+        final errorText = e.toString();
+        final diagnostic = errorText.length > 500
+            ? '${errorText.substring(0, 500)}…'
+            : errorText;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('خطأ في الاتصال'),
+          SnackBar(
+            duration: const Duration(seconds: 12),
+            content: Text(
+              'تعذر إكمال الحفظ\n$diagnostic',
+              maxLines: 6,
+              overflow: TextOverflow.ellipsis,
+            ),
             backgroundColor: Colors.red,
           ),
         );
