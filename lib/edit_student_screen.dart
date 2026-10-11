@@ -1722,7 +1722,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: jsonEncode({'student': studentPayload}),
+        body: jsonEncode(studentPayload),
       );
 
       if (!mounted) return;
