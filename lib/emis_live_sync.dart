@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-/// مزامنة ثنائية الاتجاه بين نموذج التطبيق وصفحة EMIS الحقيقية.
 class EmisLiveSync extends StatefulWidget {
   final String url;
   final String mode;
@@ -208,7 +207,9 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       entity: $entity,
       opened: false,
       last: '',
-      schemaLast: ''
+      schemaLast: '',
+      triedEmptySelects: {},
+      optionsCollected: {}
     };
 
     const send = (type, payload) => {
@@ -219,7 +220,6 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       } catch(e) {}
     };
 
-    // ✅ تطبيع عربي/فارسي موحّد
     const norm = (s) => String(s || '')
       .replace(/[\\u064B-\\u065F\\u0670]/g,'')
       .replace(/[أإآٱ]/g,'ا')
@@ -278,7 +278,6 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
 
     const aliases = window.__EMIS_APP_BRIDGE__.aliases || {};
 
-    // ✅ ترتيب المفاتيح من الأطول إلى الأقصر لتجنب "الجنس" ↔ "الجنسية"
     const sortedAliasKeys = Object.keys(aliases).sort((a, b) => {
       const la = Math.max(...(aliases[a] || ['']).map(s => norm(s).length), 0);
       const lb = Math.max(...(aliases[b] || ['']).map(s => norm(s).length), 0);
@@ -287,17 +286,14 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
 
     const fieldKey = (el) => {
       const cs = candidates(el);
-      // 1) مطابقة تامة أولاً
       for (const k of Object.keys(aliases)) {
         const aa = (aliases[k] || []).map(norm);
         if (cs.some(c => aa.includes(c))) return k;
       }
-      // 2) مطابقة فضفاضة — الأطول أولاً، بشرط a.length >= 4
       for (const k of sortedAliasKeys) {
         const aa = (aliases[k] || []).map(norm);
         if (cs.some(c => aa.some(a => a.length >= 4 && (c === a || c.includes(a) || a.includes(c))))) return k;
       }
-      // 3) مفتاح ديناميكي من label
       const label = String(textOf(el) || '').trim();
       const q = el.closest ? el.closest('.q-field') : null;
       const generatedId = !!(q && (el.getAttribute('id') || '').match(/^(q-|input-|select-)/i));
@@ -321,6 +317,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       } catch(e) { return ''; }
     };
 
+    // ✅ كشف أدق لنوع الحقل (select/text/textarea/date/checkbox)
     const detectKind = (el) => {
       const tag = String(el.tagName || '').toLowerCase();
       const type = String(el.type || '').toLowerCase();
@@ -328,20 +325,31 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       if (tag === 'textarea') return 'textarea';
       if (type === 'date') return 'date';
       if (type === 'checkbox' || type === 'radio') return 'checkbox';
+
       const q = el.closest ? el.closest('.q-field') : null;
-      if (q) {
-        if (q.classList.contains('q-select')) return 'select';
-        if (q.getAttribute('role') === 'combobox' || q.querySelector('[role="combobox"]')) return 'select';
-        const append = q.querySelector('.q-field__append');
-        if (append) {
-          const icon = append.querySelector('i, svg, [class*="arrow"], [class*="expand"]');
-          if (icon) {
-            const iconText = (icon.textContent || '').trim();
-            const iconClass = icon.className ? String(icon.className) : '';
-            if (/arrow|expand|dropdown|drop/i.test(iconText) || /arrow|expand|dropdown|drop/i.test(iconClass)) return 'select';
-          }
+      if (!q) return 'text';
+
+      // Quasar QSelect markers (متعددة)
+      if (q.classList.contains('q-select')) return 'select';
+      if (q.querySelector('.q-select')) return 'select';
+      if (q.getAttribute('role') === 'combobox') return 'select';
+      if (q.querySelector('[role="combobox"]')) return 'select';
+      if (q.querySelector('input[aria-expanded]')) return 'select';
+      if (el.getAttribute('role') === 'combobox') return 'select';
+
+      // أيقونة السهم في الـ append = قائمة منسدلة
+      const append = q.querySelector('.q-field__append');
+      if (append) {
+        const icon = append.querySelector('i, svg, .q-icon, [class*="arrow"], [class*="expand"], [class*="dropdown"]');
+        if (icon) {
+          const iconText = (icon.textContent || '').trim();
+          const iconClass = String(icon.className || '');
+          if (/arrow|expand|dropdown|drop/i.test(iconText) || /arrow|expand|dropdown|drop/i.test(iconClass)) return 'select';
         }
       }
+      // input readonly مع أيقونة = قائمة منسدلة (شائع في Quasar)
+      if (el.readOnly && q.querySelector('i, svg, .q-icon')) return 'select';
+
       return 'text';
     };
 
@@ -395,8 +403,19 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         b.schemaLast = schemaSerial;
         if (Object.keys(schema).length) {
           send('schema', {fields: schema, url: location.href});
-          const selectKeys = Object.keys(schema).filter(k => schema[k] && schema[k].type === 'select' && !(schema[k].options && schema[k].options.length));
-          if (selectKeys.length) setTimeout(() => collectOptions(selectKeys), 180);
+          // ✅ محاولة جلب خيارات كل القوائم الفارغة — بدون تكرار
+          const selectKeys = Object.keys(schema)
+            .filter(k => schema[k] && schema[k].type === 'select')
+            .filter(k => {
+              const opts = schema[k].options || [];
+              if (opts.length > 0) return false;
+              // لا تُعِد المحاولة لنفس المفتاح أكثر من 3 مرات
+              const tries = b.triedEmptySelects[k] || 0;
+              if (tries >= 3) return false;
+              b.triedEmptySelects[k] = tries + 1;
+              return true;
+            });
+          if (selectKeys.length) setTimeout(() => collectOptions(selectKeys), 250);
         }
       }
       const serial = JSON.stringify(fields);
@@ -422,7 +441,6 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       const wanted = norm(key);
       const aa = (aliases[key] || []).map(norm);
       const all = [...document.querySelectorAll('.q-field, input,textarea,select,[contenteditable="true"]')];
-      // 1) مطابقة تامة
       for (const el of all) {
         const dynamicKey = norm(fieldKey(el));
         const cs = candidates(el);
@@ -430,9 +448,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
           return el.classList?.contains('q-field') ? el : (el.closest('.q-field') || el);
         }
       }
-      // 2) مطابقة فضفاضة بحذر
       for (const el of all) {
-        const dynamicKey = norm(fieldKey(el));
         const cs = candidates(el);
         if (cs.some(c => aa.some(a => a.length >= 4 && (c === a || (c.includes(a) && !c.match(new RegExp('^' + a + '.'))))))) {
           return el.classList?.contains('q-field') ? el : (el.closest('.q-field') || el);
@@ -441,27 +457,39 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       return null;
     };
 
+    // ✅ نسخة محسّنة: نجرّب أهداف متعددة للنقر، بمهلة أقصر
     const readQSelectOptions = async (key) => {
       const field = findField(key);
       if (!field) return [];
       try {
         document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
-        await sleep(180);
+        await sleep(150);
         document.querySelectorAll('.q-menu').forEach(m => { try { m.style.display = 'none'; } catch(e) {} });
 
         field.scrollIntoView({block:'center', inline:'nearest'});
-        await sleep(80);
-        const clickable = field.querySelector('.q-field__control,.q-field__native') || field;
-        clickable.click();
+        await sleep(100);
+
+        const targets = [
+          field.querySelector('.q-field__control'),
+          field.querySelector('.q-field__native'),
+          field.querySelector('input'),
+          field.querySelector('select'),
+          field
+        ].filter(Boolean);
 
         let menu = null;
-        for (let attempt = 0; attempt < 30; attempt++) {
-          await sleep(100);
-          const menus = [...document.querySelectorAll('.q-menu')].filter(m => {
-            const r = m.getBoundingClientRect();
-            return r.width > 50 && r.height > 20 && m.style.display !== 'none' && m.offsetParent !== null;
-          });
-          if (menus.length) { menu = menus[menus.length - 1]; break; }
+        for (const target of targets) {
+          try { target.click(); } catch(e) {}
+          // انتظر ظهور أي قائمة
+          for (let attempt = 0; attempt < 12; attempt++) {
+            await sleep(100);
+            const menus = [...document.querySelectorAll('.q-menu')].filter(m => {
+              const r = m.getBoundingClientRect();
+              return r.width > 50 && r.height > 20 && m.offsetParent !== null;
+            });
+            if (menus.length) { menu = menus[menus.length - 1]; break; }
+          }
+          if (menu) break;
         }
         if (!menu) return [];
 
@@ -485,7 +513,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
           for (let i = 0; i < 100 && unchanged < 5; i++) {
             const before = seen.size;
             scroll.scrollTop = Math.min(scroll.scrollTop + Math.max(160, scroll.clientHeight * 0.75), scroll.scrollHeight);
-            await sleep(110);
+            await sleep(100);
             collect();
             unchanged = seen.size === before ? unchanged + 1 : 0;
             if (scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 2 && unchanged >= 2) break;
@@ -493,7 +521,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         }
 
         document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
-        await sleep(220);
+        await sleep(180);
         return values;
       } catch (e) {
         try { document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true})); } catch(_) {}
@@ -502,10 +530,14 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
     };
 
     const collectOptions = async (keys) => {
+      const b = window.__EMIS_APP_BRIDGE__;
       const out = {};
       for (const key of keys) {
         const values = await readQSelectOptions(key);
-        if (values.length) out[key] = values;
+        if (values.length) {
+          out[key] = values;
+          b.optionsCollected[key] = values.length;
+        }
       }
       if (Object.keys(out).length) send('options', {options: out});
       return out;
@@ -536,7 +568,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
               });
               if (item) item.click();
               else document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
-            }, 100);
+            }, 120);
           } else if (best.tagName === 'SELECT') {
             const wanted = String(value ?? '');
             const option = [...best.options].find(o =>
@@ -557,7 +589,12 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
           }
         } catch(e) {}
       }
+      // بعد تعديل القيم، أعِد الفحص عدة مرات لالتقاط أي تغييرات هيكلية
       scan();
+      setTimeout(scan, 300);
+      setTimeout(scan, 800);
+      setTimeout(scan, 1600);
+      setTimeout(scan, 3000);
     };
 
     window.__EMIS_APP_BRIDGE__.focusField = (key) => {
@@ -586,24 +623,13 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
     const openTarget = () => {
       const b = window.__EMIS_APP_BRIDGE__;
       if (b.opened) return true;
-      if (b.mode === 'add') {
-        const re = b.entity === 'student'
-          ? [/إضافة\\s*طالب/i, /طالب\\s*جديد/i]
-          : [/إضافة\\s*معلم/i, /معلم\\s*جديد/i];
-        if (clickText(re)) {
-          b.opened = true;
-          send('status', {message: 'تم فتح نموذج الإضافة من EMIS'});
-          return true;
-        }
-        return false;
-      }
       const id = norm(b.recordId);
       if (!id) return false;
       const currentPath = norm(location.pathname);
       if (currentPath.includes('/management/edit/') && currentPath.includes(id)) {
         b.opened = true;
         send('status', {message: 'تم تحميل نموذج تعديل المعلم من EMIS'});
-        [500, 1200, 2400, 4200].forEach(delay => setTimeout(() => {
+        [400, 900, 1600, 2800, 4500].forEach(delay => setTimeout(() => {
           scan();
         }, delay));
         return true;
@@ -613,11 +639,12 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
 
     document.addEventListener('input', scan, true);
     document.addEventListener('change', scan, true);
+    document.addEventListener('blur', () => setTimeout(scan, 60), true);
     document.addEventListener('focusin', (e) => {
       const key = fieldKey(e.target);
       if (key) send('focus', {field: key});
     }, true);
-    new MutationObserver(() => setTimeout(scan, 40)).observe(
+    new MutationObserver(() => setTimeout(scan, 30)).observe(
       document.documentElement,
       {subtree: true, childList: true, attributes: true}
     );
@@ -652,7 +679,13 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
     final encoded = jsonEncode(keys);
     final js = '''
 (function(){
-  try { if(window.__EMIS_APP_BRIDGE__ && window.__EMIS_APP_BRIDGE__.collectOptions) window.__EMIS_APP_BRIDGE__.collectOptions($encoded); } catch(e) {}
+  try {
+    if(window.__EMIS_APP_BRIDGE__ && window.__EMIS_APP_BRIDGE__.collectOptions) {
+      // إعادة تصفير العدادات حتى تسمح بمحاولة جديدة
+      keys_$encoded.forEach(k => { window.__EMIS_APP_BRIDGE__.triedEmptySelects[k] = 0; });
+      window.__EMIS_APP_BRIDGE__.collectOptions($encoded);
+    }
+  } catch(e) {}
 })();''';
     try { await controller.runJavaScript(js); } catch (_) {}
   }
