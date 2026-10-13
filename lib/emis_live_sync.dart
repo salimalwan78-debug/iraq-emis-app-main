@@ -224,8 +224,15 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         ));
       } catch(e) {}
     };
+    // ✅ FIX: تطبيع عربي/فارسي موحّد — يوحّد الهمزات، التاء المربوطة،
+    // الألف المقصورة، الی الفارسية (U+06CC)، والک الفارسية.
     const norm = (s) => String(s || '')
       .replace(/[\\u064B-\\u065F\\u0670]/g,'')
+      .replace(/[أإآٱ]/g,'ا')
+      .replace(/ة/g,'ه')
+      .replace(/ى/g,'ي')
+      .replace(/[\\u06CC\\u0649]/g,'ي')
+      .replace(/ک/g,'ك')
       .replace(/\\s+/g,' ')
       .trim()
       .toLowerCase();
@@ -241,7 +248,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
           if(q){
             const clone=q.cloneNode(true);
             clone.querySelectorAll('i,svg,.q-icon,[class*=icon],button').forEach(n=>n.remove());
-            const label=String(clone.innerText || clone.textContent || '').replace(/\s+/g,' ').trim();
+            const label=String(clone.innerText || clone.textContent || '').replace(/\\s+/g,' ').trim();
             if(label && !/^(arrow_drop_down|expand_more|keyboard_arrow_down)\$/i.test(label)) return label;
           }
           const aria=parent.getAttribute('aria-label');
@@ -294,7 +301,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       if(label && (!el.getAttribute('name') || generatedId)) return label;
       const raw=(el.getAttribute('name') || el.getAttribute('id') || el.getAttribute('data-cy') || el.getAttribute('data-test') || '').trim();
       if(raw){
-        const cleaned=raw.replace(/\[(\d+)\]/g,'_\$1').replace(/[^a-zA-Z0-9_]/g,'_').replace(/_+/g,'_').replace(/^_+|_+\$/g,'');
+        const cleaned=raw.replace(/\\[(\\d+)\\]/g,'_\$1').replace(/[^a-zA-Z0-9_]/g,'_').replace(/_+/g,'_').replace(/^_+|_+\$/g,'');
         if(cleaned) return cleaned.charAt(0).toLowerCase()+cleaned.slice(1);
       }
       return label;
@@ -407,7 +414,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
             .forEach(x=>{
               const clone=x.cloneNode(true);
               clone.querySelectorAll('i,svg,.q-icon,[class*=icon],button').forEach(n=>n.remove());
-              const label=String(clone.innerText || clone.textContent || '').replace(/\s+/g,' ').trim();
+              const label=String(clone.innerText || clone.textContent || '').replace(/\\s+/g,' ').trim();
               if(!label || /^(اختر|select|search|arrow_drop_down|expand_more)\$/i.test(label)) return;
               const value=String(x.getAttribute('data-value') || x.getAttribute('data-id') || x.getAttribute('value') || x.getAttribute('aria-valuetext') || label).trim();
               const signature=value+'|'+label;
