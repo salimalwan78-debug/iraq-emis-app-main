@@ -50,6 +50,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   String? _addressGovernorateId;
   String? _addressDistrictId;
 
+  // ✅ FIX: endpoints مطابقة لما رصده HAR الفعلي
   static const _commonOptionEndpoints = <String, String>{
     'countryOfBirth': '/selectoption/بلد الولادة',
     'idType': '/selectoption/IdentificationType',
@@ -62,7 +63,25 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'religion': '/selectoption/الديانة',
     'educationLevel': '/selectoption/تحصیل الدراسي',
     'positionType': '/SelectOption/نوع الوظيفة',
+    // محاولات احتياطية — تُتجاهل بأمان إن أعادت 404
+    'specialization': '/selectoption/الإختصاص',
   };
+
+  // ✅ FIX: قائمة حالات الموظف بالترتيب كما تعيدها EMIS (رقم = index + 1)
+  static const _statusOrder = <String>[
+    'مستمر',
+    'متقاعد',
+    'مفصول',
+    'متوفى',
+    'استقالة',
+    'منقول الى وزارة أخرى',
+    'العزل',
+    'مكلف او منسبي من خارج الوزاراة',
+    'مكلف او منسب من وزارة التربية الى جهات أخرى',
+    'في إجازة دراسية',
+    'في إجازة أمومة',
+    'أخرى',
+  ];
 
   static final Map<String, String> _labels = <String, String>{
     'name': 'الإسم',
@@ -146,8 +165,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     _liveSyncKey.currentState?.focusField(key);
   }
 
-  // Keep the API value in the app controller, but send the visible label to
-  // the EMIS page when the native dropdown stores an ID and EMIS uses QSelect.
   void _pushFieldLive(String key, String value) {
     var liveValue = value;
     for (final option in _options[key] ?? const <Map<String, dynamic>>[]) {
@@ -165,8 +182,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       final controller = _c[entry.key];
       if (controller == null) continue;
       var syncedValue = entry.value;
-      // EMIS QSelect reports the displayed label, while the update API may
-      // require the option ID. Translate labels back to the existing API value.
       for (final option in _options[entry.key] ?? const <Map<String, dynamic>>[]) {
         if (_optionText(option).trim() == entry.value.trim()) {
           final apiValue = _optionValue(option);
@@ -187,9 +202,15 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     if (changed && mounted) setState(() {});
   }
 
+  // ✅ FIX: تطبيع عربي موحّد (يشمل الـ ی الفارسية والک الفارسية)
   String _canonicalLiveKey(String rawKey, [String label = '']) {
     String norm(String value) => value
         .replaceAll(RegExp(r'[\u064B-\u065F\u0670]'), '')
+        .replaceAll(RegExp(r'[أإآٱ]'), 'ا')
+        .replaceAll('ة', 'ه')
+        .replaceAll('ى', 'ي')
+        .replaceAll(RegExp(r'[\u06CC\u0649]'), 'ي')
+        .replaceAll('ک', 'ك')
         .replaceAll(RegExp(r'\s+'), '')
         .toLowerCase();
     final wantedKey = norm(rawKey);
@@ -215,8 +236,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'displayName': option['displayName'] ?? option['label'] ?? option['text'] ?? option['value'],
         '_liveOnly': true,
       }).where((o) => '${o['value'] ?? ''}'.trim().isNotEmpty).toList();
-      // Keep API-backed IDs/labels when present, but replace prior live-only
-      // entries so options from a previous dependent selection do not linger.
       final apiBacked = existing.where((o) => o['_liveOnly'] != true).toList();
       final merged = <Map<String, dynamic>>[...apiBacked];
       for (final item in live) {
@@ -233,9 +252,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   void _applyLiveSchema(Map<String, Map<String, dynamic>> incoming) {
     bool changed = false;
-    // A schema snapshot describes the current EMIS form, not an append-only
-    // list. Remove fields that disappeared after changing identity/employment
-    // type so stale fields are not left visible in the app.
     final canonicalIncoming = <String, Map<String, dynamic>>{};
     incoming.forEach((rawKey, rawMeta) {
       final meta = Map<String, dynamic>.from(rawMeta);
@@ -328,9 +344,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
       _employee = employee;
       _initControllers(employee);
+      // ✅ FIX: إضافة _loadEmployeesOptions() لجلب classification و status
       await Future.wait([
         for (final key in _commonOptionEndpoints.keys) _loadOption(key),
         _loadCountryStructure(),
+        _loadEmployeesOptions(),
       ]);
 
       if (!mounted) return;
@@ -342,6 +360,50 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         _error = 'فشل تحميل بيانات المعلم: $e';
       });
     }
+  }
+
+  // ✅ FIX: دالة جديدة تجلب getemployeesoptions
+  Future<void> _loadEmployeesOptions() async {
+    try {
+      final response = await http.get(
+        Uri.parse('https://emis.moedu.gov.iq/api/employee/getemployeesoptions'),
+        headers: {'Authorization': widget.token, 'Accept': 'application/json'},
+      );
+      if (response.statusCode != 200) return;
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! Map) return;
+
+      void loadSimple(String key, dynamic raw) {
+        if (raw is! List) return;
+        _options[key] = raw
+            .map((item) {
+              if (item is Map) {
+                final v = '${item['value'] ?? item['label'] ?? ''}'.trim();
+                final t = '${item['label'] ?? item['displayName'] ?? v}'.trim();
+                return {'value': v, 'displayName': t};
+              }
+              final s = '$item'.trim();
+              return {'value': s, 'displayName': s};
+            })
+            .where((o) => '${o['value']}'.trim().isNotEmpty)
+            .toList();
+      }
+
+      loadSimple('classification', decoded['classification']);
+      loadSimple('status', decoded['currentemploymentstatus']);
+      loadSimple('ministryEntity', decoded['ministryentity']);
+    } catch (_) {}
+  }
+
+  // ✅ FIX: تحويل قيمة الحالة إلى رقم int (كما تعيدها EMIS)
+  int? _statusToInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    final s = '$value'.trim();
+    final asInt = int.tryParse(s);
+    if (asInt != null) return asInt;
+    final idx = _statusOrder.indexOf(s);
+    return idx >= 0 ? idx + 1 : null;
   }
 
   void _initControllers(Map<String, dynamic> e) {
@@ -384,7 +446,13 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       'notes': e['notes'],
       'employmentType': e['employmentType'] ?? employment['employmentType'],
       'employeeCategory': e['employeeCategory'] ?? employment['employeeCategory'],
-      'status': currentStatusRecord['statusType'] ?? currentStatusRecord['StatusType'] ?? e['currentEmploymentStatus'] ?? e['status'],
+      // ✅ FIX: تحويل "مستمر" → رقم
+      'status': _statusToInt(
+        currentStatusRecord['statusType'] ??
+        currentStatusRecord['StatusType'] ??
+        e['currentEmploymentStatus'] ??
+        e['status'],
+      ),
       'statusDate': _dateOnly(currentStatusRecord['statusDate'] ?? currentStatusRecord['effectiveDate'] ?? currentStatusRecord['date']),
       'statusReason': currentStatusRecord['reason'],
       'jobDesignation': e['jobDesignation'] ?? employment['jobDesignation'],
@@ -446,6 +514,16 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     }
   }
 
+  // ✅ FIX: بحث شجري كامل عن مسار العنصر عبر كل المستويات
+  List<Map<String, dynamic>>? _findPath(List<Map<String, dynamic>> nodes, String targetId) {
+    for (final node in nodes) {
+      if (_optionValue(node)?.toString() == targetId) return [node];
+      final sub = _findPath(_childrenOf(node), targetId);
+      if (sub != null) return [node, ...sub];
+    }
+    return null;
+  }
+
   Future<void> _loadCountryStructure() async {
     try {
       final response = await http.get(
@@ -459,38 +537,31 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       _addressCountries = raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
       final address = _employee?['address'] is Map ? Map<String, dynamic>.from(_employee!['address']) : <String, dynamic>{};
       final stored = address['countryStructureId']?.toString();
-      Map<String, dynamic>? selected;
-      void walk(Map<String, dynamic> node) {
-        if (_optionValue(node)?.toString() == stored) selected = node;
-        for (final child in _childrenOf(node)) walk(child);
-      }
-      for (final country in _addressCountries) walk(country);
 
-      Map<String, dynamic>? iraq;
-      for (final country in _addressCountries) {
-        final t = _optionText(country);
-        if (t.contains('العراق') || t.toLowerCase() == 'iraq') { iraq = country; break; }
-      }
-      iraq ??= _addressCountries.isNotEmpty ? _addressCountries.first : null;
-      if (iraq == null) return;
-      _addressCountryId = _optionValue(iraq)?.toString();
-      _addressGovernorates = _childrenOf(iraq);
-
-      if (selected != null) {
-        final sid = _optionValue(selected!)?.toString();
-        for (final country in _addressCountries) {
-          for (final gov in _childrenOf(country)) {
-            final districts = _childrenOf(gov);
-            if (districts.any((d) => _optionValue(d)?.toString() == sid)) {
-              _addressCountryId = _optionValue(country)?.toString();
-              _addressGovernorates = _childrenOf(country);
-              _addressGovernorateId = _optionValue(gov)?.toString();
-              _addressDistricts = districts;
-              _addressDistrictId = sid;
-            }
-          }
+      // ✅ FIX: استخدام _findPath بدل البحث السطحي
+      if (stored != null && stored.isNotEmpty) {
+        final path = _findPath(_addressCountries, stored);
+        if (path != null && path.length >= 3) {
+          _addressCountryId = _optionValue(path[0])?.toString();
+          _addressGovernorates = _childrenOf(path[0]);
+          _addressGovernorateId = _optionValue(path[1])?.toString();
+          _addressDistricts = _childrenOf(path[1]);
+          _addressDistrictId = _optionValue(path.last)?.toString();
         }
       }
+
+      if (_addressCountryId == null) {
+        Map<String, dynamic>? iraq;
+        for (final country in _addressCountries) {
+          final t = _optionText(country);
+          if (t.contains('العراق') || t.toLowerCase() == 'iraq') { iraq = country; break; }
+        }
+        iraq ??= _addressCountries.isNotEmpty ? _addressCountries.first : null;
+        if (iraq == null) return;
+        _addressCountryId = _optionValue(iraq)?.toString();
+        _addressGovernorates = _childrenOf(iraq);
+      }
+
       if (mounted) setState(() {});
     } catch (_) {}
   }
@@ -621,8 +692,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     for (final key in _liveDiscoveredFields) {
       final meta = _liveSchema[key] ?? const <String, dynamic>{};
       final type = '${meta['type'] ?? 'text'}';
-      // Known fields already have a native place in the form. Their live
-      // schema updates type/options there instead of creating a duplicate card.
       if (_labels.containsKey(key) && _c.containsKey(key)) continue;
       final label = '${meta['label'] ?? _labels[key] ?? key}'.trim();
       if (label.isEmpty || RegExp(r'^(arrow_drop_down|expand_more|keyboard_arrow_down)$', caseSensitive: false).hasMatch(label)) continue;
@@ -1092,7 +1161,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     record['EmploymentStatuses'] = statuses;
     record['EmploymentPositions'] = positions;
     final statusValue = _c['status']!.text.trim();
-    record['IsCurrentlyActive'] = statusValue.isEmpty || statusValue == 'مستمر';
+    record['IsCurrentlyActive'] = statusValue.isEmpty || statusValue == '1' || statusValue == 'مستمر';
     record['CurrentBelongToEntityId'] = int.tryParse(widget.schoolId);
     record['CurrentEmploymentPosition'] = _c['positionType']!.text.trim();
     return record;
