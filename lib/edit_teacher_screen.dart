@@ -31,6 +31,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   bool _loading = true;
   bool _saving = false;
   bool _schemaReceived = false;
+  Timer? _schemaDebounce;
+  int _lastSchemaFieldCount = 0;
   final GlobalKey<EmisLiveSyncState> _liveSyncKey = GlobalKey<EmisLiveSyncState>();
   String _liveStatus = 'المزامنة الحية مع EMIS قيد التشغيل';
   String? _error;
@@ -51,7 +53,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   String? _addressGovernorateId;
   String? _addressDistrictId;
 
-  // ✅ endpoints مطابقة لما رصده HAR الفعلي
   static const _commonOptionEndpoints = <String, String>{
     'countryOfBirth': '/selectoption/بلد الولادة',
     'idType': '/selectoption/IdentificationType',
@@ -67,7 +68,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'specialization': '/selectoption/الإختصاص',
   };
 
-  // ✅ حالات EMIS بالترتيب (index + 1 = القيمة الرقمية)
   static const _statusOrder = <String>[
     'مستمر', 'متقاعد', 'مفصول', 'متوفى', 'استقالة',
     'منقول الى وزارة أخرى', 'العزل',
@@ -77,7 +77,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   ];
 
   static final Map<String, String> _labels = <String, String>{
-    // الاسم الكامل
     'name': 'الإسم',
     'fatherName': 'إسم الأب',
     'grandFatherName': 'اسم والد الأب',
@@ -86,7 +85,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'motherName': 'إسم الأم',
     'mothersFatherName': 'اسم والد الأم',
     'mothersGrandFatherName': 'اسم جد الأم',
-    // البيانات الشخصية
     'dateOfBirth': 'تاريخ التولّد',
     'countryOfBirth': 'محل الولادة',
     'gender': 'الجنس',
@@ -97,7 +95,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'bloodGroup': 'فئة الدم',
     'religion': 'الديانة',
     'notes': 'ملاحظات',
-    // وثيقة التعريف
     'idType': 'نوع الهوية',
     'issuingCountry': 'بلد الإصدار',
     'nationalId': 'رقم البطاقة الوطنية الموحدة',
@@ -109,7 +106,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'recordNumber': 'رقم السجل',
     'pageNumber': 'رقم الصحیفة',
     'issuingAuthority': 'جهة الإصدار',
-    // البيانات الوظيفية
     'employmentType': 'نوع التوظيف',
     'employeeCategory': 'نوع الموظف',
     'classification': 'التصنيف',
@@ -120,21 +116,17 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'positionType': 'نوع الوظيفة',
     'dateOfStartWorking': 'تاريخ اول تعيين للموظف',
     'schoolName': 'إسم المدرسة',
-    // الحالة الوظيفية
     'status': 'الحالة الوظيفية',
     'statusDate': 'تاريخ سريان الحالة الوظيفية',
     'statusReason': 'سبب تغيير الحالة الوظيفية',
-    // التحصيل الدراسي
     'educationLevel': 'التحصيل الدراسي',
     'universityName': 'إسم الكلية / المعهد',
     'graduationYear': 'سنة التخرج',
     'specialization': 'الإختصاص',
-    // احتياجات خاصة واتصال طارئ
     'specialNeedsInformation': 'معلومات ذوي الاحتياجات الخاصة إن وجدت',
     'emergencyContactName': 'اسم جهة الاتصال في الحالات الطارئة',
     'emergencyContactRelationship': 'صلة جهة الاتصال',
     'emergencyContactPhoneNumber': 'رقم هاتف جهة الاتصال في الحالات الطارئة',
-    // العنوان
     'town': 'المدينة/القرية',
     'area': 'الحي',
     'quarter': 'المحلة',
@@ -154,6 +146,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   @override
   void dispose() {
+    _schemaDebounce?.cancel();
     _selfieSegmenter?.close();
     for (final controller in _c.values) {
       controller.dispose();
@@ -207,7 +200,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     if (changed && mounted) setState(() {});
   }
 
-  // ✅ تطبيع عربي/فارسي موحّد
   String _canonicalLiveKey(String rawKey, [String label = '']) {
     String norm(String value) => value
         .replaceAll(RegExp(r'[\u064B-\u065F\u0670]'), '')
@@ -230,7 +222,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return rawKey.trim();
   }
 
-  // ✅ حماية قوائم API من التلويث
   void _applyLiveOptions(Map<String, List<Map<String, dynamic>>> incoming) {
     bool changed = false;
     incoming.forEach((rawKey, values) {
@@ -238,7 +229,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       final key = _canonicalLiveKey(rawKey);
       final existing = _options[key] ?? <Map<String, dynamic>>[];
 
-      // إذا كان الحقل معروفًا من API، لا تقبل live
       final hasApiBacked = existing.any((o) => o['_liveOnly'] != true);
       if (hasApiBacked && _commonOptionEndpoints.containsKey(key)) {
         return;
@@ -264,27 +254,52 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     if (changed && mounted) setState(() {});
   }
 
+  // ✅ debounce — ننتظر استقرار المخطط 500ms قبل التطبيق
   void _applyLiveSchema(Map<String, Map<String, dynamic>> incoming) {
-    bool changed = false;
+    _schemaDebounce?.cancel();
+    _schemaDebounce = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      _commitSchema(incoming);
+    });
+  }
+
+  void _commitSchema(Map<String, Map<String, dynamic>> incoming) {
+    // ✅ لا نفعّل _schemaReceived حتى يصل مخطط "معقول"
+    if (!_schemaReceived && incoming.length < 15) {
+      _lastSchemaFieldCount = incoming.length;
+      return;
+    }
     _schemaReceived = true;
+    _lastSchemaFieldCount = incoming.length;
+
+    bool changed = false;
     final canonicalIncoming = <String, Map<String, dynamic>>{};
     incoming.forEach((rawKey, rawMeta) {
       final meta = Map<String, dynamic>.from(rawMeta);
       final key = _canonicalLiveKey(rawKey, '${meta['label'] ?? ''}');
       if (key.isNotEmpty) canonicalIncoming[key] = meta;
     });
+
+    // ✅ لا تحذف حقولًا معروفة يدويًا أبدًا — فقط حقول _liveDiscoveredFields
     final incomingKeys = canonicalIncoming.keys.toSet();
-    final removed = _liveSchema.keys.where((key) => !incomingKeys.contains(key)).toList();
+    final removed = _liveSchema.keys.where((key) {
+      if (incomingKeys.contains(key)) return false;
+      if (_labels.containsKey(key) && !_liveDiscoveredFields.contains(key)) {
+        return false;
+      }
+      if (_commonOptionEndpoints.containsKey(key)) return false;
+      return true;
+    }).toList();
+
     for (final key in removed) {
       _liveSchema.remove(key);
       if (_liveDiscoveredFields.remove(key)) {
-        if (!_commonOptionEndpoints.containsKey(key) && !_labels.containsKey(key)) {
-          _options.remove(key);
-          _c.remove(key)?.dispose();
-        }
+        _options.remove(key);
+        _c.remove(key)?.dispose();
       }
       changed = true;
     }
+
     for (final entry in canonicalIncoming.entries) {
       final key = entry.key;
       final meta = Map<String, dynamic>.from(entry.value);
@@ -321,10 +336,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         }
         if (parsed.isNotEmpty) {
           final existing = _options[key] ?? <Map<String, dynamic>>[];
-          // إذا كان الحقل API-backed، لا تُضف خيارات live
           if (existing.any((o) => o['_liveOnly'] != true) &&
               _commonOptionEndpoints.containsKey(key)) {
-            // تجاهل — نثق بالـ API
+            // نثق بالـ API — لا نُلوّث
           } else {
             final merged = <Map<String, dynamic>>[...existing.where((o) => o['_liveOnly'] != true)];
             for (final item in parsed) {
@@ -344,11 +358,21 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     if (changed && mounted) setState(() {});
   }
 
-  // ✅ يُخفي الحقول التي لا يعرضها EMIS حاليًا
+  // ✅ الحقول اليدوية المعروفة تُعرض دائمًا حتى لو لم يذكرها المخطط
   bool _visible(String key) {
     if (!_schemaReceived) return true;
-    if (!_liveSchema.containsKey(key)) return false;
-    return _liveSchema[key]?['visible'] != false;
+
+    final isKnownField =
+        _labels.containsKey(key) && !_liveDiscoveredFields.contains(key);
+    if (isKnownField) {
+      final meta = _liveSchema[key];
+      if (meta != null && meta['visible'] == false) return false;
+      return true;
+    }
+
+    final meta = _liveSchema[key];
+    if (meta == null) return false;
+    return meta['visible'] != false;
   }
 
   List<String> _classificationFallback() {
@@ -734,7 +758,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         setState(() => _c[key]!.text = value ?? '');
         _pushFieldLive(key, value ?? '');
         _focusLive(key);
-        // ✅ أي تغيير قائمة قد يُغيّر ظهور الحقول في EMIS — أعد جلب المخطط
         Future<void>.delayed(const Duration(milliseconds: 400), () {
           _liveSyncKey.currentState?.refreshSchema();
         });
@@ -743,7 +766,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     );
   }
 
-  // ✅ عرض الحقول الإضافية الديناميكية من EMIS مرتّبة حسب order
   List<Widget> _buildDiscoveredFields() {
     if (!_schemaReceived) return const <Widget>[];
     final sortedKeys = _liveSchema.keys.toList()
@@ -818,10 +840,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     }
     return result;
   }
-
-  // ============================================================
-  // قسم الصور
-  // ============================================================
 
   Future<void> _initializeSelfieSegmenter() async {
     _selfieSegmenter ??= SelfieSegmenter(
@@ -1389,7 +1407,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                             _buildTeacherImageCard(),
                             const SizedBox(height: 14),
 
-                            // ============ الاسم الكامل ============
                             _section('الاسم الكامل', [
                               if (_visible('name')) _textField('name', required: true),
                               if (_visible('fatherName')) _textField('fatherName', required: true),
@@ -1401,7 +1418,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                               if (_visible('mothersGrandFatherName')) _textField('mothersGrandFatherName'),
                             ]),
 
-                            // ============ البيانات الشخصية ============
                             _section('البيانات الشخصية', [
                               if (_visible('dateOfBirth')) _textField('dateOfBirth', required: true, readOnly: true),
                               if (_visible('countryOfBirth')) _selectField('countryOfBirth', required: true),
@@ -1415,7 +1431,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                               if (_visible('notes')) _textField('notes', maxLines: 3),
                             ]),
 
-                            // ============ وثيقة التعريف ============
                             _section('وثيقة التعريف', [
                               if (_visible('idType')) _selectField('idType', required: true),
                               if (_visible('issuingCountry')) _selectField('issuingCountry', required: true),
@@ -1430,7 +1445,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                               if (_visible('issuingAuthority')) _textField('issuingAuthority'),
                             ]),
 
-                            // ============ البيانات الوظيفية ============
                             _section('البيانات الوظيفية', [
                               if (_visible('employmentType'))
                                 _selectField('employmentType', required: true,
@@ -1448,14 +1462,12 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                               if (_visible('schoolName')) _textField('schoolName'),
                             ]),
 
-                            // ============ الحالة الوظيفية ============
                             _section('الحالة الوظيفية', [
                               if (_visible('status')) _selectField('status', required: true),
                               if (_visible('statusDate')) _textField('statusDate', readOnly: true),
                               if (_visible('statusReason')) _textField('statusReason', maxLines: 2),
                             ]),
 
-                            // ============ التحصيل الدراسي ============
                             _section('التحصيل الدراسي', [
                               if (_visible('educationLevel'))
                                 _selectField('educationLevel',
@@ -1468,7 +1480,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                               if (_visible('specialization')) _textField('specialization'),
                             ]),
 
-                            // ============ ذوو الاحتياجات + اتصال طارئ ============
                             _section('ذوو الاحتياجات الخاصة والاتصال الطارئ', [
                               if (_visible('specialNeedsInformation')) _textField('specialNeedsInformation'),
                               if (_visible('emergencyContactName')) _textField('emergencyContactName'),
@@ -1477,7 +1488,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                                 _textField('emergencyContactPhoneNumber', keyboardType: TextInputType.phone),
                             ]),
 
-                            // ============ العنوان ============
                             _section('العنوان ومعلومات الاتصال', [
                               _addressDropdown('الدولة', _addressCountryId, _addressCountries, (v) {
                                 final country = _addressCountries
@@ -1530,7 +1540,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                                 _textField('mobilePhoneNumber', keyboardType: TextInputType.phone),
                             ]),
 
-                            // ============ حقول إضافية مكتشفة من EMIS ============
                             ..._buildDiscoveredFields(),
 
                             const SizedBox(height: 4),
