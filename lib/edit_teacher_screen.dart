@@ -1,3 +1,4 @@
+
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
@@ -31,7 +32,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   bool _loading = true;
   bool _saving = false;
   bool _schemaReceived = false;
+  bool _schemaStable = false;
   Timer? _schemaDebounce;
+  Timer? _stabilityTimer;
   int _lastSchemaFieldCount = 0;
   final GlobalKey<EmisLiveSyncState> _liveSyncKey = GlobalKey<EmisLiveSyncState>();
   String _liveStatus = 'المزامنة الحية مع EMIS قيد التشغيل';
@@ -147,6 +150,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   @override
   void dispose() {
     _schemaDebounce?.cancel();
+    _stabilityTimer?.cancel();
     _selfieSegmenter?.close();
     for (final controller in _c.values) {
       controller.dispose();
@@ -172,6 +176,15 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       }
     }
     _liveSyncKey.currentState?.pushValues({key: liveValue});
+  }
+
+  // ✅ بعد كل تغيير قائمة، أطلق 5 إعادات فحص لاكتشاف الحقول الشرطية
+  void _scheduleMultiRefresh() {
+    for (final ms in [200, 500, 1000, 2000, 3500]) {
+      Future<void>.delayed(Duration(milliseconds: ms), () {
+        if (mounted) _liveSyncKey.currentState?.refreshSchema();
+      });
+    }
   }
 
   void _applyLiveSnapshot(Map<String, String> values) {
@@ -254,7 +267,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     if (changed && mounted) setState(() {});
   }
 
-  // ✅ debounce — ننتظر استقرار المخطط 500ms قبل التطبيق
   void _applyLiveSchema(Map<String, Map<String, dynamic>> incoming) {
     _schemaDebounce?.cancel();
     _schemaDebounce = Timer(const Duration(milliseconds: 500), () {
@@ -264,7 +276,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   void _commitSchema(Map<String, Map<String, dynamic>> incoming) {
-    // ✅ لا نفعّل _schemaReceived حتى يصل مخطط "معقول"
+    // لا تُفعّل _schemaReceived قبل مخطط معقول
     if (!_schemaReceived && incoming.length < 15) {
       _lastSchemaFieldCount = incoming.length;
       return;
@@ -280,7 +292,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       if (key.isNotEmpty) canonicalIncoming[key] = meta;
     });
 
-    // ✅ لا تحذف حقولًا معروفة يدويًا أبدًا — فقط حقول _liveDiscoveredFields
     final incomingKeys = canonicalIncoming.keys.toSet();
     final removed = _liveSchema.keys.where((key) {
       if (incomingKeys.contains(key)) return false;
@@ -338,7 +349,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           final existing = _options[key] ?? <Map<String, dynamic>>[];
           if (existing.any((o) => o['_liveOnly'] != true) &&
               _commonOptionEndpoints.containsKey(key)) {
-            // نثق بالـ API — لا نُلوّث
+            // نثق بالـ API
           } else {
             final merged = <Map<String, dynamic>>[...existing.where((o) => o['_liveOnly'] != true)];
             for (final item in parsed) {
@@ -356,9 +367,16 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       }
     }
     if (changed && mounted) setState(() {});
+
+    // ✅ بعد وصول المخطط وتطبيقه، فعّل مؤقت الاستقرار: 3 ثوانٍ بلا تغيير → _schemaStable
+    _stabilityTimer?.cancel();
+    _stabilityTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _schemaReceived) {
+        setState(() => _schemaStable = true);
+      }
+    });
   }
 
-  // ✅ الحقول اليدوية المعروفة تُعرض دائمًا حتى لو لم يذكرها المخطط
   bool _visible(String key) {
     if (!_schemaReceived) return true;
 
@@ -366,8 +384,14 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         _labels.containsKey(key) && !_liveDiscoveredFields.contains(key);
     if (isKnownField) {
       final meta = _liveSchema[key];
-      if (meta != null && meta['visible'] == false) return false;
-      return true;
+      // قبل الاستقرار: لا نُخفي حقولًا معروفة حتى لو لم تظهر
+      if (!_schemaStable) {
+        if (meta != null && meta['visible'] == false) return false;
+        return true;
+      }
+      // بعد الاستقرار: احترم المخطط بدقة
+      if (meta == null) return false;
+      return meta['visible'] != false;
     }
 
     final meta = _liveSchema[key];
@@ -462,9 +486,15 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   void _initControllers(Map<String, dynamic> e) {
-    final identification = e['identification'] is Map ? Map<String, dynamic>.from(e['identification']) : <String, dynamic>{};
-    final address = e['address'] is Map ? Map<String, dynamic>.from(e['address']) : <String, dynamic>{};
-    final employment = e['employmentRecord'] is Map ? Map<String, dynamic>.from(e['employmentRecord']) : <String, dynamic>{};
+    final identification = e['identification'] is Map
+        ? Map<String, dynamic>.from(e['identification'])
+        : <String, dynamic>{};
+    final address = e['address'] is Map
+        ? Map<String, dynamic>.from(e['address'])
+        : <String, dynamic>{};
+    final employment = e['employmentRecord'] is Map
+        ? Map<String, dynamic>.from(e['employmentRecord'])
+        : <String, dynamic>{};
     final positions = employment['employmentPositions'];
     final statuses = employment['employmentStatuses'];
     final positionType = e['currentEmploymentPosition'] ?? employment['currentEmploymentPosition'];
@@ -503,11 +533,13 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       'employeeCategory': e['employeeCategory'] ?? employment['employeeCategory'],
       'status': _statusToInt(
         currentStatusRecord['statusType'] ??
-        currentStatusRecord['StatusType'] ??
-        e['currentEmploymentStatus'] ??
-        e['status'],
+            currentStatusRecord['StatusType'] ??
+            e['currentEmploymentStatus'] ??
+            e['status'],
       ),
-      'statusDate': _dateOnly(currentStatusRecord['statusDate'] ?? currentStatusRecord['effectiveDate'] ?? currentStatusRecord['date']),
+      'statusDate': _dateOnly(currentStatusRecord['statusDate'] ??
+          currentStatusRecord['effectiveDate'] ??
+          currentStatusRecord['date']),
       'statusReason': currentStatusRecord['reason'],
       'jobDesignation': e['jobDesignation'] ?? employment['jobDesignation'],
       'employmentGrade': e['employmentGrade'] ?? employment['employmentGrade'],
@@ -548,7 +580,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   List<String> _optionEndpointCandidates(String key) {
     if (key == 'positionType') return const ['/SelectOption/نوع الوظيفة'];
     if (key == 'nationality') return const ['/selectoption/الجنسية', '/selectoption/بلد الولادة'];
-    return _commonOptionEndpoints.containsKey(key) ? <String>[_commonOptionEndpoints[key]!] : const [];
+    return _commonOptionEndpoints.containsKey(key)
+        ? <String>[_commonOptionEndpoints[key]!]
+        : const [];
   }
 
   Future<void> _loadOption(String key) async {
@@ -589,7 +623,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       final raw = decoded is Map ? (decoded['data'] ?? decoded['items'] ?? decoded['results']) : decoded;
       if (raw is! List) return;
       _addressCountries = raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
-      final address = _employee?['address'] is Map ? Map<String, dynamic>.from(_employee!['address']) : <String, dynamic>{};
+      final address = _employee?['address'] is Map
+          ? Map<String, dynamic>.from(_employee!['address'])
+          : <String, dynamic>{};
       final stored = address['countryStructureId']?.toString();
 
       if (stored != null && stored.isNotEmpty) {
@@ -607,7 +643,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         Map<String, dynamic>? iraq;
         for (final country in _addressCountries) {
           final t = _optionText(country);
-          if (t.contains('العراق') || t.toLowerCase() == 'iraq') { iraq = country; break; }
+          if (t.contains('العراق') || t.toLowerCase() == 'iraq') {
+            iraq = country;
+            break;
+          }
         }
         iraq ??= _addressCountries.isNotEmpty ? _addressCountries.first : null;
         if (iraq == null) return;
@@ -629,7 +668,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   String _optionText(Map<String, dynamic> x) =>
       '${x['displayName'] ?? x['label'] ?? x['name'] ?? x['text'] ?? _optionValue(x) ?? ''}';
 
-  Widget _addressDropdown(String label, String? value, List<Map<String, dynamic>> items, ValueChanged<String?> onChanged) {
+  Widget _addressDropdown(String label, String? value,
+      List<Map<String, dynamic>> items, ValueChanged<String?> onChanged) {
     final safe = items.any((x) => _optionValue(x)?.toString() == value) ? value : null;
     return DropdownButtonFormField<String>(
       value: safe,
@@ -644,7 +684,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       items: items
           .map((x) => DropdownMenuItem<String>(
                 value: _optionValue(x)?.toString(),
-                child: Text(_optionText(x), style: const TextStyle(fontWeight: FontWeight.bold)),
+                child: Text(_optionText(x),
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
               ))
           .toList(),
       onChanged: onChanged,
@@ -673,7 +714,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   String? _selected(String key) =>
       _c[key]?.text.trim().isEmpty == true ? null : _c[key]?.text.trim();
 
-  Widget _textField(String key, {bool required = false, int maxLines = 1, TextInputType? keyboardType, bool readOnly = false}) {
+  Widget _textField(String key,
+      {bool required = false,
+      int maxLines = 1,
+      TextInputType? keyboardType,
+      bool readOnly = false}) {
     if (_liveSchema[key]?['type'] == 'select') {
       return _selectField(key, required: required || _liveSchema[key]?['required'] == true);
     }
@@ -696,7 +741,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       ),
       validator: null,
       onChanged: (_) => _pushFieldLive(key, controller.text),
-      onTap: readOnly && (key == 'dateOfBirth' || key == 'dateOfStartWorking' || key == 'graduationYear' || key == 'statusDate')
+      onTap: readOnly &&
+              (key == 'dateOfBirth' ||
+                  key == 'dateOfStartWorking' ||
+                  key == 'graduationYear' ||
+                  key == 'statusDate')
           ? () {
               _focusLive(key);
               _pickDate(key);
@@ -758,9 +807,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         setState(() => _c[key]!.text = value ?? '');
         _pushFieldLive(key, value ?? '');
         _focusLive(key);
-        Future<void>.delayed(const Duration(milliseconds: 400), () {
-          _liveSyncKey.currentState?.refreshSchema();
-        });
+        _scheduleMultiRefresh();
       },
       validator: null,
     );
@@ -784,7 +831,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       final type = '${meta['type'] ?? 'text'}';
       final label = '${meta['label'] ?? key}'.trim();
       if (label.isEmpty) continue;
-      if (RegExp(r'^(arrow_drop_down|expand_more|keyboard_arrow_down)$', caseSensitive: false).hasMatch(label)) continue;
+      if (RegExp(r'^(arrow_drop_down|expand_more|keyboard_arrow_down)$',
+              caseSensitive: false)
+          .hasMatch(label)) continue;
       if (type == 'select' || type == 'checkbox') {
         fields.add(_selectField(key, required: meta['required'] == true));
       } else {
@@ -808,7 +857,12 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4))
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -816,7 +870,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           Text(
             title,
             textAlign: TextAlign.right,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.deepPurple),
+            style: const TextStyle(
+                fontSize: 18, fontWeight: FontWeight.bold, color: Colors.deepPurple),
           ),
           const SizedBox(height: 14),
           ..._grid(children),
@@ -840,6 +895,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     }
     return result;
   }
+
+  // ============================================================
+  // الصور
+  // ============================================================
 
   Future<void> _initializeSelfieSegmenter() async {
     _selfieSegmenter ??= SelfieSegmenter(
@@ -870,7 +929,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         );
       }
 
-      normalizedFile = File('${imageFile.path}_teacher_seg_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      normalizedFile = File(
+          '${imageFile.path}_teacher_seg_${DateTime.now().millisecondsSinceEpoch}.jpg');
       await normalizedFile.writeAsBytes(img.encodeJpg(source, quality: 90), flush: true);
 
       final mask = await segmenter.processImage(InputImage.fromFilePath(normalizedFile.path));
@@ -883,7 +943,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
       final result = img.Image(width: source.width, height: source.height, numChannels: 4);
       final pixelCount = source.width * source.height;
-      if (mask.confidences.length < pixelCount) throw Exception('بيانات القناع غير مكتملة');
+      if (mask.confidences.length < pixelCount) {
+        throw Exception('بيانات القناع غير مكتملة');
+      }
 
       for (var y = 0; y < source.height; y++) {
         for (var x = 0; x < source.width; x++) {
@@ -895,7 +957,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         }
       }
 
-      final output = File('${imageFile.path}_teacher_nobg_${DateTime.now().millisecondsSinceEpoch}.png');
+      final output = File(
+          '${imageFile.path}_teacher_nobg_${DateTime.now().millisecondsSinceEpoch}.png');
       await output.writeAsBytes(img.encodePng(result, level: 6), flush: true);
       return output;
     } finally {
@@ -919,7 +982,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           builder: (context, setDialogState) {
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: const Text('معاينة صورة المعلم', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)),
+              title: const Text('معاينة صورة المعلم',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -947,7 +1012,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                   const Text(
                     'يمكنك تقريب الصورة وتحريكها لمراجعتها قبل اعتمادها',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12),
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey,
+                        fontSize: 12),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
@@ -958,9 +1026,12 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                           : () async {
                               setDialogState(() => processing = true);
                               try {
-                                final processed = await _removeBackgroundUsingSelfieSegmentation(currentImage);
+                                final processed =
+                                    await _removeBackgroundUsingSelfieSegmentation(currentImage);
                                 if (!mounted) return;
-                                if (processed == null) throw Exception('لم يتم الحصول على الصورة المعالجة');
+                                if (processed == null) {
+                                  throw Exception('لم يتم الحصول على الصورة المعالجة');
+                                }
                                 setDialogState(() {
                                   currentImage = processed;
                                   processing = false;
@@ -969,12 +1040,17 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                                 if (!mounted) return;
                                 setDialogState(() => processing = false);
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('تعذر إزالة الخلفية: $e'), backgroundColor: Colors.red),
+                                  SnackBar(
+                                      content: Text('تعذر إزالة الخلفية: $e'),
+                                      backgroundColor: Colors.red),
                                 );
                               }
                             },
                       icon: processing
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.auto_fix_high),
                       label: Text(processing ? 'جاري إزالة الخلفية...' : 'إزالة الخلفية'),
                     ),
@@ -997,7 +1073,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                           Navigator.pop(dialogContext);
                         },
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                  child: const Text('اعتماد', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                  child: const Text('اعتماد',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
               ],
             );
@@ -1043,7 +1120,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       await http.MultipartFile.fromPath(
         'image',
         imageFile.path,
-        filename: imageFile.path.toLowerCase().endsWith('.png') ? 'teacher.png' : 'teacher.jpg',
+        filename: imageFile.path.toLowerCase().endsWith('.png')
+            ? 'teacher.png'
+            : 'teacher.jpg',
       ),
     );
     final response = await request.send();
@@ -1109,7 +1188,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       String imageUrl = old['imageUrl']?.toString() ?? '';
       if (_pickedImage != null) {
         final uploaded = await _uploadImageToEmisServer(_pickedImage!);
-        if (uploaded == null || uploaded.isEmpty) throw Exception('تعذر رفع صورة المعلم');
+        if (uploaded == null || uploaded.isEmpty) {
+          throw Exception('تعذر رفع صورة المعلم');
+        }
         imageUrl = uploaded;
       } else if (_removeExistingPhoto) {
         imageUrl = '';
@@ -1214,7 +1295,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       old['imageUrl'] = imageUrl;
       _pickedImage = null;
       _removeExistingPhoto = false;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم تحديث المعلم بنجاح')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('تم تحديث المعلم بنجاح')));
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -1240,8 +1322,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
     final status = statuses.isNotEmpty ? statuses.first : <String, dynamic>{};
     status['StatusType'] = _c['status']!.text.trim();
-    status['Reason'] = _c['statusReason']!.text.trim().isEmpty ? null : _c['statusReason']!.text.trim();
-    status['StatusDate'] = _c['statusDate']!.text.trim().isEmpty ? null : _c['statusDate']!.text.trim();
+    status['Reason'] =
+        _c['statusReason']!.text.trim().isEmpty ? null : _c['statusReason']!.text.trim();
+    status['StatusDate'] =
+        _c['statusDate']!.text.trim().isEmpty ? null : _c['statusDate']!.text.trim();
     status['CurrentBelongToEntityId'] = int.tryParse(widget.schoolId);
     if (statuses.isEmpty) statuses.add(status);
 
@@ -1253,7 +1337,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     record['EmploymentStatuses'] = statuses;
     record['EmploymentPositions'] = positions;
     final statusValue = _c['status']!.text.trim();
-    record['IsCurrentlyActive'] = statusValue.isEmpty || statusValue == '1' || statusValue == 'مستمر';
+    record['IsCurrentlyActive'] =
+        statusValue.isEmpty || statusValue == '1' || statusValue == 'مستمر';
     record['CurrentBelongToEntityId'] = int.tryParse(widget.schoolId);
     record['CurrentEmploymentPosition'] = _c['positionType']!.text.trim();
     return record;
@@ -1281,7 +1366,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            const Text('الصورة الشخصية للمعلم', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            const Text('الصورة الشخصية للمعلم',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Stack(
               alignment: Alignment.bottomRight,
@@ -1302,7 +1388,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                                 imageUrl,
                                 headers: {'Authorization': widget.token},
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 80, color: Colors.grey),
+                                errorBuilder: (_, __, ___) => const Icon(Icons.person,
+                                    size: 80, color: Colors.grey),
                               )
                             : const Icon(Icons.person, size: 80, color: Colors.grey),
                   ),
@@ -1419,10 +1506,13 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                             ]),
 
                             _section('البيانات الشخصية', [
-                              if (_visible('dateOfBirth')) _textField('dateOfBirth', required: true, readOnly: true),
-                              if (_visible('countryOfBirth')) _selectField('countryOfBirth', required: true),
+                              if (_visible('dateOfBirth'))
+                                _textField('dateOfBirth', required: true, readOnly: true),
+                              if (_visible('countryOfBirth'))
+                                _selectField('countryOfBirth', required: true),
                               if (_visible('gender')) _selectField('gender', required: true),
-                              if (_visible('nationality')) _selectField('nationality', required: true),
+                              if (_visible('nationality'))
+                                _selectField('nationality', required: true),
                               if (_visible('homeTown')) _textField('homeTown'),
                               if (_visible('motherTongue')) _selectField('motherTongue'),
                               if (_visible('maritalStatus')) _selectField('maritalStatus'),
@@ -1433,13 +1523,21 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
                             _section('وثيقة التعريف', [
                               if (_visible('idType')) _selectField('idType', required: true),
-                              if (_visible('issuingCountry')) _selectField('issuingCountry', required: true),
-                              if (_visible('nationalId')) _textField('nationalId', required: true, keyboardType: TextInputType.number),
-                              if (_visible('employeeIdNumber')) _textField('employeeIdNumber', keyboardType: TextInputType.number),
-                              if (_visible('familyNumber')) _textField('familyNumber', keyboardType: TextInputType.number),
+                              if (_visible('issuingCountry'))
+                                _selectField('issuingCountry', required: true),
+                              if (_visible('nationalId'))
+                                _textField('nationalId',
+                                    required: true, keyboardType: TextInputType.number),
+                              if (_visible('employeeIdNumber'))
+                                _textField('employeeIdNumber',
+                                    keyboardType: TextInputType.number),
+                              if (_visible('familyNumber'))
+                                _textField('familyNumber',
+                                    keyboardType: TextInputType.number),
                               if (_visible('documentType')) _textField('documentType'),
                               if (_visible('documentNumber')) _textField('documentNumber'),
-                              if (_visible('civilRegistryNumber')) _textField('civilRegistryNumber'),
+                              if (_visible('civilRegistryNumber'))
+                                _textField('civilRegistryNumber'),
                               if (_visible('recordNumber')) _textField('recordNumber'),
                               if (_visible('pageNumber')) _textField('pageNumber'),
                               if (_visible('issuingAuthority')) _textField('issuingAuthority'),
@@ -1447,49 +1545,74 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
                             _section('البيانات الوظيفية', [
                               if (_visible('employmentType'))
-                                _selectField('employmentType', required: true,
-                                    fallback: const ['ملاك', 'عقد', 'ملاك دائم', 'محاضر']),
+                                _selectField('employmentType',
+                                    required: true,
+                                    fallback: const [
+                                      'ملاك',
+                                      'عقد',
+                                      'ملاك دائم',
+                                      'محاضر'
+                                    ]),
                               if (_visible('employeeCategory'))
-                                _selectField('employeeCategory', required: true,
+                                _selectField('employeeCategory',
+                                    required: true,
                                     fallback: const ['تدريسي', 'إداري']),
-                              if (_visible('classification')) _selectField('classification', required: true),
+                              if (_visible('classification'))
+                                _selectField('classification', required: true),
                               if (_visible('jobDesignation')) _textField('jobDesignation'),
                               if (_visible('employmentGrade')) _textField('employmentGrade'),
                               if (_visible('jobTitle')) _selectField('jobTitle'),
                               if (_visible('currentPosition')) _selectField('currentPosition'),
-                              if (_visible('positionType')) _selectField('positionType', required: true),
-                              if (_visible('dateOfStartWorking')) _textField('dateOfStartWorking', required: true, readOnly: true),
+                              if (_visible('positionType'))
+                                _selectField('positionType', required: true),
+                              if (_visible('dateOfStartWorking'))
+                                _textField('dateOfStartWorking',
+                                    required: true, readOnly: true),
                               if (_visible('schoolName')) _textField('schoolName'),
                             ]),
 
                             _section('الحالة الوظيفية', [
                               if (_visible('status')) _selectField('status', required: true),
-                              if (_visible('statusDate')) _textField('statusDate', readOnly: true),
-                              if (_visible('statusReason')) _textField('statusReason', maxLines: 2),
+                              if (_visible('statusDate'))
+                                _textField('statusDate', readOnly: true),
+                              if (_visible('statusReason'))
+                                _textField('statusReason', maxLines: 2),
                             ]),
 
                             _section('التحصيل الدراسي', [
                               if (_visible('educationLevel'))
                                 _selectField('educationLevel',
                                     fallback: const [
-                                      'ابتدائية', 'متوسطة', 'إعدادية', 'دبلوم', 'بكالوريوس',
-                                      'دبلوم عالي', 'ماجستير', 'دكتوراه'
+                                      'ابتدائية',
+                                      'متوسطة',
+                                      'إعدادية',
+                                      'دبلوم',
+                                      'بكالوريوس',
+                                      'دبلوم عالي',
+                                      'ماجستير',
+                                      'دكتوراه'
                                     ]),
                               if (_visible('universityName')) _textField('universityName'),
-                              if (_visible('graduationYear')) _textField('graduationYear', readOnly: true),
+                              if (_visible('graduationYear'))
+                                _textField('graduationYear', readOnly: true),
                               if (_visible('specialization')) _textField('specialization'),
                             ]),
 
                             _section('ذوو الاحتياجات الخاصة والاتصال الطارئ', [
-                              if (_visible('specialNeedsInformation')) _textField('specialNeedsInformation'),
-                              if (_visible('emergencyContactName')) _textField('emergencyContactName'),
-                              if (_visible('emergencyContactRelationship')) _textField('emergencyContactRelationship'),
+                              if (_visible('specialNeedsInformation'))
+                                _textField('specialNeedsInformation'),
+                              if (_visible('emergencyContactName'))
+                                _textField('emergencyContactName'),
+                              if (_visible('emergencyContactRelationship'))
+                                _textField('emergencyContactRelationship'),
                               if (_visible('emergencyContactPhoneNumber'))
-                                _textField('emergencyContactPhoneNumber', keyboardType: TextInputType.phone),
+                                _textField('emergencyContactPhoneNumber',
+                                    keyboardType: TextInputType.phone),
                             ]),
 
                             _section('العنوان ومعلومات الاتصال', [
-                              _addressDropdown('الدولة', _addressCountryId, _addressCountries, (v) {
+                              _addressDropdown('الدولة', _addressCountryId, _addressCountries,
+                                  (v) {
                                 final country = _addressCountries
                                     .where((x) => _optionValue(x)?.toString() == v)
                                     .toList();
@@ -1505,7 +1628,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                                   }
                                 });
                               }),
-                              _addressDropdown('المحافظة', _addressGovernorateId, _addressGovernorates, (v) {
+                              _addressDropdown('المحافظة', _addressGovernorateId,
+                                  _addressGovernorates, (v) {
                                 final gov = _addressGovernorates
                                     .where((x) => _optionValue(x)?.toString() == v)
                                     .toList();
@@ -1519,7 +1643,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                                   }
                                 });
                               }),
-                              _addressDropdown('القضاء', _addressDistrictId, _addressDistricts, (v) {
+                              _addressDropdown('القضاء', _addressDistrictId, _addressDistricts,
+                                  (v) {
                                 setState(() {
                                   _addressDistrictId = v;
                                   if (_employee?['address'] is Map) {
@@ -1535,9 +1660,12 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                               if (_visible('address1')) _textField('address1'),
                               if (_visible('address2')) _textField('address2'),
                               if (_visible('closestLocation')) _textField('closestLocation'),
-                              if (_visible('email')) _textField('email', keyboardType: TextInputType.emailAddress),
+                              if (_visible('email'))
+                                _textField('email',
+                                    keyboardType: TextInputType.emailAddress),
                               if (_visible('mobilePhoneNumber'))
-                                _textField('mobilePhoneNumber', keyboardType: TextInputType.phone),
+                                _textField('mobilePhoneNumber',
+                                    keyboardType: TextInputType.phone),
                             ]),
 
                             ..._buildDiscoveredFields(),
