@@ -64,21 +64,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'specialization': '/selectoption/الإختصاص',
   };
 
-  static const List<String> _statusOrder = [
-    'مستمر',
-    'متقاعد',
-    'مفصول',
-    'متوفى',
-    'استقالة',
-    'منقول الى وزارة أخرى',
-    'العزل',
-    'مكلف او منسبي من خارج الوزاراة',
-    'مكلف أو منسب من وزارة التربية الى جهات أخرى',
-    'في إجازة دراسية',
-    'في إجازة أمومة',
-    'أخرى',
-  ];
-
   final Map<String, String> _officialArabicNames = {
     'name': 'الإسم',
     'fatherName': 'إسم الأب',
@@ -437,16 +422,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       (option['displayName'] ?? option['name'] ?? option['label'] ?? option['text'] ?? _optionValue(option)?.toString() ?? '').toString();
 
   bool _sameValue(dynamic a, dynamic b) => a?.toString() == b?.toString();
-
-  String _statusLabel(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty) return '';
-    final idx = int.tryParse(trimmed);
-    if (idx != null && idx >= 1 && idx <= _statusOrder.length) {
-      return _statusOrder[idx - 1];
-    }
-    return trimmed;
-  }
 
   Widget _dropdownField({
     required String key,
@@ -1171,8 +1146,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         return v == null ? '' : '$v'.trim();
       }
 
-      final statusText = _statusLabel(text('status'));
-
       final payload = <String, dynamic>{
         'Id': old['id'],
         'EmployeeIdNumber': text('employeeIdNumber'),
@@ -1221,7 +1194,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'BloodGroup': text('bloodGroup'),
         'Religion': text('religion'),
         'HomePhoneNumber': _nullable(old['homePhoneNumber']),
-        'Status': statusText,
+        'Status': _intOrNull(text('status')),
         'Notes': text('notes'),
         'SpecialNeedsInformation': _nullable(text('specialNeedsInformation')),
         'EmergencyContactName': _nullable(text('emergencyContactName')),
@@ -1255,19 +1228,17 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'EmploymentRecord': _buildEmploymentRecord(oldEmployment),
       };
 
-      // ✅ الحل: emp يجب أن يكون نص JSON مُسلسَل (double-encoded)
-      final body = jsonEncode({
-        'emp': jsonEncode(payload),
-      });
-
-      final response = await http.put(
+      // ✅ الإرسال كـ Form Data — EMIS يتوقع field اسمه 'emp' يحتوي JSON string
+      final response = await http.post(
         Uri.parse('https://emis.moedu.gov.iq/api/employee/updateemployee'),
         headers: {
           'Authorization': widget.token,
-          'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: body,
+        body: <String, String>{
+          'emp': jsonEncode(payload),
+        },
       );
 
       if (!mounted) return;
