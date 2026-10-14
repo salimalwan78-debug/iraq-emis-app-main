@@ -1,4 +1,3 @@
-
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
@@ -178,13 +177,14 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     _liveSyncKey.currentState?.pushValues({key: liveValue});
   }
 
-  // ✅ بعد كل تغيير قائمة، أطلق 5 إعادات فحص لاكتشاف الحقول الشرطية
+  // ✅ مع MutationObserver، إعادتان كافيتان
   void _scheduleMultiRefresh() {
-    for (final ms in [200, 500, 1000, 2000, 3500]) {
-      Future<void>.delayed(Duration(milliseconds: ms), () {
-        if (mounted) _liveSyncKey.currentState?.refreshSchema();
-      });
-    }
+    Future<void>.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) _liveSyncKey.currentState?.refreshSchema();
+    });
+    Future<void>.delayed(const Duration(milliseconds: 1200), () {
+      if (mounted) _liveSyncKey.currentState?.refreshSchema();
+    });
   }
 
   void _applyLiveSnapshot(Map<String, String> values) {
@@ -276,7 +276,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   void _commitSchema(Map<String, Map<String, dynamic>> incoming) {
-    // لا تُفعّل _schemaReceived قبل مخطط معقول
     if (!_schemaReceived && incoming.length < 15) {
       _lastSchemaFieldCount = incoming.length;
       return;
@@ -368,7 +367,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     }
     if (changed && mounted) setState(() {});
 
-    // ✅ بعد وصول المخطط وتطبيقه، فعّل مؤقت الاستقرار: 3 ثوانٍ بلا تغيير → _schemaStable
     _stabilityTimer?.cancel();
     _stabilityTimer = Timer(const Duration(seconds: 3), () {
       if (mounted && _schemaReceived) {
@@ -384,12 +382,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         _labels.containsKey(key) && !_liveDiscoveredFields.contains(key);
     if (isKnownField) {
       final meta = _liveSchema[key];
-      // قبل الاستقرار: لا نُخفي حقولًا معروفة حتى لو لم تظهر
       if (!_schemaStable) {
         if (meta != null && meta['visible'] == false) return false;
         return true;
       }
-      // بعد الاستقرار: احترم المخطط بدقة
       if (meta == null) return false;
       return meta['visible'] != false;
     }
@@ -895,10 +891,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     }
     return result;
   }
-
-  // ============================================================
-  // الصور
-  // ============================================================
 
   Future<void> _initializeSelfieSegmenter() async {
     _selfieSegmenter ??= SelfieSegmenter(
