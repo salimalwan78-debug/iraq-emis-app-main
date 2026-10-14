@@ -132,17 +132,16 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   static const Set<String> _dropdownVoiceFields = {
     'gender', 'idType', 'issuingCountry',
-    'maritalStatus', 'bloodGroup', 'religion',
-    'economicLevel', 'specialNeeds', 'stageId',
+    'bloodGroup', 'religion',
+    'economicLevel', 'stageId',
     'addressGovernorate', 'addressDistrict',
-    'isCoveredBySocialWelfare',
   };
   static const Set<String> _dateVoiceFields = {'dateOfBirth', 'issuingDate'};
 
   static const List<String> _voiceSequentialOrder = [
     'name', 'fatherName', 'grandFatherName', 'fathersGrandFatherName',
     'surName', 'motherName', 'mothersFatherName', 'mothersGrandFatherName',
-    'gender', 'dateOfBirth', 'countryOfBirth', 'nationality', 'homeTown',
+    'dateOfBirth', 'gender', 'countryOfBirth', 'nationality', 'homeTown',
     'idType', 'nationalId', 'idNumber', 'jinsiyaIdNumber', 'issuer',
     'recordNumber', 'pageNumber', 'issuingCountry', 'issuingDate',
     'nameOfDocument', 'birthCertificateNumber', 'otherIdNumber',
@@ -1975,6 +1974,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (current.isNotEmpty && !values.any((x) => _value(x) == current)) {
       values.insert(0, {'value': current, 'displayName': current});
     }
+    // Special-needs is optional: provide a genuinely empty first option.
+    if (key == 'specialNeeds') {
+      values.removeWhere((x) => _value(x).isEmpty);
+      values.insert(0, {'value': '', 'displayName': ''});
+    }
 
     return DropdownButtonFormField<String>(
       key: ValueKey<String>('voice-select-$key-$current'),
@@ -1999,7 +2003,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     return DropdownButtonFormField<bool>(
       value: _socialWelfare,
       isExpanded: true,
-      decoration: _decoration('مشمول بمنحة الرعاية الاجتماعية؟').copyWith(suffixIcon: _dropdownVoiceMic('isCoveredBySocialWelfare')),
+      decoration: _decoration('مشمول بمنحة الرعاية الاجتماعية؟'),
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       items: const [
         DropdownMenuItem<bool>(value: false, child: Text('لا', style: TextStyle(fontWeight: FontWeight.bold))),

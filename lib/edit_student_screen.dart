@@ -412,8 +412,14 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
           _speechError = null;
         });
       } else {
+        // Phone numbers must remain a continuous digit string. Speech services
+        // commonly return digit-by-digit results separated by spaces; retaining
+        // those spaces in an RTL form makes the number appear reversed/split.
+        final recognizedText = key == 'homePhoneNumber'
+            ? _normalizeDigits(raw).replaceAll(RegExp(r'[^0-9]'), '')
+            : raw;
         setState(() {
-          _activeSpeechOwner![key] = raw;
+          _activeSpeechOwner![key] = recognizedText;
           _speechError = null;
         });
       }
@@ -806,6 +812,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       initialValue: value,
       isDark: isDark,
       textColor: textColor,
+      textDirection: key == 'homePhoneNumber' ? TextDirection.ltr : null,
       readOnly: false,
       requiredField: _isRequired(key, owner),
       onChanged: (v) => owner[key] = v,
@@ -2014,6 +2021,7 @@ class PlainTextField extends StatefulWidget {
   final dynamic initialValue;
   final bool isDark;
   final Color textColor;
+  final TextDirection? textDirection;
   final Function(String) onChanged;
   final bool readOnly;
   final bool requiredField;
@@ -2027,6 +2035,7 @@ class PlainTextField extends StatefulWidget {
     required this.initialValue,
     required this.isDark,
     required this.textColor,
+    this.textDirection,
     required this.onChanged,
     this.readOnly = false,
     this.requiredField = false,
@@ -2081,6 +2090,7 @@ class _PlainTextFieldState extends State<PlainTextField> {
         onChanged: widget.onChanged,
         onTap: widget.onTap,
         validator: null,
+        textDirection: widget.textDirection,
         style: TextStyle(fontWeight: FontWeight.bold,
           color: widget.textColor,
           fontSize: 16,
