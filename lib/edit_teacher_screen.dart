@@ -49,6 +49,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   String? _addressGovernorateId;
   String? _addressDistrictId;
 
+  // مسارات API للقوائم المنسدلة الديناميكية من السيرفر
   static const Map<String, String> _optionEndpoints = {
     'countryOfBirth': '/selectoption/بلد الولادة',
     'nationality': '/selectoption/الجنسية',
@@ -62,87 +63,237 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'educationLevel': '/selectoption/تحصیل الدراسي',
     'positionType': '/SelectOption/نوع الوظيفة',
     'specialization': '/selectoption/الإختصاص',
-    'employmentType': '/SelectOption/نوع الوظيفة',
+  };
+
+  // الخيارات الثابتة المعتمدة في واجهة EMIS الرسمية (من ملفات constants-Cbk3iyrj.js و TeacherFormPage.js)
+  static final Map<String, List<Map<String, dynamic>>> _defaultStaticOptions = {
+    'gender': [
+      <String, dynamic>{'value': 1, 'displayName': 'ذكر'},
+      <String, dynamic>{'value': 2, 'displayName': 'أنثى'},
+    ],
+    'idType': [
+      <String, dynamic>{'value': 3, 'displayName': 'هوية الأحوال المدنية'},
+      <String, dynamic>{'value': 12, 'displayName': 'البطاقة الوطنية الموحدة'},
+      <String, dynamic>{'value': 22, 'displayName': 'شهادة الولادة'},
+      <String, dynamic>{'value': 16, 'displayName': 'أخرى'},
+    ],
+    'employmentType': [
+      <String, dynamic>{'value': 'ملاك دائم', 'displayName': 'ملاك دائم'},
+      <String, dynamic>{'value': 'ملاك', 'displayName': 'ملاك'},
+      <String, dynamic>{'value': 'عقد', 'displayName': 'عقد'},
+      <String, dynamic>{'value': 'محاضر', 'displayName': 'محاضر'},
+      <String, dynamic>{'value': 'أجر يومي', 'displayName': 'أجر يومي'},
+    ],
+    'employeeCategory': [
+      <String, dynamic>{'value': 'تدريسي', 'displayName': 'تدريسي'},
+      <String, dynamic>{'value': 'إداري', 'displayName': 'إداري'},
+      <String, dynamic>{'value': 'خدمي', 'displayName': 'خدمي'},
+    ],
+    'employmentStatus': [
+      <String, dynamic>{'value': 'مستمر', 'displayName': 'مستمر'},
+      <String, dynamic>{'value': 'مجاز', 'displayName': 'مجاز'},
+      <String, dynamic>{'value': 'منسب', 'displayName': 'منسب'},
+      <String, dynamic>{
+        'value': 'مكلف او منسب من وزارة التربية الى جهات أخرى',
+        'displayName': 'مكلف او منسب من وزارة التربية الى جهات أخرى'
+      },
+      <String, dynamic>{'value': 'سحب يد', 'displayName': 'سحب يد'},
+      <String, dynamic>{'value': 'متقاعد', 'displayName': 'متقاعد'},
+      <String, dynamic>{'value': 'مستقيل', 'displayName': 'مستقيل'},
+    ],
+    'status': [
+      <String, dynamic>{'value': 1, 'displayName': 'مفعّل'},
+      <String, dynamic>{'value': 2, 'displayName': 'غير مفعّل'},
+    ],
+    'employmentGrade': [
+      <String, dynamic>{'value': 'الأولى', 'displayName': 'الأولى'},
+      <String, dynamic>{'value': 'الثانية', 'displayName': 'الثانية'},
+      <String, dynamic>{'value': 'الثالثة', 'displayName': 'الثالثة'},
+      <String, dynamic>{'value': 'الرابعة', 'displayName': 'الرابعة'},
+      <String, dynamic>{'value': 'الخامسة', 'displayName': 'الخامسة'},
+      <String, dynamic>{'value': 'السادسة', 'displayName': 'السادسة'},
+      <String, dynamic>{'value': 'السابعة', 'displayName': 'السابعة'},
+      <String, dynamic>{'value': 'الثامنة', 'displayName': 'الثامنة'},
+      <String, dynamic>{'value': 'التاسعة', 'displayName': 'التاسعة'},
+      <String, dynamic>{'value': 'العاشرة', 'displayName': 'العاشرة'},
+    ],
+    'classification': [
+      <String, dynamic>{'value': 'معلم', 'displayName': 'معلم'},
+      <String, dynamic>{'value': 'معلم جامعي', 'displayName': 'معلم جامعي'},
+      <String, dynamic>{'value': 'مدرس', 'displayName': 'مدرس'},
+      <String, dynamic>{'value': 'مرشد تربوي', 'displayName': 'مرشد تربوي'},
+      <String, dynamic>{'value': 'معلم مهني', 'displayName': 'معلم مهني'},
+      <String, dynamic>{'value': 'مدرب مهني', 'displayName': 'مدرب مهني'},
+      <String, dynamic>{'value': 'إداري', 'displayName': 'إداري'},
+      <String, dynamic>{'value': 'موظف خدمة', 'displayName': 'موظف خدمة'},
+      <String, dynamic>{'value': 'حارس', 'displayName': 'حارس'},
+    ],
+    'currentPosition': [
+      <String, dynamic>{'value': 'مدير', 'displayName': 'مدير'},
+      <String, dynamic>{'value': 'معاون', 'displayName': 'معاون'},
+      <String, dynamic>{'value': 'معلم', 'displayName': 'معلم'},
+      <String, dynamic>{'value': 'مدرس', 'displayName': 'مدرس'},
+      <String, dynamic>{'value': 'مرشد تربوي', 'displayName': 'مرشد تربوي'},
+      <String, dynamic>{'value': 'كاتب', 'displayName': 'كاتب'},
+      <String, dynamic>{'value': 'أمين مكتبة', 'displayName': 'أمين مكتبة'},
+      <String, dynamic>{'value': 'محاسب', 'displayName': 'محاسب'},
+      <String, dynamic>{'value': 'موظف خدمة', 'displayName': 'موظف خدمة'},
+      <String, dynamic>{'value': 'حارس ليلي', 'displayName': 'حارس ليلي'},
+    ],
+    'educationLevel': [
+      <String, dynamic>{'value': 'ابتدائية', 'displayName': 'ابتدائية'},
+      <String, dynamic>{'value': 'متوسطة', 'displayName': 'متوسطة'},
+      <String, dynamic>{'value': 'إعدادية', 'displayName': 'إعدادية'},
+      <String, dynamic>{'value': 'دبلوم', 'displayName': 'دبلوم'},
+      <String, dynamic>{'value': 'بكالوريوس', 'displayName': 'بكالوريوس'},
+      <String, dynamic>{'value': 'دبلوم عالي', 'displayName': 'دبلوم عالي'},
+      <String, dynamic>{'value': 'ماجستير', 'displayName': 'ماجستير'},
+      <String, dynamic>{'value': 'دكتوراه', 'displayName': 'دكتوراه'},
+    ],
+    'specialization': [
+      <String, dynamic>{'value': 'التربية الإسلامية', 'displayName': 'التربية الإسلامية'},
+      <String, dynamic>{'value': 'اللغة العربية', 'displayName': 'اللغة العربية'},
+      <String, dynamic>{'value': 'اللغة الإنكليزية', 'displayName': 'اللغة الإنكليزية'},
+      <String, dynamic>{'value': 'الرياضيات', 'displayName': 'الرياضيات'},
+      <String, dynamic>{'value': 'العلوم', 'displayName': 'العلوم'},
+      <String, dynamic>{'value': 'الفيزياء', 'displayName': 'الفيزياء'},
+      <String, dynamic>{'value': 'الكيمياء', 'displayName': 'الكيمياء'},
+      <String, dynamic>{'value': 'الأحياء', 'displayName': 'الأحياء'},
+      <String, dynamic>{'value': 'التاريخ', 'displayName': 'التاريخ'},
+      <String, dynamic>{'value': 'الجغرافية', 'displayName': 'الجغرافية'},
+      <String, dynamic>{'value': 'الاجتماعيات', 'displayName': 'الاجتماعيات'},
+      <String, dynamic>{'value': 'التربية الفنية', 'displayName': 'التربية الفنية'},
+      <String, dynamic>{'value': 'التربية الرياضية', 'displayName': 'التربية الرياضية'},
+      <String, dynamic>{'value': 'الحاسوب', 'displayName': 'الحاسوب'},
+      <String, dynamic>{'value': 'الإرشاد التربوي', 'displayName': 'الإرشاد التربوي'},
+      <String, dynamic>{'value': 'معلم صفوف أولية', 'displayName': 'معلم صفوف أولية'},
+      <String, dynamic>{'value': 'اللغة الكردية', 'displayName': 'اللغة الكردية'},
+      <String, dynamic>{'value': 'اللغة الفرنسية', 'displayName': 'اللغة الفرنسية'},
+      <String, dynamic>{'value': 'التربية الخاصة', 'displayName': 'التربية الخاصة'},
+      <String, dynamic>{'value': 'أخرى', 'displayName': 'أخرى'},
+    ],
+    'motherTongue': [
+      <String, dynamic>{'value': 'العربية', 'displayName': 'العربية'},
+      <String, dynamic>{'value': 'الكردية', 'displayName': 'الكردية'},
+      <String, dynamic>{'value': 'التركمانية', 'displayName': 'التركمانية'},
+      <String, dynamic>{'value': 'السريانية', 'displayName': 'السريانية'},
+      <String, dynamic>{'value': 'أخرى', 'displayName': 'أخرى'},
+    ],
+    'maritalStatus': [
+      <String, dynamic>{'value': 'أعزب', 'displayName': 'أعزب'},
+      <String, dynamic>{'value': 'متزوج', 'displayName': 'متزوج'},
+      <String, dynamic>{'value': 'مطلق', 'displayName': 'مطلق'},
+      <String, dynamic>{'value': 'أرمل', 'displayName': 'أرمل'},
+    ],
+    'bloodGroup': [
+      <String, dynamic>{'value': 'A+', 'displayName': 'A+'},
+      <String, dynamic>{'value': 'A-', 'displayName': 'A-'},
+      <String, dynamic>{'value': 'B+', 'displayName': 'B+'},
+      <String, dynamic>{'value': 'B-', 'displayName': 'B-'},
+      <String, dynamic>{'value': 'AB+', 'displayName': 'AB+'},
+      <String, dynamic>{'value': 'AB-', 'displayName': 'AB-'},
+      <String, dynamic>{'value': 'O+', 'displayName': 'O+'},
+      <String, dynamic>{'value': 'O-', 'displayName': 'O-'},
+    ],
+    'religion': [
+      <String, dynamic>{'value': 'الإسلام', 'displayName': 'الإسلام'},
+      <String, dynamic>{'value': 'المسيحية', 'displayName': 'المسيحية'},
+      <String, dynamic>{'value': 'الأزيدية', 'displayName': 'الأزيدية'},
+      <String, dynamic>{'value': 'الصابئة المندائية', 'displayName': 'الصابئة المندائية'},
+      <String, dynamic>{'value': 'أخرى', 'displayName': 'أخرى'},
+    ],
   };
 
   final Map<String, String> _officialArabicNames = {
-    'name': 'الإسم',
-    'fatherName': 'إسم الأب',
-    'grandFatherName': 'اسم والد الأب',
-    'fathersGrandFatherName': 'اسم جد الأب',
-    'surName': 'اللقب',
-    'motherName': 'إسم الأم',
-    'mothersFatherName': 'اسم والد الأم',
-    'mothersGrandFatherName': 'اسم جد الأم',
-    'dateOfBirth': 'تاريخ التولّد',
-    'gender': 'الجنس',
-    'nationality': 'الجنسية',
+    'name': 'الإسم *',
+    'fatherName': 'إسم الأب *',
+    'grandFatherName': 'اسم والد الأب *',
+    'fathersGrandFatherName': 'اسم جد الأب *',
+    'surName': 'اللقب *',
+    'motherName': 'إسم الأم *',
+    'mothersFatherName': 'اسم والد الأم *',
+    'mothersGrandFatherName': 'اسم جد الأم *',
+    'dateOfBirth': 'تاريخ التولّد *',
+    'gender': 'الجنس *',
+    'nationality': 'الجنسية *',
     'countryOfBirth': 'محل الولادة',
     'homeTown': 'مسقط الرأس',
-    'motherTongue': 'اللغة الأم',
+    'motherTongue': 'اللغة الأم *',
     'maritalStatus': 'الحالة الاجتماعية',
     'bloodGroup': 'فئة الدم',
-    'religion': 'الديانة',
+    'religion': 'الديانة *',
     'notes': 'ملاحظات',
-    'idType': 'نوع الهوية',
-    'issuingCountry': 'بلد الإصدار',
-    'idNumber': 'رقم البطاقة الوطنية الموحدة',
+    'idType': 'نوع الهوية *',
+    'issuingCountry': 'بلد الإصدار *',
+    'idNumber': 'رقم الوثيقة / البطاقة الوطنية *',
     'issuingDate': 'تاريخ الإصدار',
     'employeeIdNumber': 'الرقم الوظيفي',
     'familyNumber': 'الرقم العائلي',
-    'nameOfDocument': 'نوع الوثيقة',
+    'nameOfDocument': 'نوع الوثيقة *',
     'issuer': 'جهة الإصدار',
-    'recordNumber': 'رقم السجل',
-    'pageNumber': 'رقم الصحيفة',
-    'jinsiyaIdNumber': 'رقم شهادة الجنسية',
-    'otherIdNumber': 'رقم الهوية الأخرى',
-    'birthCertificateNumber': 'رقم شهادة الولادة',
-    'employmentType': 'نوع التوظيف',
-    'employeeCategory': 'نوع الموظف',
-    'classification': 'التصنيف',
+    'recordNumber': 'رقم السجل *',
+    'pageNumber': 'رقم الصحيفة *',
+    'employmentType': 'نوع التوظيف *',
+    'employeeCategory': 'نوع الموظف *',
+    'classification': 'التصنيف *',
     'jobDesignation': 'المسمى الوظيفي',
     'employmentGrade': 'الدرجة الوظيفية',
-    'currentPosition': 'المنصب الحالي',
-    'positionType': 'نوع الوظيفة',
-    'dateOfStartWorking': 'تاريخ أول تعيين للموظف',
-    'status': 'الحالة الوظيفية',
-    'statusDate': 'تاريخ سريان الحالة الوظيفية',
-    'statusReason': 'سبب تغيير الحالة الوظيفية',
-    'educationLevel': 'التحصيل الدراسي',
+    'weeklyTeachingQuota': 'النصاب الأسبوعي للحصص',
+    'currentPosition': 'المنصب الحالي *',
+    'positionType': 'العنوان الوظيفي *',
+    'dateOfStartWorking': 'تاريخ أول تعيين للموظف *',
+    'employmentStatus': 'الحالة الوظيفية *',
+    'employmentStatusReason': 'سبب الحالة الوظيفية',
+    'assignedEntityName': 'الجهة المنسب أو المكلف إليها',
+    'status': 'حالة السجل',
+    'educationLevel': 'التحصيل الدراسي *',
     'universityName': 'إسم الكلية / المعهد',
     'graduationYear': 'سنة التخرج',
-    'specialization': 'الإختصاص',
+    'specialization': 'الإختصاص *',
     'specialNeedsInformation': 'معلومات ذوي الاحتياجات الخاصة إن وجدت',
     'emergencyContactName': 'اسم جهة الاتصال في الحالات الطارئة',
     'emergencyContactRelationship': 'صلة جهة الاتصال',
-    'emergencyContactPhoneNumber': 'رقم هاتف جهة الاتصال',
-    'countryStructureId': 'الموقع الجغرافي',
-    'town': 'المدينة/القرية',
-    'area': 'الحي',
-    'quarter': 'المحلة',
-    'street': 'زقاق',
-    'address1': 'عنوان 1',
+    'emergencyContactPhoneNumber': 'رقم هاتف جهة الاتصال في الحالات الطارئة',
+    'countryStructureId': 'الموقع الجغرافي *',
+    'town': 'المدينة/القرية *',
+    'area': 'الحي *',
+    'quarter': 'المحلة *',
+    'street': 'زقاق *',
+    'address1': 'عنوان 1 *',
     'address2': 'عنوان 2',
-    'closestLocation': 'أقرب نقطة دالة',
+    'closestLocation': 'أقرب نقطة دالة *',
     'email': 'البريد الإلكتروني',
-    'mobilePhoneNumber': 'رقم هاتف المعلم',
-    'homePhoneNumber': 'رقم الهاتف',
-    'imageUrl': 'الصورة',
-    'identification': 'وثيقة التعريف',
-    'address': 'العنوان',
-    'employmentRecord': 'سجل التوظيف',
+    'mobilePhoneNumber': 'رقم هاتف المعلم *',
+    'homePhoneNumber': 'رقم الهاتف الأرضي',
+    'imageUrl': 'الصورة الشخصية',
   };
 
   @override
   void initState() {
     super.initState();
+    _initStaticOptions();
     _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _fetchTeacherData();
   }
 
+  void _initStaticOptions() {
+    for (final entry in _defaultStaticOptions.entries) {
+      _options[entry.key] = entry.value
+          .map((item) => <String, dynamic>{
+                'value': item['value'],
+                'displayName': item['displayName'],
+              })
+          .toList();
+    }
+  }
+
   Map<String, List<String>> _liveAliases() => {
         for (final entry in _officialArabicNames.entries)
-          entry.key: <String>[entry.key, entry.value],
+          entry.key: <String>[
+            entry.key,
+            entry.value.replaceAll(' *', '').trim(),
+            entry.value,
+          ],
       };
 
   Map<String, String> _liveValues() {
@@ -150,16 +301,20 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     final data = _teacherData;
     if (data == null) return result;
     final identification = data['identification'] is Map
-        ? Map<String, dynamic>.from(data['identification'])
+        ? Map<String, dynamic>.from(data['identification'] as Map)
         : <String, dynamic>{};
     final address = data['address'] is Map
-        ? Map<String, dynamic>.from(data['address'])
+        ? Map<String, dynamic>.from(data['address'] as Map)
         : <String, dynamic>{};
     for (final key in _officialArabicNames.keys) {
       dynamic value;
-      if (data.containsKey(key)) value = data[key];
-      else if (identification.containsKey(key)) value = identification[key];
-      else if (address.containsKey(key)) value = address[key];
+      if (data.containsKey(key)) {
+        value = data[key];
+      } else if (identification.containsKey(key)) {
+        value = identification[key];
+      } else if (address.containsKey(key)) {
+        value = address[key];
+      }
       if (value is List) value = value.isEmpty ? '' : value.first;
       if (value is bool) value = value ? 'true' : 'false';
       if (value != null) result[key] = '$value';
@@ -186,10 +341,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     final data = _teacherData;
     if (data == null) return;
     final identification = data['identification'] is Map
-        ? Map<String, dynamic>.from(data['identification'])
+        ? Map<String, dynamic>.from(data['identification'] as Map)
         : <String, dynamic>{};
     final address = data['address'] is Map
-        ? Map<String, dynamic>.from(data['address'])
+        ? Map<String, dynamic>.from(data['address'] as Map)
         : <String, dynamic>{};
     bool changed = false;
     for (final entry in values.entries) {
@@ -222,15 +377,134 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   Map<String, dynamic> _unwrap(dynamic decoded) {
-    if (decoded is Map<String, dynamic>) {
-      final data = decoded['data'];
-      if (data is Map) return Map<String, dynamic>.from(data);
-      return decoded;
-    }
     if (decoded is Map) {
+      final data = decoded['data'];
+      if (data is Map) {
+        return data.map((k, v) => MapEntry(k.toString(), v));
+      }
       return decoded.map((k, v) => MapEntry(k.toString(), v));
     }
     throw Exception('استجابة بيانات المعلم غير صالحة');
+  }
+
+  // توحيد وتجهيز كافة حقول المعلم كما يفعل TeacherFormPage.js في نظام EMIS
+  void _normalizeTeacherFields(Map<String, dynamic> teacher) {
+    // 1. معالجة وثيقة التعريف
+    final rawId = teacher['identification'];
+    final identification = rawId is Map
+        ? rawId.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    identification['idNumber'] = (identification['idNumber'] ?? identification['IdNumber'] ?? '').toString();
+    identification['issuingCountry'] = (identification['issuingCountry'] ?? identification['IssuingCountry'] ?? 'العراق').toString();
+    identification['idType'] = identification['idType'] ?? identification['IdType'] ?? 12;
+    identification['nameOfDocument'] = (identification['nameOfDocument'] ?? '').toString();
+    identification['recordNumber'] = (identification['recordNumber'] ?? '').toString();
+    identification['pageNumber'] = (identification['pageNumber'] ?? '').toString();
+    identification['issuer'] = (identification['issuer'] ?? '').toString();
+    identification['issuingDate'] = _cleanDate(identification['issuingDate']);
+    teacher['identification'] = identification;
+
+    // 2. معالجة سجل التوظيف (employmentRecord) واستخراج المنصب والحالة الوظيفية
+    final rawEmp = teacher['employmentRecord'];
+    final employment = rawEmp is Map
+        ? rawEmp.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+
+    final rawStatuses = employment['employmentStatuses'] ?? employment['EmploymentStatuses'];
+    final statuses = rawStatuses is List
+        ? rawStatuses.whereType<Map>().map((x) => x.map((k, v) => MapEntry(k.toString(), v))).toList()
+        : <Map<String, dynamic>>[];
+
+    final rawPositions = employment['employmentPositions'] ?? employment['EmploymentPositions'];
+    final positions = rawPositions is List
+        ? rawPositions.whereType<Map>().map((x) => x.map((k, v) => MapEntry(k.toString(), v))).toList()
+        : <Map<String, dynamic>>[];
+
+    Map<String, dynamic>? latestStatus = statuses.isNotEmpty ? statuses.first : null;
+    Map<String, dynamic>? latestPosition = positions.isNotEmpty ? positions.first : null;
+
+    final rawStatusType = (latestStatus?['statusType'] ?? latestStatus?['StatusType'] ?? 'مستمر').toString();
+    teacher['employmentStatus'] = rawStatusType == 'Active' ? 'مستمر' : (rawStatusType.isEmpty ? 'مستمر' : rawStatusType);
+    teacher['employmentStatusReason'] = (latestStatus?['reason'] ?? latestStatus?['Reason'] ?? '').toString();
+    teacher['assignedEntityName'] = (latestStatus?['assignedEntityName'] ?? latestStatus?['AssignedEntityName'] ?? '').toString();
+
+    teacher['positionType'] = (employment['currentEmploymentPosition'] ??
+            employment['CurrentEmploymentPosition'] ??
+            teacher['positionType'] ??
+            '')
+        .toString();
+    teacher['currentPosition'] = (latestPosition?['position'] ??
+            latestPosition?['Position'] ??
+            teacher['currentPosition'] ??
+            '')
+        .toString();
+
+    teacher['employmentRecord'] = employment;
+
+    // 3. معالجة العنوان (address)
+    final rawAddr = teacher['address'];
+    final address = rawAddr is Map
+        ? rawAddr.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    address['addressType'] = address['addressType'] ?? 1;
+    address['countryStructureId'] = address['countryStructureId'] ?? 1;
+    address['town'] = (address['town'] ?? '').toString();
+    address['area'] = (address['area'] ?? '').toString();
+    address['quarter'] = (address['quarter'] ?? '').toString();
+    address['street'] = (address['street'] ?? '').toString();
+    address['address1'] = (address['branch'] ?? address['address1'] ?? '').toString();
+    address['address2'] = (address['neighborhood'] ?? address['address2'] ?? '').toString();
+    address['closestLocation'] = (address['closestLocation'] ?? '').toString();
+    address['mobilePhoneNumber'] = (address['mobilePhoneNumber'] ?? '').toString();
+    address['email'] = (address['email'] ?? '').toString();
+    teacher['address'] = address;
+
+    // 4. ضمان وجود كافة المفاتيح الأساسية في كائن المعلم حتى لا تختفي أي حقول من الشاشة
+    teacher['name'] = (teacher['name'] ?? '').toString();
+    teacher['fatherName'] = (teacher['fatherName'] ?? '').toString();
+    teacher['grandFatherName'] = (teacher['grandFatherName'] ?? '').toString();
+    teacher['fathersGrandFatherName'] = (teacher['fathersGrandFatherName'] ?? '').toString();
+    teacher['surName'] = (teacher['surName'] ?? '').toString();
+    teacher['motherName'] = (teacher['motherName'] ?? '').toString();
+    teacher['mothersFatherName'] = (teacher['mothersFatherName'] ?? '').toString();
+    teacher['mothersGrandFatherName'] = (teacher['mothersGrandFatherName'] ?? '').toString();
+    teacher['dateOfBirth'] = _cleanDate(teacher['dateOfBirth']);
+    teacher['gender'] = teacher['gender'] ?? 1;
+    teacher['nationality'] = (teacher['nationality'] ?? 'العراق').toString();
+    teacher['countryOfBirth'] = (teacher['countryOfBirth'] ?? 'العراق').toString();
+    teacher['homeTown'] = (teacher['homeTown'] ?? '').toString();
+    teacher['motherTongue'] = (teacher['motherTongue'] ?? 'العربية').toString();
+    teacher['maritalStatus'] = (teacher['maritalStatus'] ?? '').toString();
+    teacher['bloodGroup'] = (teacher['bloodGroup'] ?? '').toString();
+    teacher['religion'] = (teacher['religion'] ?? 'الإسلام').toString();
+    teacher['employeeIdNumber'] = (teacher['employeeIdNumber'] ?? '').toString();
+    teacher['familyNumber'] = (teacher['familyNumber'] ?? '').toString();
+    teacher['notes'] = (teacher['notes'] ?? '').toString();
+    teacher['status'] = teacher['status'] ?? 1;
+
+    teacher['employmentType'] = (teacher['employmentType'] ?? teacher['EmploymentType'] ?? '').toString();
+    teacher['employeeCategory'] = (teacher['employeeCategory'] ?? '').toString();
+    teacher['classification'] = (teacher['classification'] ?? teacher['Classification'] ?? '').toString();
+    teacher['jobDesignation'] = (teacher['jobDesignation'] ?? '').toString();
+    teacher['employmentGrade'] = (teacher['employmentGrade'] ?? '').toString();
+    teacher['weeklyTeachingQuota'] = (teacher['weeklyTeachingQuota'] ?? '').toString();
+    teacher['dateOfStartWorking'] = _cleanDate(teacher['dateOfStartWorking']);
+    teacher['educationLevel'] = (teacher['educationLevel'] ?? 'بكالوريوس').toString();
+    teacher['universityName'] = (teacher['universityName'] ?? '').toString();
+    teacher['graduationYear'] = _cleanDate(teacher['graduationYear']);
+    teacher['specialization'] = (teacher['specialization'] ?? '').toString();
+    teacher['specialNeedsInformation'] = (teacher['specialNeedsInformation'] ?? '').toString();
+    teacher['emergencyContactName'] = (teacher['emergencyContactName'] ?? '').toString();
+    teacher['emergencyContactRelationship'] = (teacher['emergencyContactRelationship'] ?? '').toString();
+    teacher['emergencyContactPhoneNumber'] = (teacher['emergencyContactPhoneNumber'] ?? '').toString();
+  }
+
+  String _cleanDate(dynamic raw) {
+    if (raw == null) return '';
+    final str = raw.toString().trim();
+    if (str.isEmpty || str.startsWith('0001-01-01') || str == '1-01-01') return '';
+    if (str.contains('T')) return str.split('T').first;
+    return str;
   }
 
   Future<void> _fetchTeacherData() async {
@@ -241,52 +515,70 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         Uri.parse('https://emis.moedu.gov.iq/api/employee/getemployee/${widget.teacherId}'),
         headers: {'Authorization': widget.token, 'Accept': 'application/json'},
       );
-      if (response.statusCode != 200) throw Exception('HTTP ${response.statusCode}');
-      final teacher = _unwrap(jsonDecode(utf8.decode(response.bodyBytes)));
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
 
+      final teacher = _unwrap(jsonDecode(utf8.decode(response.bodyBytes)));
+      _normalizeTeacherFields(teacher);
+
+      // حفظ بيانات المعلم فوراً حتى لا تفشل الشاشة لو تعطل أي خيار ثانوي
+      _teacherData = teacher;
+      _ensureOptionIncludesCurrentValue(teacher);
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+
+      // جلب خيارات القوائم المنسدلة والهيكل الجغرافي بالتوازي وبأمان
       for (final key in _optionEndpoints.keys) {
         await _loadOptions(key);
       }
       await _loadEmployeesOptions();
-
       _ensureOptionIncludesCurrentValue(teacher);
-
-      _teacherData = teacher;
       await _loadCountryStructure();
 
-      if (!mounted) return;
-      setState(() {
-        _teacherData = teacher;
-        _isLoading = false;
-      });
+      if (mounted) setState(() {});
     } catch (e) {
       debugPrint('خطأ في جلب بيانات المعلم: $e');
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('فشل جلب بيانات المعلم: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('فشل جلب بيانات المعلم: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
   }
 
   void _ensureOptionIncludesCurrentValue(Map<String, dynamic> teacher) {
-    final identification = teacher['identification'] is Map ? teacher['identification'] as Map : {};
-    
-    void checkAndAdd(String key, dynamic val, [Map? owner]) {
-      final targetVal = owner != null ? owner[key] : val;
-      if (targetVal != null && targetVal.toString().trim().isNotEmpty) {
-        final list = _options.putIfAbsent(key, () => []);
-        final exists = list.any((item) => _sameValue(_optionValue(item), targetVal));
-        if (!exists) {
-          list.add({'value': targetVal, 'displayName': targetVal.toString()});
-        }
+    final identification = teacher['identification'] is Map
+        ? Map<String, dynamic>.from(teacher['identification'] as Map)
+        : <String, dynamic>{};
+
+    void checkAndAdd(String key, dynamic val) {
+      if (val == null) return;
+      final sVal = val.toString().trim();
+      if (sVal.isEmpty) return;
+      final list = _options.putIfAbsent(key, () => <Map<String, dynamic>>[]);
+      final exists = list.any((item) => _sameValue(_optionValue(item), val));
+      if (!exists) {
+        list.add(<String, dynamic>{
+          'value': val,
+          'displayName': sVal,
+        });
       }
     }
 
     checkAndAdd('employmentType', teacher['employmentType']);
     checkAndAdd('employeeCategory', teacher['employeeCategory']);
     checkAndAdd('classification', teacher['classification']);
+    checkAndAdd('employmentGrade', teacher['employmentGrade']);
+    checkAndAdd('employmentStatus', teacher['employmentStatus']);
     checkAndAdd('status', teacher['status']);
     checkAndAdd('educationLevel', teacher['educationLevel']);
     checkAndAdd('positionType', teacher['positionType']);
@@ -299,25 +591,40 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     checkAndAdd('maritalStatus', teacher['maritalStatus']);
     checkAndAdd('bloodGroup', teacher['bloodGroup']);
     checkAndAdd('religion', teacher['religion']);
-    
+
     if (identification.isNotEmpty) {
-      checkAndAdd('idType', identification['idType'], identification);
-      checkAndAdd('issuingCountry', identification['issuingCountry'], identification);
+      checkAndAdd('idType', identification['idType']);
+      checkAndAdd('issuingCountry', identification['issuingCountry']);
     }
   }
 
   Future<List<Map<String, dynamic>>> _getOptions(String path) async {
     try {
+      final encodedPath = Uri.encodeFull('https://emis.moedu.gov.iq/api$path');
       final response = await http.get(
-        Uri.parse('https://emis.moedu.gov.iq/api$path'),
+        Uri.parse(encodedPath),
         headers: {'Authorization': widget.token, 'Accept': 'application/json'},
       );
       if (response.statusCode != 200) return <Map<String, dynamic>>[];
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
       dynamic value = decoded;
-      if (value is Map) value = value['data'] ?? value['items'] ?? value['results'] ?? value;
+      if (value is Map) {
+        value = value['data'] ?? value['items'] ?? value['results'] ?? value;
+      }
       if (value is! List) return <Map<String, dynamic>>[];
-      return value.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+
+      final result = <Map<String, dynamic>>[];
+      for (final item in value) {
+        if (item is Map) {
+          result.add(item.map((k, v) => MapEntry(k.toString(), v)));
+        } else if (item != null) {
+          final str = item.toString().trim();
+          if (str.isNotEmpty) {
+            result.add(<String, dynamic>{'value': str, 'displayName': str});
+          }
+        }
+      }
+      return result;
     } catch (e) {
       debugPrint('تجاوز خطأ خيارات $path: $e');
       return <Map<String, dynamic>>[];
@@ -325,13 +632,23 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   Future<void> _loadOptions(String key) async {
-    if (_options.containsKey(key) || _loadingOptions.contains(key)) return;
+    if (_loadingOptions.contains(key)) return;
     final endpoint = _optionEndpoints[key];
     if (endpoint == null) return;
     _loadingOptions.add(key);
     try {
-      final list = await _getOptions(endpoint);
-      if (list.isNotEmpty) _options[key] = list;
+      final fetched = await _getOptions(endpoint);
+      if (fetched.isNotEmpty) {
+        final existing = _options[key] ?? <Map<String, dynamic>>[];
+        final merged = <Map<String, dynamic>>[...fetched];
+        for (final item in existing) {
+          final v = _optionValue(item);
+          if (!merged.any((m) => _sameValue(_optionValue(m), v))) {
+            merged.add(item);
+          }
+        }
+        _options[key] = merged;
+      }
     } catch (e) {
       debugPrint('تعذر تحميل خيارات $key: $e');
     } finally {
@@ -351,24 +668,41 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
       void loadSimple(String key, dynamic raw) {
         if (raw is! List) return;
-        _options[key] = raw
-            .map((item) {
-              if (item is Map) {
-                final v = '${item['value'] ?? item['label'] ?? ''}'.trim();
-                final t = '${item['label'] ?? item['displayName'] ?? v}'.trim();
-                return {'value': v, 'displayName': t};
-              }
-              final s = '$item'.trim();
-              return {'value': s, 'displayName': s};
-            })
-            .where((o) => '${o['value']}'.trim().isNotEmpty)
-            .toList();
+        final existing = _options[key] ?? <Map<String, dynamic>>[];
+        final parsed = <Map<String, dynamic>>[];
+
+        for (final item in raw) {
+          if (item is Map) {
+            final v = '${item['value'] ?? item['label'] ?? ''}'.trim();
+            final t = '${item['label'] ?? item['displayName'] ?? v}'.trim();
+            if (v.isNotEmpty) {
+              parsed.add(<String, dynamic>{'value': v, 'displayName': t});
+            }
+          } else if (item != null) {
+            final s = '$item'.trim();
+            if (s.isNotEmpty) {
+              parsed.add(<String, dynamic>{'value': s, 'displayName': s});
+            }
+          }
+        }
+
+        if (parsed.isNotEmpty) {
+          for (final ex in existing) {
+            final v = _optionValue(ex);
+            if (!parsed.any((p) => _sameValue(_optionValue(p), v))) {
+              parsed.add(ex);
+            }
+          }
+          _options[key] = parsed;
+        }
       }
 
       loadSimple('classification', decoded['classification']);
-      loadSimple('status', decoded['currentemploymentstatus']);
+      loadSimple('employmentStatus', decoded['currentemploymentstatus']);
       loadSimple('employeeCategory', decoded['employeecategory'] ?? decoded['employeeCategory']);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('تجاوز خطأ getemployeesoptions: $e');
+    }
   }
 
   Future<void> _loadCountryStructure() async {
@@ -378,7 +712,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       _addressCountries = list;
 
       final address = _teacherData?['address'] is Map
-          ? Map<String, dynamic>.from(_teacherData!['address'])
+          ? Map<String, dynamic>.from(_teacherData!['address'] as Map)
           : <String, dynamic>{};
       final stored = address['countryStructureId']?.toString();
 
@@ -406,6 +740,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           walk(child, countryId ?? id, governorateId ?? id);
         }
       }
+
       for (final country in _addressCountries) {
         walk(country, _optionValue(country)?.toString(), null);
       }
@@ -433,8 +768,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   List<Map<String, dynamic>> _childrenOf(Map<String, dynamic> node) {
     final raw = node['children'] ?? node['items'] ?? node['subItems'] ?? node['childs'];
-    if (raw is! List) return [];
-    return raw.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+    if (raw is! List) return <Map<String, dynamic>>[];
+    return raw
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
   }
 
   String _formatDateValue(String value) {
@@ -467,15 +805,43 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   String _label(String key) => _officialArabicNames[key] ?? key;
 
   bool _isDateField(String key) => <String>{
-        'dateOfBirth', 'issuingDate', 'dateOfStartWorking', 'graduationYear',
-        'statusDate',
+        'dateOfBirth',
+        'issuingDate',
+        'dateOfStartWorking',
+        'graduationYear',
+      }.contains(key);
+
+  bool _isDropdownField(String key) =>
+      _optionEndpoints.containsKey(key) ||
+      _defaultStaticOptions.containsKey(key) ||
+      <String>{
+        'employmentType',
+        'employeeCategory',
+        'classification',
+        'employmentGrade',
+        'currentPosition',
+        'positionType',
+        'employmentStatus',
+        'status',
+        'educationLevel',
+        'specialization',
       }.contains(key);
 
   dynamic _optionValue(Map<String, dynamic> option) => option['value'] ?? option['id'];
   String _optionText(Map<String, dynamic> option) =>
-      (option['displayName'] ?? option['name'] ?? option['label'] ?? option['text'] ?? _optionValue(option)?.toString() ?? '').toString();
+      (option['displayName'] ??
+              option['name'] ??
+              option['label'] ??
+              option['text'] ??
+              _optionValue(option)?.toString() ??
+              '')
+          .toString();
 
-  bool _sameValue(dynamic a, dynamic b) => a?.toString() == b?.toString();
+  bool _sameValue(dynamic a, dynamic b) {
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    return a.toString().trim() == b.toString().trim();
+  }
 
   Widget _dropdownField({
     required String key,
@@ -483,16 +849,36 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     required bool isDark,
     required Color textColor,
   }) {
-    final items = _options[key] ?? const <Map<String, dynamic>>[];
+    final rawItems = _options[key] ?? const <Map<String, dynamic>>[];
     final value = owner[key];
-    Map<String, dynamic>? selected;
-    for (final item in items) {
+
+    // إزالة التكرارات وضمان وجود القيمة الحالية ضمن القائمة
+    final uniqueItems = <Map<String, dynamic>>[];
+    for (final item in rawItems) {
+      final v = _optionValue(item);
+      if (v != null &&
+          v.toString().trim().isNotEmpty &&
+          !uniqueItems.any((u) => _sameValue(_optionValue(u), v))) {
+        uniqueItems.add(item);
+      }
+    }
+
+    if (value != null &&
+        value.toString().trim().isNotEmpty &&
+        !uniqueItems.any((u) => _sameValue(_optionValue(u), value))) {
+      uniqueItems.add(<String, dynamic>{
+        'value': value,
+        'displayName': value.toString(),
+      });
+    }
+
+    dynamic safeValue;
+    for (final item in uniqueItems) {
       if (_sameValue(_optionValue(item), value)) {
-        selected = item;
+        safeValue = _optionValue(item);
         break;
       }
     }
-    final safeValue = selected == null ? null : _optionValue(selected);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 15),
@@ -508,14 +894,15 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         ),
         dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
         style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
-        items: items.map((item) {
+        items: uniqueItems.map((item) {
           return DropdownMenuItem<dynamic>(
             value: _optionValue(item),
-            child: Text(_optionText(item),
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(
+              _optionText(item),
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           );
         }).toList(),
-        validator: null,
         onTap: () => _focusLive(key),
         onChanged: (newValue) {
           setState(() => owner[key] = newValue);
@@ -531,7 +918,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     if (raw != null && raw.isNotEmpty) initial = DateTime.tryParse(raw) ?? initial;
     final picked = await showDatePicker(
       context: context,
-      initialDate: initial,
+      initialDate: initial.isAfter(DateTime(2100)) || initial.isBefore(DateTime(1900))
+          ? DateTime(1985, 1, 1)
+          : initial,
       firstDate: DateTime(1900),
       lastDate: DateTime(2100),
       locale: const Locale('ar'),
@@ -556,13 +945,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     bool isDark,
     Color textColor,
   ) {
-    if (_optionEndpoints.containsKey(key) ||
-        key == 'employmentType' ||
-        key == 'employeeCategory' ||
-        key == 'classification' ||
-        key == 'status' ||
-        key == 'positionType') {
-      return _dropdownField(key: key, owner: owner, isDark: isDark, textColor: textColor);
+    if (_isDropdownField(key)) {
+      return _dropdownField(
+          key: key, owner: owner, isDark: isDark, textColor: textColor);
     }
 
     if (_isDateField(key)) {
@@ -581,8 +966,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
               final formatted = _formatTypedDate(newValue.text);
               return TextEditingValue(
                 text: formatted,
-                selection:
-                    TextSelection.collapsed(offset: formatted.length),
+                selection: TextSelection.collapsed(offset: formatted.length),
               );
             }),
           ],
@@ -636,11 +1020,14 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,
-                style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.indigo.shade400)),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: Colors.indigo.shade400,
+              ),
+            ),
             const SizedBox(height: 13),
             ..._studentGrid(children),
           ],
@@ -664,9 +1051,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         rows.add(SizedBox(width: double.infinity, child: current));
         i++;
       } else {
-        final next = i + 1 < children.length
-            ? children[i + 1]
-            : const SizedBox();
+        final next =
+            i + 1 < children.length ? children[i + 1] : const SizedBox();
         final nextIsDate = next is Padding &&
             next.child is TextFormField &&
             (next.child as TextFormField).key is ValueKey &&
@@ -694,8 +1080,14 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return rows;
   }
 
-  Widget _addressDropdown(String label, String? value,
-      List<Map<String, dynamic>> items, ValueChanged<String?> onChanged) {
+  Widget _addressDropdown(
+    String label,
+    String? value,
+    List<Map<String, dynamic>> items,
+    bool isDark,
+    Color textColor,
+    ValueChanged<String?> onChanged,
+  ) {
     final safe =
         items.any((x) => _optionValue(x)?.toString() == value) ? value : null;
     return Padding(
@@ -703,18 +1095,22 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       child: DropdownButtonFormField<String>(
         value: safe,
         isExpanded: true,
+        dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          labelStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           filled: true,
+          fillColor: isDark ? Colors.black12 : Colors.grey[50],
         ),
-        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+        style: TextStyle(fontWeight: FontWeight.bold, color: textColor, fontSize: 16),
         items: items
             .map((item) => DropdownMenuItem<String>(
                   value: _optionValue(item)?.toString(),
-                  child: Text(_optionText(item),
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  child: Text(
+                    _optionText(item),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ))
             .toList(),
         onChanged: onChanged,
@@ -722,177 +1118,242 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     );
   }
 
-  bool _identityFieldVisible(String key, dynamic idType) {
-    final t = int.tryParse(idType?.toString() ?? '');
-    if (t == 3) {
-      return {
-        'idNumber', 'jinsiyaIdNumber', 'issuer', 'recordNumber',
-        'pageNumber', 'issuingCountry', 'issuingDate', 'nameOfDocument'
-      }.contains(key);
+  List<Widget> _buildIdentificationFields(
+    Map<String, dynamic> identification,
+    Map<String, dynamic> teacher,
+    bool isDark,
+    Color textColor,
+  ) {
+    final idType = int.tryParse(identification['idType']?.toString() ?? '') ?? 12;
+    final widgets = <Widget>[
+      _fieldFor('idType', identification['idType'], identification, isDark, textColor),
+      _fieldFor('issuingCountry', identification['issuingCountry'], identification, isDark, textColor),
+    ];
+
+    if (idType == 3) {
+      // هوية الأحوال المدنية
+      widgets.addAll([
+        _fieldFor('idNumber', identification['idNumber'], identification, isDark, textColor),
+        _fieldFor('recordNumber', identification['recordNumber'], identification, isDark, textColor),
+        _fieldFor('pageNumber', identification['pageNumber'], identification, isDark, textColor),
+        _fieldFor('issuer', identification['issuer'], identification, isDark, textColor),
+      ]);
+    } else if (idType == 12) {
+      // البطاقة الوطنية الموحدة
+      widgets.add(
+        _fieldFor('idNumber', identification['idNumber'], identification, isDark, textColor),
+      );
+    } else if (idType == 22) {
+      // شهادة الولادة
+      widgets.addAll([
+        _fieldFor('idNumber', identification['idNumber'], identification, isDark, textColor),
+        _fieldFor('issuingDate', identification['issuingDate'], identification, isDark, textColor),
+        _fieldFor('recordNumber', identification['recordNumber'], identification, isDark, textColor),
+        _fieldFor('pageNumber', identification['pageNumber'], identification, isDark, textColor),
+      ]);
+    } else if (idType == 16) {
+      // وثيقة أخرى
+      widgets.addAll([
+        _fieldFor('nameOfDocument', identification['nameOfDocument'], identification, isDark, textColor),
+        _fieldFor('idNumber', identification['idNumber'], identification, isDark, textColor),
+      ]);
+    } else {
+      widgets.add(
+        _fieldFor('idNumber', identification['idNumber'], identification, isDark, textColor),
+      );
     }
-    if (t == 12) return {'idNumber'}.contains(key);
-    if (t == 22) {
-      return {
-        'birthCertificateNumber', 'issuer', 'issuingDate',
-        'issuingCountry', 'nameOfDocument'
-      }.contains(key);
-    }
-    if (t == 16) {
-      return {
-        'otherIdNumber', 'nameOfDocument', 'issuer', 'issuingDate',
-        'issuingCountry'
-      }.contains(key);
-    }
-    return true;
+
+    widgets.addAll([
+      _fieldFor('employeeIdNumber', teacher['employeeIdNumber'], teacher, isDark, textColor),
+      _fieldFor('familyNumber', teacher['familyNumber'], teacher, isDark, textColor),
+    ]);
+
+    return widgets;
   }
 
   List<Widget> _buildTeacherFormSections(bool isDark, Color textColor) {
     final teacher = _teacherData!;
-    final identification = teacher['identification'] is Map<String, dynamic>
-        ? teacher['identification'] as Map<String, dynamic>
-        : teacher['identification'] is Map
-            ? Map<String, dynamic>.from(teacher['identification'] as Map)
-            : <String, dynamic>{};
-    final address = teacher['address'] is Map<String, dynamic>
-        ? teacher['address'] as Map<String, dynamic>
-        : teacher['address'] is Map
-            ? Map<String, dynamic>.from(teacher['address'] as Map)
-            : <String, dynamic>{};
-    final employment = teacher['employmentRecord'] is Map<String, dynamic>
-        ? teacher['employmentRecord'] as Map<String, dynamic>
-        : teacher['employmentRecord'] is Map
-            ? Map<String, dynamic>.from(teacher['employmentRecord'] as Map)
-            : <String, dynamic>{};
+    final identification = teacher['identification'] is Map
+        ? Map<String, dynamic>.from(teacher['identification'] as Map)
+        : <String, dynamic>{};
+    final address = teacher['address'] is Map
+        ? Map<String, dynamic>.from(teacher['address'] as Map)
+        : <String, dynamic>{};
+    final employment = teacher['employmentRecord'] is Map
+        ? Map<String, dynamic>.from(teacher['employmentRecord'] as Map)
+        : <String, dynamic>{};
+
     teacher['identification'] = identification;
     teacher['address'] = address;
     teacher['employmentRecord'] = employment;
 
     Widget field(String key, [Map<String, dynamic>? owner]) {
       final target = owner ?? teacher;
-      if (!target.containsKey(key)) return const SizedBox.shrink();
       return _fieldFor(key, target[key], target, isDark, textColor);
     }
 
-    final result = <Widget>[
-      _teacherSection('الاسم الكامل', [
-        field('name'),
-        field('fatherName'),
-        field('grandFatherName'),
-        field('fathersGrandFatherName'),
-        field('surName'),
-        field('motherName'),
-        field('mothersFatherName'),
-        field('mothersGrandFatherName'),
-      ], isDark),
-
-      _teacherSection('البيانات الشخصية', [
-        field('dateOfBirth'),
-        field('countryOfBirth'),
-        field('gender'),
-        field('nationality'),
-        field('homeTown'),
-        field('motherTongue'),
-        field('maritalStatus'),
-        field('bloodGroup'),
-        field('religion'),
-        field('notes'),
-      ], isDark),
-
-      _teacherSection('وثيقة التعريف', [
-        if (identification.containsKey('idType'))
-          _dropdownField(
-              key: 'idType',
-              owner: identification,
-              isDark: isDark,
-              textColor: textColor),
-        ...identification.entries
-            .where((entry) =>
-                entry.key != 'idType' &&
-                _identityFieldVisible(entry.key, identification['idType']))
-            .map((entry) =>
-                _fieldFor(entry.key, entry.value, identification, isDark, textColor)),
-        field('employeeIdNumber'),
-        field('familyNumber'),
-      ], isDark),
-
-      _teacherSection('البيانات الوظيفية', [
-        field('employmentType'),
-        field('employeeCategory'),
-        field('classification'),
-        field('jobDesignation'),
-        field('employmentGrade'),
-        field('currentPosition'),
-        field('positionType'),
-        field('dateOfStartWorking'),
-      ], isDark),
-
-      _teacherSection('الحالة الوظيفية', [
-        field('status'),
-        field('statusDate'),
-        field('statusReason'),
-      ], isDark),
-
-      _teacherSection('التحصيل الدراسي', [
-        field('educationLevel'),
-        field('universityName'),
-        field('graduationYear'),
-        field('specialization'),
-      ], isDark),
-
-      _teacherSection('ذوو الاحتياجات الخاصة والاتصال الطارئ', [
-        field('specialNeedsInformation'),
-        field('emergencyContactName'),
-        field('emergencyContactRelationship'),
-        field('emergencyContactPhoneNumber'),
-      ], isDark),
-
-      _teacherSection('العنوان ومعلومات الاتصال', [
-        _addressDropdown('الدولة', _addressCountryId, _addressCountries, (v) {
-          final country =
-              _addressCountries.where((x) => _optionValue(x)?.toString() == v).toList();
-          if (country.isEmpty) return;
-          setState(() {
-            _addressCountryId = v;
-            _addressGovernorates = _childrenOf(country.first);
-            _addressGovernorateId = null;
-            _addressDistricts = [];
-            _addressDistrictId = null;
-            address['countryStructureId'] = null;
-          });
-          _focusLive('countryStructureId');
-        }),
-        _addressDropdown('المحافظة', _addressGovernorateId, _addressGovernorates, (v) {
-          final gov =
-              _addressGovernorates.where((x) => _optionValue(x)?.toString() == v).toList();
-          if (gov.isEmpty) return;
-          setState(() {
-            _addressGovernorateId = v;
-            _addressDistricts = _childrenOf(gov.first);
-            _addressDistrictId = null;
-            address['countryStructureId'] = null;
-          });
-          _focusLive('countryStructureId');
-        }),
-        _addressDropdown('القضاء', _addressDistrictId, _addressDistricts, (v) {
-          setState(() {
-            _addressDistrictId = v;
-            address['countryStructureId'] = v == null ? null : int.tryParse(v);
-          });
-          _focusLive('countryStructureId');
-        }),
-        field('town', address),
-        field('area', address),
-        field('quarter', address),
-        field('street', address),
-        field('address1', address),
-        field('address2', address),
-        field('closestLocation', address),
-        field('email', address),
-        field('mobilePhoneNumber', address),
-      ], isDark),
+    return <Widget>[
+      _teacherSection(
+        'الاسم الكامل',
+        [
+          field('name'),
+          field('fatherName'),
+          field('grandFatherName'),
+          field('fathersGrandFatherName'),
+          field('surName'),
+          field('motherName'),
+          field('mothersFatherName'),
+          field('mothersGrandFatherName'),
+        ],
+        isDark,
+      ),
+      _teacherSection(
+        'وثيقة التعريف والرقم الوظيفي',
+        _buildIdentificationFields(identification, teacher, isDark, textColor),
+        isDark,
+      ),
+      _teacherSection(
+        'البيانات الشخصية',
+        [
+          field('dateOfBirth'),
+          field('countryOfBirth'),
+          field('gender'),
+          field('nationality'),
+          field('homeTown'),
+          field('motherTongue'),
+          field('maritalStatus'),
+          field('bloodGroup'),
+          field('religion'),
+          field('notes'),
+        ],
+        isDark,
+      ),
+      _teacherSection(
+        'البيانات الوظيفية',
+        [
+          field('employmentType'),
+          field('employeeCategory'),
+          field('classification'),
+          field('positionType'),
+          field('currentPosition'),
+          field('jobDesignation'),
+          field('employmentGrade'),
+          field('weeklyTeachingQuota'),
+          field('dateOfStartWorking'),
+        ],
+        isDark,
+      ),
+      _teacherSection(
+        'الحالة الوظيفية',
+        [
+          field('employmentStatus'),
+          if (teacher['employmentStatus'] != 'مستمر')
+            field('employmentStatusReason'),
+          if (teacher['employmentStatus'] ==
+              'مكلف او منسب من وزارة التربية الى جهات أخرى')
+            field('assignedEntityName'),
+          field('status'),
+        ],
+        isDark,
+      ),
+      _teacherSection(
+        'التحصيل الدراسي والاختصاص',
+        [
+          field('educationLevel'),
+          if (teacher['educationLevel'] == 'دبلوم' ||
+              teacher['educationLevel'] == 'بكالوريوس') ...[
+            field('universityName'),
+            field('graduationYear'),
+          ],
+          if (!<String>['ابتدائية', 'متوسطة', 'إعدادية']
+              .contains(teacher['educationLevel']))
+            field('specialization'),
+        ],
+        isDark,
+      ),
+      _teacherSection(
+        'ذوو الاحتياجات الخاصة والاتصال الطارئ',
+        [
+          field('specialNeedsInformation'),
+          field('emergencyContactName'),
+          field('emergencyContactRelationship'),
+          field('emergencyContactPhoneNumber'),
+        ],
+        isDark,
+      ),
+      _teacherSection(
+        'العنوان ومعلومات الاتصال',
+        [
+          _addressDropdown(
+            'الدولة',
+            _addressCountryId,
+            _addressCountries,
+            isDark,
+            textColor,
+            (v) {
+              final country = _addressCountries
+                  .where((x) => _optionValue(x)?.toString() == v)
+                  .toList();
+              if (country.isEmpty) return;
+              setState(() {
+                _addressCountryId = v;
+                _addressGovernorates = _childrenOf(country.first);
+                _addressGovernorateId = null;
+                _addressDistricts = [];
+                _addressDistrictId = null;
+                address['countryStructureId'] = null;
+              });
+              _focusLive('countryStructureId');
+            },
+          ),
+          _addressDropdown(
+            'المحافظة',
+            _addressGovernorateId,
+            _addressGovernorates,
+            isDark,
+            textColor,
+            (v) {
+              final gov = _addressGovernorates
+                  .where((x) => _optionValue(x)?.toString() == v)
+                  .toList();
+              if (gov.isEmpty) return;
+              setState(() {
+                _addressGovernorateId = v;
+                _addressDistricts = _childrenOf(gov.first);
+                _addressDistrictId = null;
+                address['countryStructureId'] = null;
+              });
+              _focusLive('countryStructureId');
+            },
+          ),
+          _addressDropdown(
+            'القضاء / الناحية',
+            _addressDistrictId,
+            _addressDistricts,
+            isDark,
+            textColor,
+            (v) {
+              setState(() {
+                _addressDistrictId = v;
+                address['countryStructureId'] =
+                    v == null ? null : int.tryParse(v);
+              });
+              _focusLive('countryStructureId');
+            },
+          ),
+          field('town', address),
+          field('area', address),
+          field('quarter', address),
+          field('street', address),
+          field('address1', address),
+          field('address2', address),
+          field('closestLocation', address),
+          field('email', address),
+          field('mobilePhoneNumber', address),
+        ],
+        isDark,
+      ),
     ];
-
-    return result;
   }
 
   SelfieSegmenter? _selfieSegmenter;
@@ -928,20 +1389,24 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
       normalizedFile = File(
           '${imageFile.path}_seg_${DateTime.now().millisecondsSinceEpoch}.jpg');
-      await normalizedFile.writeAsBytes(img.encodeJpg(source, quality: 90), flush: true);
+      await normalizedFile.writeAsBytes(img.encodeJpg(source, quality: 90),
+          flush: true);
 
       final mask = await segmenter.processImage(
         InputImage.fromFilePath(normalizedFile.path),
       );
-      if (mask == null || mask.width <= 0 || mask.height <= 0 || mask.confidences.isEmpty) {
+      if (mask == null ||
+          mask.width <= 0 ||
+          mask.height <= 0 ||
+          mask.confidences.isEmpty) {
         throw Exception('لم يتم الحصول على قناع صالح للشخص');
       }
       if (mask.width != source.width || mask.height != source.height) {
         throw Exception('أبعاد القناع غير متطابقة');
       }
 
-      final result = img.Image(
-          width: source.width, height: source.height, numChannels: 4);
+      final result =
+          img.Image(width: source.width, height: source.height, numChannels: 4);
       final pixelCount = source.width * source.height;
       if (mask.confidences.length < pixelCount) {
         throw Exception('بيانات القناع غير مكتملة');
@@ -951,7 +1416,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         for (var x = 0; x < source.width; x++) {
           final index = y * source.width + x;
           final confidence = mask.confidences[index].clamp(0.0, 1.0);
-          final alpha = ((confidence - 0.35) / 0.40 * 255.0).round().clamp(0, 255);
+          final alpha =
+              ((confidence - 0.35) / 0.40 * 255.0).round().clamp(0, 255);
           final pixel = source.getPixel(x, y);
           result.setPixelRgba(x, y, pixel.r, pixel.g, pixel.b, alpha);
         }
@@ -981,7 +1447,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
               title: const Text('معاينة صورة المعلم',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontWeight: FontWeight.bold)),
@@ -1035,7 +1502,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                                   await _removeBackgroundUsingSelfieSegmentation(
                                       currentImage);
                               if (processed == null) {
-                                throw Exception('لم يتم الحصول على الصورة المعالجة');
+                                throw Exception(
+                                    'لم يتم الحصول على الصورة المعالجة');
                               }
                               if (!mounted) return;
                               setDialogState(() {
@@ -1052,7 +1520,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                               );
                             }
                           },
-                          icon: const Icon(Icons.auto_fix_high, color: Colors.black87),
+                          icon: const Icon(Icons.auto_fix_high,
+                              color: Colors.black87),
                           label: const Text('حذف الخلفية',
                               style: TextStyle(
                                   color: Colors.black87,
@@ -1066,7 +1535,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: processing ? null : () => Navigator.pop(dialogContext),
+                  onPressed:
+                      processing ? null : () => Navigator.pop(dialogContext),
                   child: const Text('إلغاء'),
                 ),
                 ElevatedButton(
@@ -1076,7 +1546,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                           setState(() => _pickedImage = currentImage);
                           Navigator.pop(dialogContext);
                         },
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                  style:
+                      ElevatedButton.styleFrom(backgroundColor: Colors.green),
                   child: const Text('اعتماد',
                       style: TextStyle(
                           fontWeight: FontWeight.bold, color: Colors.white)),
@@ -1181,18 +1652,21 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           final day = int.parse(iso.group(3)!);
           return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
         }
+        if (RegExp(r'^\d{4}$').hasMatch(raw)) {
+          return '$raw-01-01';
+        }
         return null;
       }
 
       final old = _teacherData!;
       final identification = old['identification'] is Map
-          ? Map<String, dynamic>.from(old['identification'])
+          ? Map<String, dynamic>.from(old['identification'] as Map)
           : <String, dynamic>{};
       final oldAddress = old['address'] is Map
-          ? Map<String, dynamic>.from(old['address'])
+          ? Map<String, dynamic>.from(old['address'] as Map)
           : <String, dynamic>{};
       final oldEmployment = old['employmentRecord'] is Map
-          ? Map<String, dynamic>.from(old['employmentRecord'])
+          ? Map<String, dynamic>.from(old['employmentRecord'] as Map)
           : <String, dynamic>{};
 
       String text(String key) {
@@ -1200,21 +1674,29 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         return v == null ? '' : '$v'.trim();
       }
 
+      final quota = int.tryParse(text('weeklyTeachingQuota'));
+      final todayIso = DateTime.now().toIso8601String().split('T').first;
+
+      // بناء Payload مطابق تماماً لدالة X() في ملف TeacherFormPage-CBWrNDD6.js
       final payload = <String, dynamic>{
-        'Id': old['id'],
+        'Id': int.tryParse(widget.teacherId) ?? old['id'],
         'EmployeeIdNumber': text('employeeIdNumber'),
         'FamilyNumber': _nullable(text('familyNumber')),
         'IsTeacher': true,
-        'EmploymentType': text('employmentType'),
-        'EmployeeCategory': text('employeeCategory'),
-        'Classification': text('classification'),
+        'EmploymentType': _nullable(text('employmentType')),
+        'EmployeeCategory': _nullable(text('employeeCategory')),
+        'Classification': _nullable(text('classification')),
         'JobDesignation': _nullable(text('jobDesignation')),
         'EmploymentGrade': _nullable(text('employmentGrade')),
-        'DateOfStartWorking': _nullable(dateOnly(text('dateOfStartWorking'))),
-        'EducationLevel': _nullable(text('educationLevel')),
+        'WeeklyTeachingQuota': quota,
+        'DateOfStartWorking':
+            dateOnly(text('dateOfStartWorking')) ?? todayIso,
+        'EducationLevel': text('educationLevel').isNotEmpty
+            ? text('educationLevel')
+            : 'ابتدائية',
         'GraduationYear': _nullable(dateOnly(text('graduationYear'))),
         'UniversityName': _nullable(text('universityName')),
-        'Specialization': _nullable(text('specialization')),
+        'Specialization': text('specialization'),
         'Name': text('name'),
         'FatherName': text('fatherName'),
         'GrandFatherName': text('grandFatherName'),
@@ -1224,31 +1706,34 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'MothersFatherName': text('mothersFatherName'),
         'MothersGrandFatherName': text('mothersGrandFatherName'),
         'ImageUrl': old['imageUrl']?.toString() ?? '',
-        'DateOfBirth': _nullable(dateOnly(text('dateOfBirth'))),
-        'Gender': _intOrNull(text('gender')),
+        'DateOfBirth': dateOnly(text('dateOfBirth')) ?? todayIso,
+        'Gender': _intOrNull(text('gender')) ?? 1,
         'Nationality': text('nationality'),
         'CountryOfBirth': text('countryOfBirth'),
         'HomeTown': text('homeTown'),
         'IdentificationId': 0,
-        'Identification': {
-          'IdNumber': identification['idNumber']?.toString() ?? '',
-          'IssuingCountry': identification['issuingCountry']?.toString() ?? '',
-          'IdType': _intOrNull(identification['idType']?.toString() ?? ''),
+        'Identification': <String, dynamic>{
+          'IdNumber': (identification['idNumber'] ?? '').toString().trim(),
+          'IssuingCountry':
+              (identification['issuingCountry'] ?? 'العراق').toString().trim(),
+          'IdType':
+              _intOrNull(identification['idType']?.toString() ?? '') ?? 12,
+          'nameOfDocument':
+              _nullable(identification['nameOfDocument']?.toString()),
+          'recordNumber': _nullable(identification['recordNumber']?.toString()),
+          'pageNumber': _nullable(identification['pageNumber']?.toString()),
+          'issuer': _nullable(identification['issuer']?.toString()),
           'issuingDate': dateOnly(identification['issuingDate']),
         },
-        'FatherIdentificationId': old['fatherIdentificationId'],
-        'FatherIdentification': {
-          'IdNumber': '',
-          'IssuingCountry': 'العراق',
-          'IdType': 0,
-          'issuingDate': null,
-        },
-        'MotherTongue': text('motherTongue'),
+        'FatherIdentificationId': null,
+        'FatherIdentification': null,
+        'MotherTongue':
+            text('motherTongue').isNotEmpty ? text('motherTongue') : 'العربية',
         'MaritalStatus': text('maritalStatus'),
         'BloodGroup': text('bloodGroup'),
         'Religion': text('religion'),
-        'HomePhoneNumber': _nullable(old['homePhoneNumber']),
-        'Status': _intOrNull(text('status')),
+        'HomePhoneNumber': old['homePhoneNumber']?.toString() ?? '',
+        'Status': _intOrNull(text('status')) ?? 1,
         'Notes': text('notes'),
         'SpecialNeedsInformation': _nullable(text('specialNeedsInformation')),
         'EmergencyContactName': _nullable(text('emergencyContactName')),
@@ -1256,25 +1741,28 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             _nullable(text('emergencyContactRelationship')),
         'EmergencyContactPhoneNumber':
             _nullable(text('emergencyContactPhoneNumber')),
-        'Address': {
+        'Address': <String, dynamic>{
           'AddressType': 1,
-          'Town': oldAddress['town']?.toString() ?? '',
-          'Area': oldAddress['area']?.toString() ?? '',
-          'Quarter': oldAddress['quarter']?.toString() ?? '',
-          'Street': oldAddress['street']?.toString() ?? '',
-          'ClosestLocation': oldAddress['closestLocation']?.toString() ?? '',
-          'countryStructureId': oldAddress['countryStructureId'],
-          'Latitude': '${oldAddress['latitude'] ?? 0}',
-          'Longitude': '${oldAddress['longitude'] ?? 0}',
-          'ApartmentNumber': oldAddress['apartmentNumber'] ?? '',
-          'BuildingNumber': oldAddress['buildingNumber'] ?? '',
-          'Address1': oldAddress['address1']?.toString() ?? '',
-          'Address2': oldAddress['address2']?.toString() ?? '',
-          'SchoolPhoneNumber': oldAddress['schoolPhoneNumber'] ?? '',
-          'MobilePhoneNumber': oldAddress['mobilePhoneNumber']?.toString() ?? '',
-          'Email': oldAddress['email']?.toString() ?? '',
-          'Fax': oldAddress['fax'] ?? '',
-          'Website': oldAddress['website'] ?? '',
+          'Town': (oldAddress['town'] ?? '').toString().trim(),
+          'Area': (oldAddress['area'] ?? '').toString().trim(),
+          'Quarter': (oldAddress['quarter'] ?? '').toString().trim(),
+          'Street': (oldAddress['street'] ?? '').toString().trim(),
+          'ClosestLocation':
+              (oldAddress['closestLocation'] ?? '').toString().trim(),
+          'countryStructureId': oldAddress['countryStructureId'] ?? 1,
+          'Latitude': '0',
+          'Longitude': '0',
+          'ApartmentNumber': oldAddress['apartmentNumber']?.toString() ?? '',
+          'BuildingNumber': oldAddress['buildingNumber']?.toString() ?? '',
+          'Address1': (oldAddress['address1'] ?? '').toString().trim(),
+          'Address2': (oldAddress['address2'] ?? '').toString().trim(),
+          'SchoolPhoneNumber':
+              oldAddress['schoolPhoneNumber']?.toString() ?? '',
+          'MobilePhoneNumber':
+              (oldAddress['mobilePhoneNumber'] ?? '').toString().trim(),
+          'Email': (oldAddress['email'] ?? '').toString().trim(),
+          'Fax': '',
+          'Website': oldAddress['website']?.toString() ?? '',
         },
         'AgeExceptionReason': old['ageExceptionReason'],
         'AgeExceptionAttachmentUrl': old['ageExceptionAttachmentUrl'],
@@ -1282,25 +1770,39 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'EmploymentRecord': _buildEmploymentRecord(oldEmployment),
       };
 
-      final request = http.Request(
-        'PUT',
+      // محاولة الإرسال الأولى بصيغة JSON POST كما في الواجهة الرسمية الحديثة،
+      // وإذا لم تنجح يتم التراجع تلقائياً إلى PUT form-urlencoded
+      http.Response response = await http.post(
         Uri.parse('https://emis.moedu.gov.iq/api/employee/updateemployee'),
+        headers: {
+          'Authorization': widget.token,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+        body: jsonEncode(payload),
       );
-      request.headers['Authorization'] = widget.token;
-      request.headers['Accept'] = 'application/json';
-      request.headers['Content-Type'] =
-          'application/x-www-form-urlencoded; charset=utf-8';
-      request.body = 'emp=${Uri.encodeComponent(jsonEncode(payload))}';
 
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
+      if (response.statusCode == 405 || response.statusCode == 415) {
+        final fallbackReq = http.Request(
+          'PUT',
+          Uri.parse('https://emis.moedu.gov.iq/api/employee/updateemployee'),
+        );
+        fallbackReq.headers['Authorization'] = widget.token;
+        fallbackReq.headers['Accept'] = 'application/json';
+        fallbackReq.headers['Content-Type'] =
+            'application/x-www-form-urlencoded; charset=utf-8';
+        fallbackReq.body = 'emp=${Uri.encodeComponent(jsonEncode(payload))}';
+        final streamed = await fallbackReq.send();
+        response = await http.Response.fromStream(streamed);
+      }
 
       if (!mounted) return;
 
       if (response.statusCode == 200 || response.statusCode == 204) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('تم الحفظ بنجاح!'), backgroundColor: Colors.green),
+              content: Text('تم حفظ تعديلات المعلم بنجاح!'),
+              backgroundColor: Colors.green),
         );
         Navigator.pop(context, true);
       } else {
@@ -1309,8 +1811,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             duration: const Duration(seconds: 12),
-            content: Text('فشل الحفظ (HTTP ${response.statusCode})\n${response.body}',
-                maxLines: 6, overflow: TextOverflow.ellipsis),
+            content: Text(
+                'فشل الحفظ (HTTP ${response.statusCode})\n${response.body}',
+                maxLines: 6,
+                overflow: TextOverflow.ellipsis),
             backgroundColor: Colors.red,
           ),
         );
@@ -1333,40 +1837,41 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   Map<String, dynamic> _buildEmploymentRecord(Map<String, dynamic> old) {
-    final record = Map<String, dynamic>.from(old);
-    final statuses = old['employmentStatuses'] is List
-        ? (old['employmentStatuses'] as List)
-            .map((x) =>
-                x is Map ? Map<String, dynamic>.from(x) : <String, dynamic>{})
-            .toList()
-        : <Map<String, dynamic>>[];
-    final positions = old['employmentPositions'] is List
-        ? (old['employmentPositions'] as List)
-            .map((x) =>
-                x is Map ? Map<String, dynamic>.from(x) : <String, dynamic>{})
-            .toList()
-        : <Map<String, dynamic>>[];
+    final schoolIdInt = int.tryParse(widget.schoolId) ??
+        (old['currentBelongToEntityId'] is int
+            ? old['currentBelongToEntityId'] as int
+            : 1);
+    final empStatus = (_teacherData?['employmentStatus'] ?? 'مستمر').toString();
+    final isCurrentlyActive = empStatus.isEmpty || empStatus == 'مستمر';
+    final startWorking =
+        _cleanDate(_teacherData?['dateOfStartWorking']).isNotEmpty
+            ? _cleanDate(_teacherData?['dateOfStartWorking'])
+            : DateTime.now().toIso8601String().split('T').first;
 
-    if (statuses.isNotEmpty) {
-      final status = statuses.first;
-      status['StatusType'] = _teacherData?['status']?.toString() ?? '';
-      status['Reason'] = _nullable(_teacherData?['statusReason']?.toString());
-      status['StatusDate'] = _nullable(_teacherData?['statusDate']?.toString());
-      status['CurrentBelongToEntityId'] = int.tryParse(widget.schoolId);
-    }
-    if (positions.isNotEmpty) {
-      final pos = positions.first;
-      pos['Position'] = _teacherData?['currentPosition']?.toString() ?? '';
-      pos['InitiateDate'] =
-          _teacherData?['dateOfStartWorking']?.toString() ?? '';
-    }
-
-    record['EmploymentStatuses'] = statuses;
-    record['EmploymentPositions'] = positions;
-    record['CurrentBelongToEntityId'] = int.tryParse(widget.schoolId);
-    record['CurrentEmploymentPosition'] =
-        _teacherData?['positionType']?.toString() ?? '';
-    return record;
+    return <String, dynamic>{
+      'EmploymentStatuses': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'StatusType': empStatus,
+          'DisEngagementDate': null,
+          'MinistryOfficialDocumentNumber': null,
+          'Reason':
+              _nullable(_teacherData?['employmentStatusReason']?.toString()),
+          'AssignedEntityName':
+              _nullable(_teacherData?['assignedEntityName']?.toString()),
+          'CurrentBelongToEntityId': schoolIdInt,
+        }
+      ],
+      'EmploymentPositions': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'Position': (_teacherData?['currentPosition'] ?? '').toString(),
+          'InitiateDate': startWorking,
+        }
+      ],
+      'IsCurrentlyActive': isCurrentlyActive,
+      'CurrentBelongToEntityId': schoolIdInt,
+      'CurrentEmploymentPosition':
+          (_teacherData?['positionType'] ?? '').toString(),
+    };
   }
 
   dynamic _nullable(dynamic value) {
@@ -1409,8 +1914,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         flexibleSpace: Container(
           decoration: const BoxDecoration(
-            gradient: LinearGradient(
-                colors: [Color(0xFF1A237E), Color(0xFF4A90E2)]),
+            gradient:
+                LinearGradient(colors: [Color(0xFF1A237E), Color(0xFF4A90E2)]),
           ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -1420,7 +1925,22 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           _isLoading
               ? const Center(child: CircularProgressIndicator())
               : _teacherData == null
-                  ? const Center(child: Text('فشل جلب البيانات'))
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('فشل جلب البيانات',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            onPressed: _fetchTeacherData,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('إعادة المحاولة'),
+                          ),
+                        ],
+                      ),
+                    )
                   : Column(
                       children: [
                         Expanded(
@@ -1439,7 +1959,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                                           color: Colors.white,
                                           shape: BoxShape.circle,
                                           border: Border.all(
-                                              color: Colors.blueAccent, width: 3),
+                                              color: Colors.blueAccent,
+                                              width: 3),
                                         ),
                                         child: ClipOval(
                                           child: _pickedImage != null
@@ -1457,8 +1978,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                                                           (_, __, ___) => Icon(
                                                               Icons.person,
                                                               size: 80,
-                                                              color:
-                                                                  Colors.grey[400]),
+                                                              color: Colors
+                                                                  .grey[400]),
                                                     )
                                                   : Icon(Icons.person,
                                                       size: 80,
@@ -1646,7 +2167,9 @@ class _PlainTextFieldState extends State<PlainTextField> {
                   tooltip: 'الإدخال الصوتي',
                   onPressed: widget.onMic,
                   icon: Icon(
-                    widget.micActive ? Icons.mic_rounded : Icons.mic_none_rounded,
+                    widget.micActive
+                        ? Icons.mic_rounded
+                        : Icons.mic_none_rounded,
                     color: widget.micActive ? Colors.red : null,
                   ),
                 ),
