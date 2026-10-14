@@ -49,7 +49,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   String? _addressGovernorateId;
   String? _addressDistrictId;
 
-  // مسارات API للقوائم المنسدلة الديناميكية من السيرفر
   static const Map<String, String> _optionEndpoints = {
     'countryOfBirth': '/selectoption/بلد الولادة',
     'nationality': '/selectoption/الجنسية',
@@ -65,7 +64,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'specialization': '/selectoption/الإختصاص',
   };
 
-  // الخيارات الثابتة المعتمدة في واجهة EMIS الرسمية (من ملفات constants-Cbk3iyrj.js و TeacherFormPage.js)
   static final Map<String, List<Map<String, dynamic>>> _defaultStaticOptions = {
     'gender': [
       <String, dynamic>{'value': 1, 'displayName': 'ذكر'},
@@ -387,9 +385,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     throw Exception('استجابة بيانات المعلم غير صالحة');
   }
 
-  // توحيد وتجهيز كافة حقول المعلم كما يفعل TeacherFormPage.js في نظام EMIS
   void _normalizeTeacherFields(Map<String, dynamic> teacher) {
-    // 1. معالجة وثيقة التعريف
     final rawId = teacher['identification'];
     final identification = rawId is Map
         ? rawId.map((k, v) => MapEntry(k.toString(), v))
@@ -404,7 +400,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     identification['issuingDate'] = _cleanDate(identification['issuingDate']);
     teacher['identification'] = identification;
 
-    // 2. معالجة سجل التوظيف (employmentRecord) واستخراج المنصب والحالة الوظيفية
     final rawEmp = teacher['employmentRecord'];
     final employment = rawEmp is Map
         ? rawEmp.map((k, v) => MapEntry(k.toString(), v))
@@ -441,7 +436,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
     teacher['employmentRecord'] = employment;
 
-    // 3. معالجة العنوان (address)
     final rawAddr = teacher['address'];
     final address = rawAddr is Map
         ? rawAddr.map((k, v) => MapEntry(k.toString(), v))
@@ -459,7 +453,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     address['email'] = (address['email'] ?? '').toString();
     teacher['address'] = address;
 
-    // 4. ضمان وجود كافة المفاتيح الأساسية في كائن المعلم حتى لا تختفي أي حقول من الشاشة
     teacher['name'] = (teacher['name'] ?? '').toString();
     teacher['fatherName'] = (teacher['fatherName'] ?? '').toString();
     teacher['grandFatherName'] = (teacher['grandFatherName'] ?? '').toString();
@@ -522,7 +515,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       final teacher = _unwrap(jsonDecode(utf8.decode(response.bodyBytes)));
       _normalizeTeacherFields(teacher);
 
-      // حفظ بيانات المعلم فوراً حتى لا تفشل الشاشة لو تعطل أي خيار ثانوي
       _teacherData = teacher;
       _ensureOptionIncludesCurrentValue(teacher);
 
@@ -532,7 +524,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         });
       }
 
-      // جلب خيارات القوائم المنسدلة والهيكل الجغرافي بالتوازي وبأمان
       for (final key in _optionEndpoints.keys) {
         await _loadOptions(key);
       }
@@ -852,7 +843,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     final rawItems = _options[key] ?? const <Map<String, dynamic>>[];
     final value = owner[key];
 
-    // إزالة التكرارات وضمان وجود القيمة الحالية ضمن القائمة
     final uniqueItems = <Map<String, dynamic>>[];
     for (final item in rawItems) {
       final v = _optionValue(item);
@@ -1131,7 +1121,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     ];
 
     if (idType == 3) {
-      // هوية الأحوال المدنية
       widgets.addAll([
         _fieldFor('idNumber', identification['idNumber'], identification, isDark, textColor),
         _fieldFor('recordNumber', identification['recordNumber'], identification, isDark, textColor),
@@ -1139,12 +1128,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         _fieldFor('issuer', identification['issuer'], identification, isDark, textColor),
       ]);
     } else if (idType == 12) {
-      // البطاقة الوطنية الموحدة
       widgets.add(
         _fieldFor('idNumber', identification['idNumber'], identification, isDark, textColor),
       );
     } else if (idType == 22) {
-      // شهادة الولادة
       widgets.addAll([
         _fieldFor('idNumber', identification['idNumber'], identification, isDark, textColor),
         _fieldFor('issuingDate', identification['issuingDate'], identification, isDark, textColor),
@@ -1152,7 +1139,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         _fieldFor('pageNumber', identification['pageNumber'], identification, isDark, textColor),
       ]);
     } else if (idType == 16) {
-      // وثيقة أخرى
       widgets.addAll([
         _fieldFor('nameOfDocument', identification['nameOfDocument'], identification, isDark, textColor),
         _fieldFor('idNumber', identification['idNumber'], identification, isDark, textColor),
@@ -1620,6 +1606,81 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return null;
   }
 
+  // تحويل الكائن المتداخل إلى حقول FormData مسطحة ليتوافق مع ASP.NET FromForm
+  void _flattenToFormFields(
+    Map<String, String> target,
+    String prefix,
+    dynamic value,
+  ) {
+    if (value == null) return;
+    if (value is Map) {
+      value.forEach((k, v) {
+        final nextKey = prefix.isEmpty ? k.toString() : '$prefix.${k.toString()}';
+        _flattenToFormFields(target, nextKey, v);
+      });
+    } else if (value is List) {
+      for (var i = 0; i < value.length; i++) {
+        _flattenToFormFields(target, '$prefix[$i]', value[i]);
+      }
+    } else {
+      target[prefix] = value.toString();
+    }
+  }
+
+  Future<http.Response> _sendUpdateRequest(Map<String, dynamic> payload) async {
+    final uri = Uri.parse('https://emis.moedu.gov.iq/api/employee/updateemployee');
+    final jsonString = jsonEncode(payload);
+
+    // 1. المحاولة الأولى: PUT مع application/json
+    var response = await http.put(
+      uri,
+      headers: {
+        'Authorization': widget.token,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonString,
+    );
+    if (response.statusCode != 405 && response.statusCode != 415) {
+      return response;
+    }
+
+    // 2. المحاولة الثانية: POST مع application/json
+    response = await http.post(
+      uri,
+      headers: {
+        'Authorization': widget.token,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonString,
+    );
+    if (response.statusCode != 405 && response.statusCode != 415) {
+      return response;
+    }
+
+    // 3. المحاولة الثالثة: POST مع multipart/form-data (الطريقة المعتمدة للنماذج التي تحتوي مرفقات في ASP.NET)
+    final postMultipart = http.MultipartRequest('POST', uri);
+    postMultipart.headers['Authorization'] = widget.token;
+    postMultipart.headers['Accept'] = 'application/json';
+    _flattenToFormFields(postMultipart.fields, '', payload);
+    postMultipart.fields['emp'] = jsonString;
+    var streamed = await postMultipart.send();
+    response = await http.Response.fromStream(streamed);
+    if (response.statusCode != 405 && response.statusCode != 415) {
+      return response;
+    }
+
+    // 4. المحاولة الرابعة: PUT مع multipart/form-data
+    final putMultipart = http.MultipartRequest('PUT', uri);
+    putMultipart.headers['Authorization'] = widget.token;
+    putMultipart.headers['Accept'] = 'application/json';
+    _flattenToFormFields(putMultipart.fields, '', payload);
+    putMultipart.fields['emp'] = jsonString;
+    streamed = await putMultipart.send();
+    return await http.Response.fromStream(streamed);
+  }
+
   Future<void> _saveTeacherData() async {
     if (_teacherData == null) return;
     setState(() => _isSaving = true);
@@ -1677,7 +1738,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       final quota = int.tryParse(text('weeklyTeachingQuota'));
       final todayIso = DateTime.now().toIso8601String().split('T').first;
 
-      // بناء Payload مطابق تماماً لدالة X() في ملف TeacherFormPage-CBWrNDD6.js
       final payload = <String, dynamic>{
         'Id': int.tryParse(widget.teacherId) ?? old['id'],
         'EmployeeIdNumber': text('employeeIdNumber'),
@@ -1770,31 +1830,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'EmploymentRecord': _buildEmploymentRecord(oldEmployment),
       };
 
-      // محاولة الإرسال الأولى بصيغة JSON POST كما في الواجهة الرسمية الحديثة،
-      // وإذا لم تنجح يتم التراجع تلقائياً إلى PUT form-urlencoded
-      http.Response response = await http.post(
-        Uri.parse('https://emis.moedu.gov.iq/api/employee/updateemployee'),
-        headers: {
-          'Authorization': widget.token,
-          'Accept': 'application/json',
-          'Content-Type': 'application/json; charset=utf-8',
-        },
-        body: jsonEncode(payload),
-      );
-
-      if (response.statusCode == 405 || response.statusCode == 415) {
-        final fallbackReq = http.Request(
-          'PUT',
-          Uri.parse('https://emis.moedu.gov.iq/api/employee/updateemployee'),
-        );
-        fallbackReq.headers['Authorization'] = widget.token;
-        fallbackReq.headers['Accept'] = 'application/json';
-        fallbackReq.headers['Content-Type'] =
-            'application/x-www-form-urlencoded; charset=utf-8';
-        fallbackReq.body = 'emp=${Uri.encodeComponent(jsonEncode(payload))}';
-        final streamed = await fallbackReq.send();
-        response = await http.Response.fromStream(streamed);
-      }
+      final response = await _sendUpdateRequest(payload);
 
       if (!mounted) return;
 
