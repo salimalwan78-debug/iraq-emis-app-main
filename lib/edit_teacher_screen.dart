@@ -39,10 +39,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   File? _pickedImage;
   final Map<String, TextEditingController> _dateControllers = {};
 
-  // ============================================================
-  // EMIS LIVE REFERENCE DATA
-  // ============================================================
-
   final Map<String, List<Map<String, dynamic>>> _options = {};
   final Set<String> _loadingOptions = <String>{};
 
@@ -442,7 +438,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   bool _sameValue(dynamic a, dynamic b) => a?.toString() == b?.toString();
 
-  // ✅ يحوّل قيمة الحالة الرقمية إلى نص عربي متوافق مع EMIS
   String _statusLabel(String value) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) return '';
@@ -1176,7 +1171,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         return v == null ? '' : '$v'.trim();
       }
 
-      // ✅ الحالة تُرسَل كنص عربي ("مستمر") لأن EMIS ترفض int
       final statusText = _statusLabel(text('status'));
 
       final payload = <String, dynamic>{
@@ -1261,10 +1255,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'EmploymentRecord': _buildEmploymentRecord(oldEmployment),
       };
 
-      // ✅ التغليف داخل "emp" — لأن EMIS يتوقع هذا الشكل
-      final wrappedPayload = <String, dynamic>{
-        'emp': payload,
-      };
+      // ✅ الحل: emp يجب أن يكون نص JSON مُسلسَل (double-encoded)
+      final body = jsonEncode({
+        'emp': jsonEncode(payload),
+      });
 
       final response = await http.put(
         Uri.parse('https://emis.moedu.gov.iq/api/employee/updateemployee'),
@@ -1273,7 +1267,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: jsonEncode(wrappedPayload),
+        body: body,
       );
 
       if (!mounted) return;
