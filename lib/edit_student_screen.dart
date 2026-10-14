@@ -415,7 +415,8 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         // Phone numbers must remain a continuous digit string. Speech services
         // commonly return digit-by-digit results separated by spaces; retaining
         // those spaces in an RTL form makes the number appear reversed/split.
-        final recognizedText = key == 'homePhoneNumber'
+        final recognizedText = <String>{'homePhoneNumber', 'idNumber'}
+                .contains(key)
             ? _normalizeDigits(raw).replaceAll(RegExp(r'[^0-9]'), '')
             : raw;
         setState(() {
@@ -812,7 +813,9 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       initialValue: value,
       isDark: isDark,
       textColor: textColor,
-      textDirection: key == 'homePhoneNumber' ? TextDirection.ltr : null,
+      textDirection: <String>{'homePhoneNumber', 'idNumber'}.contains(key)
+          ? TextDirection.ltr
+          : null,
       readOnly: false,
       requiredField: _isRequired(key, owner),
       onChanged: (v) => owner[key] = v,
