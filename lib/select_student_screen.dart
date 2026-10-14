@@ -74,8 +74,26 @@ class _SelectStudentScreenState extends State<SelectStudentScreen> {
       if (_selectedStage != null && stage != _selectedStage) return false;
       if (_selectedClassRoom != null && room != _selectedClassRoom) return false;
       if (q.isEmpty) return true;
-      return [_studentName(s), s['id'], s['nationalIdNumber'], s['idNumber']].any((v) => '$v'.toLowerCase().contains(q));
+      return [_studentName(s), s['id'], s['nationalIdNumber'], s['idNumber'], _studentPhone(s)].any((v) => '$v'.toLowerCase().contains(q));
     }).toList();
+  }
+
+  String _studentPhone(Map<String, dynamic> s) {
+    final address = s['address'];
+    final candidates = <dynamic>[
+      s['homePhoneNumber'],
+      s['mobilePhoneNumber'],
+      s['phoneNumber'],
+      s['phone'],
+      if (address is Map) address['homePhoneNumber'],
+      if (address is Map) address['mobilePhoneNumber'],
+      if (address is Map) address['phoneNumber'],
+    ];
+    for (final value in candidates) {
+      final phone = value?.toString().trim() ?? '';
+      if (phone.isNotEmpty && phone != 'null') return phone;
+    }
+    return 'غير مسجل';
   }
 
   Future<void> _openStudent(Map<String, dynamic> student) async {
@@ -225,7 +243,10 @@ class _SelectStudentScreenState extends State<SelectStudentScreen> {
             Text(_studentName(s), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: text), textAlign: TextAlign.right),
             const SizedBox(height: 6),
             Wrap(alignment: WrapAlignment.end, spacing: 6, children: [if (stage.isNotEmpty) _chip(stage, Colors.indigo), if (room.isNotEmpty) _chip('شعبة $room', Colors.blue)]),
-            const SizedBox(height: 5), Text('رقم الطالب: ${s['id'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 5),
+            Text('رقم الطالب: ${s['id'] ?? 'غير متوفر'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 3),
+            Text('رقم الهاتف: ${_studentPhone(s)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
           ])),
           IconButton(tooltip: 'تعطيل الطالب', onPressed: () => _deactivateStudent(s), icon: const Icon(Icons.person_off_outlined, color: Colors.redAccent)),
           IconButton(tooltip: 'تعديل بيانات الطالب', onPressed: () => _openStudent(s), icon: const Icon(Icons.edit_outlined, color: Colors.indigo)),

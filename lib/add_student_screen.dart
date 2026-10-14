@@ -39,7 +39,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   bool _speechStopRequested = false;
   bool _micPointerDown = false;
   bool _voiceArrowPointerDown = false;
-  bool _voiceSequentialMode = false;
+  bool _voiceSequentialMode = true;
   int _sequentialVoiceIndex = 0;
   String? _voiceDropdownTarget;
   bool _voiceDropdownDialogOpen = false;
@@ -430,9 +430,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
       if (!mounted) return;
       setState(() => loading = false);
-      // يبدأ التنقل الصوتي تلقائياً فقط إذا اختار المستخدم ذلك من الإعدادات.
+      // يبدأ التنقل الصوتي تلقائياً عند فتح نموذج إضافة الطالب، ويمكن إيقافه
+      // من المفتاح الظاهر داخل النموذج.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !saving && AppCore.voiceSequentialAutoStart) {
+        if (mounted && !saving && _voiceSequentialMode) {
           _startSequentialVoiceMode();
         }
       });
