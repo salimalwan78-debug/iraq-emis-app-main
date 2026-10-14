@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
-import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
 import 'package:image/image.dart' as img;
-import 'package:image_picker/image_picker.dart';
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
+
 import 'emis_live_sync.dart';
 
 class EditTeacherScreen extends StatefulWidget {
@@ -27,33 +27,24 @@ class EditTeacherScreen extends StatefulWidget {
 }
 
 class _EditTeacherScreenState extends State<EditTeacherScreen> {
-  final _formKey = GlobalKey<FormState>();
-  bool _loading = true;
-  bool _saving = false;
-  bool _schemaReceived = false;
-  Timer? _schemaDebounce;
-  final GlobalKey<EmisLiveSyncState> _liveSyncKey =
-      GlobalKey<EmisLiveSyncState>();
-  String _liveStatus = '';
-  String? _error;
-  Map<String, dynamic>? _employee;
+  bool _isLoading = true;
+  bool _isSaving = false;
+  final GlobalKey<EmisLiveSyncState> _liveSyncKey = GlobalKey<EmisLiveSyncState>();
+  Timer? _liveTimer;
+  String _liveStatus = 'المزامنة الحية مع EMIS قيد التشغيل';
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+  Map<String, dynamic>? _teacherData;
   File? _pickedImage;
-  bool _removeExistingPhoto = false;
-  SelfieSegmenter? _selfieSegmenter;
+  final Map<String, TextEditingController> _dateControllers = {};
 
-  /// الحقل الذي يكتب فيه المستخدم الآن — لا نقبل تحديث snapshots له
-  String? _focusedKey;
+  // ============================================================
+  // EMIS LIVE REFERENCE DATA
+  // ============================================================
 
-  /// قيم الحقول (تأتي من schema + snapshot)
-  final Map<String, TextEditingController> _c = {};
-
-  /// خيارات القوائم المنسدلة
   final Map<String, List<Map<String, dynamic>>> _options = {};
+  final Set<String> _loadingOptions = <String>{};
 
-  /// المخطط الحي من EMIS — **المصدر الوحيد للحقيقة**
-  final Map<String, Map<String, dynamic>> _liveSchema = {};
-
-  /// شجرة العنوان (تُحمّل من API، تُعرض كقسم ثابت)
   List<Map<String, dynamic>> _addressCountries = [];
   List<Map<String, dynamic>> _addressGovernorates = [];
   List<Map<String, dynamic>> _addressDistricts = [];
@@ -61,13 +52,12 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   String? _addressGovernorateId;
   String? _addressDistrictId;
 
-  /// endpoints API للقوائم المعروفة — تُستخدم لجلب الخيارات مسبقًا
-  static const _commonOptionEndpoints = <String, String>{
+  static const Map<String, String> _optionEndpoints = {
     'countryOfBirth': '/selectoption/بلد الولادة',
+    'nationality': '/selectoption/الجنسية',
     'idType': '/selectoption/IdentificationType',
     'issuingCountry': '/selectoption/بلد الإصدار',
     'gender': '/selectoption/Gender',
-    'nationality': '/selectoption/الجنسية',
     'motherTongue': '/selectoption/لغة',
     'maritalStatus': '/selectoption/الحالة الاجتماعية',
     'bloodGroup': '/selectoption/فصيلة الدم',
@@ -77,16 +67,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'specialization': '/selectoption/الإختصاص',
   };
 
-  static const _statusOrder = <String>[
-    'مستمر', 'متقاعد', 'مفصول', 'متوفى', 'استقالة',
-    'منقول الى وزارة أخرى', 'العزل',
-    'مكلف او منسبي من خارج الوزاراة',
-    'مكلف أو منسب من وزارة التربية الى جهات أخرى',
-    'في إجازة دراسية', 'في إجازة أمومة', 'أخرى',
-  ];
-
-  /// خريطة تحويل label/tag إلى مفتاح API
-  static final Map<String, String> _labels = <String, String>{
+  // ✅ خريطة الأسماء العربية الموحّدة — نفس نمط صفحة الطالب
+  final Map<String, String> _officialArabicNames = {
+    // الاسم
     'name': 'الإسم',
     'fatherName': 'إسم الأب',
     'grandFatherName': 'اسم والد الأب',
@@ -95,48 +78,56 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'motherName': 'إسم الأم',
     'mothersFatherName': 'اسم والد الأم',
     'mothersGrandFatherName': 'اسم جد الأم',
+    // شخصية
     'dateOfBirth': 'تاريخ التولّد',
-    'countryOfBirth': 'محل الولادة',
     'gender': 'الجنس',
     'nationality': 'الجنسية',
+    'countryOfBirth': 'محل الولادة',
     'homeTown': 'مسقط الرأس',
     'motherTongue': 'اللغة الأم',
     'maritalStatus': 'الحالة الاجتماعية',
     'bloodGroup': 'فئة الدم',
     'religion': 'الديانة',
     'notes': 'ملاحظات',
+    // وثيقة التعريف
     'idType': 'نوع الهوية',
     'issuingCountry': 'بلد الإصدار',
-    'nationalId': 'رقم البطاقة الوطنية الموحدة',
+    'idNumber': 'رقم البطاقة الوطنية الموحدة',
+    'issuingDate': 'تاريخ الإصدار',
     'employeeIdNumber': 'الرقم الوظيفي',
     'familyNumber': 'الرقم العائلي',
-    'documentType': 'نوع الوثيقة',
-    'documentNumber': 'رقم الوثيقة',
-    'civilRegistryNumber': 'رقم جهة الأحوال المدنية',
+    'nameOfDocument': 'نوع الوثيقة',
+    'issuer': 'جهة الإصدار',
     'recordNumber': 'رقم السجل',
-    'pageNumber': 'رقم الصحیفة',
-    'issuingAuthority': 'جهة الإصدار',
+    'pageNumber': 'رقم الصحيفة',
+    'jinsiyaIdNumber': 'رقم شهادة الجنسية',
+    'otherIdNumber': 'رقم الهوية الأخرى',
+    'birthCertificateNumber': 'رقم شهادة الولادة',
+    // وظيفية
     'employmentType': 'نوع التوظيف',
     'employeeCategory': 'نوع الموظف',
     'classification': 'التصنيف',
     'jobDesignation': 'المسمى الوظيفي',
     'employmentGrade': 'الدرجة الوظيفية',
-    'jobTitle': 'العنوان الوظيفي',
     'currentPosition': 'المنصب الحالي',
     'positionType': 'نوع الوظيفة',
-    'dateOfStartWorking': 'تاريخ اول تعيين للموظف',
-    'schoolName': 'إسم المدرسة',
+    'dateOfStartWorking': 'تاريخ أول تعيين للموظف',
+    // حالة وظيفية
     'status': 'الحالة الوظيفية',
     'statusDate': 'تاريخ سريان الحالة الوظيفية',
     'statusReason': 'سبب تغيير الحالة الوظيفية',
+    // تحصيل
     'educationLevel': 'التحصيل الدراسي',
     'universityName': 'إسم الكلية / المعهد',
     'graduationYear': 'سنة التخرج',
     'specialization': 'الإختصاص',
+    // احتياجات خاصة واتصال طارئ
     'specialNeedsInformation': 'معلومات ذوي الاحتياجات الخاصة إن وجدت',
     'emergencyContactName': 'اسم جهة الاتصال في الحالات الطارئة',
     'emergencyContactRelationship': 'صلة جهة الاتصال',
-    'emergencyContactPhoneNumber': 'رقم هاتف جهة الاتصال في الحالات الطارئة',
+    'emergencyContactPhoneNumber': 'رقم هاتف جهة الاتصال',
+    // عنوان
+    'countryStructureId': 'الموقع الجغرافي',
     'town': 'المدينة/القرية',
     'area': 'الحي',
     'quarter': 'المحلة',
@@ -146,282 +137,170 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'closestLocation': 'أقرب نقطة دالة',
     'email': 'البريد الإلكتروني',
     'mobilePhoneNumber': 'رقم هاتف المعلم',
-  };
-
-  static const _numericKeys = <String>{
-    'nationalId', 'employeeIdNumber', 'familyNumber',
-    'documentNumber', 'recordNumber', 'pageNumber', 'civilRegistryNumber',
-  };
-  static const _emailKeys = <String>{'email'};
-  static const _phoneKeys = <String>{
-    'mobilePhoneNumber', 'emergencyContactPhoneNumber',
-  };
-  static const _dateKeys = <String>{
-    'dateOfBirth', 'dateOfStartWorking', 'graduationYear', 'statusDate',
+    'homePhoneNumber': 'رقم الهاتف',
+    // صور
+    'imageUrl': 'الصورة',
+    // مرافق
+    'identification': 'وثيقة التعريف',
+    'address': 'العنوان',
+    'employmentRecord': 'سجل التوظيف',
   };
 
   @override
   void initState() {
     super.initState();
-    _load();
+    // ✅ مثل صفحة الطالب: polling كل 700ms لدفع القيم إلى WebView
+    _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
+    _fetchTeacherData();
   }
 
-  @override
-  void dispose() {
-    _schemaDebounce?.cancel();
-    _selfieSegmenter?.close();
-    for (final controller in _c.values) {
-      controller.dispose();
+  Map<String, List<String>> _liveAliases() => {
+        for (final entry in _officialArabicNames.entries)
+          entry.key: <String>[entry.key, entry.value],
+      };
+
+  /// ✅ نسخة من قيم المعلم — تُرسَل إلى EMIS live
+  Map<String, String> _liveValues() {
+    final result = <String, String>{};
+    final data = _teacherData;
+    if (data == null) return result;
+    final identification = data['identification'] is Map
+        ? Map<String, dynamic>.from(data['identification'])
+        : <String, dynamic>{};
+    final address = data['address'] is Map
+        ? Map<String, dynamic>.from(data['address'])
+        : <String, dynamic>{};
+    for (final key in _officialArabicNames.keys) {
+      dynamic value;
+      if (data.containsKey(key)) value = data[key];
+      else if (identification.containsKey(key)) value = identification[key];
+      else if (address.containsKey(key)) value = address[key];
+      if (value is List) value = value.isEmpty ? '' : value.first;
+      if (value is bool) value = value ? 'true' : 'false';
+      if (value != null) result[key] = '$value';
     }
-    super.dispose();
-  }
-
-  // ============================================================
-  // المزامنة مع EMIS
-  // ============================================================
-
-  Map<String, List<String>> _liveAliases() {
-    final result = <String, List<String>>{};
-    _labels.forEach((key, label) {
-      result[key] = <String>[key, label];
-    });
-    _liveSchema.forEach((key, meta) {
-      if (result.containsKey(key)) return;
-      final label = '${meta['label'] ?? ''}'.trim();
-      result[key] = label.isEmpty ? <String>[key] : <String>[key, label];
-    });
     return result;
   }
 
-  /// يُرسل التعديل إلى EMIS فورًا ثم يُعيد قراءة المخطط لاكتشاف أي حقول
-  /// ظهرت أو اختفت نتيجة التعديل
-  void _pushAndObserve(String key, String value) {
-    // 1) القيمة إلى EMIS فورًا
-    var liveValue = value;
-    for (final option in _options[key] ?? const <Map<String, dynamic>>[]) {
-      if ('${_optionValue(option) ?? ''}' == value) {
-        liveValue = _optionText(option);
-        break;
-      }
-    }
-    _liveSyncKey.currentState?.pushValues({key: liveValue});
+  void _pushLive() => _liveSyncKey.currentState?.pushValues(_liveValues());
 
-    // 2) إعادات فحص متتالية لالتقاط استجابة EMIS
-    for (final ms in [200, 500, 1000, 2000, 3500]) {
-      Future<void>.delayed(Duration(milliseconds: ms), () {
-        if (mounted) _liveSyncKey.currentState?.refreshSchema();
-      });
-    }
+  void _focusLive(String key) {
+    _liveSyncKey.currentState?.focusField(key);
+    _liveSyncKey.currentState?.pushValues(_liveValues());
   }
 
+  dynamic _liveCoerce(dynamic old, String value) {
+    if (old is bool) return value.toLowerCase() == 'true' || value == '1';
+    if (old is int) return int.tryParse(value) ?? old;
+    if (old is double) return double.tryParse(value) ?? old;
+    if (old is List) return value.isEmpty ? <String>[] : <String>[value];
+    return value;
+  }
+
+  /// ✅ يحفظ التغييرات القادمة من EMIS في `_teacherData`
   void _applyLiveSnapshot(Map<String, String> values) {
+    final data = _teacherData;
+    if (data == null) return;
+    final identification = data['identification'] is Map
+        ? Map<String, dynamic>.from(data['identification'])
+        : <String, dynamic>{};
+    final address = data['address'] is Map
+        ? Map<String, dynamic>.from(data['address'])
+        : <String, dynamic>{};
     bool changed = false;
     for (final entry in values.entries) {
-      // لا تُحدّث الحقل الذي يكتب فيه المستخدم الآن
-      if (entry.key == _focusedKey) continue;
-      final controller = _c[entry.key];
-      if (controller == null) continue;
-      var syncedValue = entry.value;
-      // حوّل الـ label القادم من EMIS إلى API value إن أمكن
-      for (final option in _options[entry.key] ?? const <Map<String, dynamic>>[]) {
-        if (_optionText(option).trim() == entry.value.trim()) {
-          final apiValue = _optionValue(option);
-          if (apiValue != null && '$apiValue'.trim().isNotEmpty) {
-            syncedValue = '$apiValue';
-            break;
-          }
-        }
-      }
-      if (controller.text != syncedValue) {
-        controller.value = TextEditingValue(
-          text: syncedValue,
-          selection: TextSelection.collapsed(offset: syncedValue.length),
-        );
-        changed = true;
-      }
-    }
-    if (changed && mounted) setState(() {});
-  }
-
-  String _canonicalLiveKey(String rawKey, [String label = '']) {
-    String norm(String value) => value
-        .replaceAll(RegExp(r'[\u064B-\u065F\u0670]'), '')
-        .replaceAll(RegExp(r'[أإآٱ]'), 'ا')
-        .replaceAll('ة', 'ه')
-        .replaceAll('ى', 'ي')
-        .replaceAll(RegExp(r'[\u06CC\u0649]'), 'ي')
-        .replaceAll('ک', 'ك')
-        .replaceAll(RegExp(r'\s+'), '')
-        .toLowerCase();
-    final wantedKey = norm(rawKey);
-    final wantedLabel = norm(label);
-    for (final entry in _labels.entries) {
-      if (norm(entry.key) == wantedKey ||
-          norm(entry.value) == wantedKey ||
-          (wantedLabel.isNotEmpty && norm(entry.value) == wantedLabel)) {
-        return entry.key;
-      }
-    }
-    return rawKey.trim();
-  }
-
-  void _applyLiveOptions(Map<String, List<Map<String, dynamic>>> incoming) {
-    bool changed = false;
-    incoming.forEach((rawKey, values) {
-      if (values.isEmpty) return;
-      final key = _canonicalLiveKey(rawKey);
-      final existing = _options[key] ?? <Map<String, dynamic>>[];
-
-      // حقول API: لا نقبل تلويثها
-      final hasApiBacked = existing.any((o) => o['_liveOnly'] != true);
-      if (hasApiBacked && _commonOptionEndpoints.containsKey(key)) return;
-
-      final live = values.map((option) => <String, dynamic>{
-        'value': option['value'] ?? option['id'] ?? option['displayName'] ?? option['label'],
-        'displayName': option['displayName'] ?? option['label'] ?? option['text'] ?? option['value'],
-        '_liveOnly': true,
-      }).where((o) => '${o['value'] ?? ''}'.trim().isNotEmpty).toList();
-
-      final apiBacked = existing.where((o) => o['_liveOnly'] != true).toList();
-      final merged = <Map<String, dynamic>>[...apiBacked];
-      for (final item in live) {
-        if (!merged.any((o) => _optionText(o) == _optionText(item))) {
-          item['_liveOnly'] = true;
-          merged.add(item);
-        }
-      }
-      if (jsonEncode(existing) != jsonEncode(merged)) changed = true;
-      _options[key] = merged;
-    });
-    if (changed && mounted) setState(() {});
-  }
-
-  /// يُستقبل من EMIS عند أي تغيير في DOM — يُطبَّق بعد debounce قصير
-  void _applyLiveSchema(Map<String, Map<String, dynamic>> incoming) {
-    _schemaDebounce?.cancel();
-    _schemaDebounce = Timer(const Duration(milliseconds: 300), () {
-      if (!mounted) return;
-      _commitSchema(incoming);
-    });
-  }
-
-  void _commitSchema(Map<String, Map<String, dynamic>> incoming) {
-    // ننتظر مخططًا معقولًا على الأقل
-    if (!_schemaReceived && incoming.length < 3) return;
-    _schemaReceived = true;
-
-    bool changed = false;
-    final canonicalIncoming = <String, Map<String, dynamic>>{};
-    incoming.forEach((rawKey, rawMeta) {
-      final meta = Map<String, dynamic>.from(rawMeta);
-      final key = _canonicalLiveKey(rawKey, '${meta['label'] ?? ''}');
-      if (key.isNotEmpty) canonicalIncoming[key] = meta;
-    });
-
-    // احذف الحقول التي اختفت من المخطط
-    final incomingKeys = canonicalIncoming.keys.toSet();
-    final removed =
-        _liveSchema.keys.where((k) => !incomingKeys.contains(k)).toList();
-    for (final key in removed) {
-      _liveSchema.remove(key);
-      changed = true;
-    }
-
-    for (final entry in canonicalIncoming.entries) {
       final key = entry.key;
-      final meta = Map<String, dynamic>.from(entry.value);
-      final previousMeta = _liveSchema[key];
-      final previousShape = previousMeta == null
-          ? null
-          : (Map<String, dynamic>.from(previousMeta)..remove('value'));
-      final currentShape = Map<String, dynamic>.from(meta)..remove('value');
-      if (previousShape == null ||
-          jsonEncode(previousShape) != jsonEncode(currentShape)) {
-        changed = true;
-      }
-      _liveSchema[key] = meta;
-
-      // أنشئ controller إن لم يوجد
-      if (!_c.containsKey(key)) {
-        _c[key] = TextEditingController(text: '${meta['value'] ?? ''}');
-        changed = true;
-      }
-
-      // خيارات القوائم القادمة ضمن المخطط
-      final rawOptions = meta['options'];
-      if (rawOptions is List && rawOptions.isNotEmpty) {
-        final parsed = <Map<String, dynamic>>[];
-        for (final raw in rawOptions) {
-          if (raw is Map) {
-            final value = '${raw['value'] ?? raw['label'] ?? ''}'.trim();
-            final text = '${raw['label'] ?? raw['value'] ?? ''}'.trim();
-            if (value.isNotEmpty) parsed.add({'value': value, 'displayName': text});
-          }
+      if (data.containsKey(key)) {
+        final next = _liveCoerce(data[key], entry.value);
+        if ('${data[key]}' != '$next') {
+          data[key] = next;
+          changed = true;
         }
-        if (parsed.isNotEmpty) {
-          final existing = _options[key] ?? <Map<String, dynamic>>[];
-          if (existing.any((o) => o['_liveOnly'] != true) &&
-              _commonOptionEndpoints.containsKey(key)) {
-            // نثق بالـ API
-          } else {
-            final merged = <Map<String, dynamic>>[
-              ...existing.where((o) => o['_liveOnly'] != true)
-            ];
-            for (final item in parsed) {
-              if (!merged.any((o) =>
-                  '${_optionValue(o)}' == '${_optionValue(item)}' ||
-                  _optionText(o).trim() == _optionText(item).trim())) {
-                merged.add({...item, '_liveOnly': true});
-              }
-            }
-            final oldJson = jsonEncode(existing);
-            _options[key] = merged;
-            if (oldJson != jsonEncode(merged)) changed = true;
-          }
+      } else if (identification.containsKey(key)) {
+        final next = _liveCoerce(identification[key], entry.value);
+        if ('${identification[key]}' != '$next') {
+          identification[key] = next;
+          changed = true;
+        }
+      } else if (address.containsKey(key)) {
+        final next = _liveCoerce(address[key], entry.value);
+        if ('${address[key]}' != '$next') {
+          address[key] = next;
+          changed = true;
         }
       }
     }
-    if (changed && mounted) setState(() {});
+    if (changed) {
+      data['identification'] = identification;
+      data['address'] = address;
+      if (mounted) setState(() {});
+    }
   }
 
-  // ============================================================
-  // تحميل البيانات الأساسية (المعلم + endpoints المعروفة + شجرة العنوان)
-  // ============================================================
+  Map<String, dynamic> _unwrap(dynamic decoded) {
+    if (decoded is Map<String, dynamic>) {
+      final data = decoded['data'];
+      if (data is Map) return Map<String, dynamic>.from(data);
+      return decoded;
+    }
+    if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    throw Exception('استجابة بيانات المعلم غير صالحة');
+  }
 
-  Future<void> _load() async {
+  Future<void> _fetchTeacherData() async {
     try {
       final response = await http.get(
-        Uri.parse(
-            'https://emis.moedu.gov.iq/api/employee/getemployee/${widget.teacherId}'),
+        Uri.parse('https://emis.moedu.gov.iq/api/employee/getemployee/${widget.teacherId}'),
         headers: {'Authorization': widget.token, 'Accept': 'application/json'},
       );
-      if (response.statusCode != 200) {
-        throw Exception('HTTP ${response.statusCode}');
+      if (response.statusCode != 200) throw Exception('HTTP ${response.statusCode}');
+      final teacher = _unwrap(jsonDecode(utf8.decode(response.bodyBytes)));
+
+      // حمّل الخيارات المعروفة
+      for (final key in _optionEndpoints.keys) {
+        await _loadOptions(key);
       }
-      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      final employee = decoded is Map && decoded['data'] is Map
-          ? Map<String, dynamic>.from(decoded['data'])
-          : Map<String, dynamic>.from(decoded as Map);
+      await _loadEmployeesOptions();
 
-      _employee = employee;
+      _teacherData = teacher;
+      await _loadCountryStructure();
 
-      // نُهيّئ قيم الحقول من الاستجابة — لاستخدامها كقيم افتراضية
-      _seedValuesFromEmployee(employee);
-
-      await Future.wait([
-        for (final key in _commonOptionEndpoints.keys) _loadOption(key),
-        _loadCountryStructure(),
-        _loadEmployeesOptions(),
-      ]);
-
-      if (!mounted) return;
-      setState(() => _loading = false);
-    } catch (e) {
       if (!mounted) return;
       setState(() {
-        _loading = false;
-        _error = 'فشل تحميل بيانات المعلم: $e';
+        _teacherData = teacher;
+        _isLoading = false;
       });
+    } catch (e) {
+      debugPrint('خطأ في جلب بيانات المعلم: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _getOptions(String path) async {
+    final response = await http.get(
+      Uri.parse('https://emis.moedu.gov.iq/api$path'),
+      headers: {'Authorization': widget.token, 'Accept': 'application/json'},
+    );
+    if (response.statusCode != 200) return <Map<String, dynamic>>[];
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    dynamic value = decoded;
+    if (value is Map) value = value['data'] ?? value['items'] ?? value['results'] ?? value;
+    if (value is! List) return <Map<String, dynamic>>[];
+    return value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  Future<void> _loadOptions(String key) async {
+    if (_options.containsKey(key) || _loadingOptions.contains(key)) return;
+    final endpoint = _optionEndpoints[key];
+    if (endpoint == null) return;
+    _loadingOptions.add(key);
+    try {
+      final list = await _getOptions(endpoint);
+      if (list.isNotEmpty) _options[key] = list;
+    } catch (e) {
+      debugPrint('تعذر تحميل خيارات $key: $e');
+    } finally {
+      _loadingOptions.remove(key);
     }
   }
 
@@ -453,683 +332,558 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
       loadSimple('classification', decoded['classification']);
       loadSimple('status', decoded['currentemploymentstatus']);
-      loadSimple('ministryEntity', decoded['ministryentity']);
     } catch (_) {}
-  }
-
-  int? _statusToInt(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    final s = '$value'.trim();
-    final asInt = int.tryParse(s);
-    if (asInt != null) return asInt;
-    final idx = _statusOrder.indexOf(s);
-    return idx >= 0 ? idx + 1 : null;
-  }
-
-  /// نُهيّئ قيم الحقول الأولية من استجابة API
-  void _seedValuesFromEmployee(Map<String, dynamic> e) {
-    final identification = e['identification'] is Map
-        ? Map<String, dynamic>.from(e['identification'])
-        : <String, dynamic>{};
-    final address = e['address'] is Map
-        ? Map<String, dynamic>.from(e['address'])
-        : <String, dynamic>{};
-    final employment = e['employmentRecord'] is Map
-        ? Map<String, dynamic>.from(e['employmentRecord'])
-        : <String, dynamic>{};
-    final positions = employment['employmentPositions'];
-    final statuses = employment['employmentStatuses'];
-    final positionType =
-        e['currentEmploymentPosition'] ?? employment['currentEmploymentPosition'];
-    final currentPosition = positions is List &&
-            positions.isNotEmpty &&
-            positions.first is Map
-        ? ((positions.first as Map)['position'] ??
-            (positions.first as Map)['Position'])
-        : null;
-    final currentStatusRecord = statuses is List &&
-            statuses.isNotEmpty &&
-            statuses.first is Map
-        ? Map<String, dynamic>.from(statuses.first)
-        : <String, dynamic>{};
-
-    final seed = <String, dynamic>{
-      'name': e['name'],
-      'fatherName': e['fatherName'],
-      'grandFatherName': e['grandFatherName'],
-      'fathersGrandFatherName': e['fathersGrandFatherName'],
-      'surName': e['surName'],
-      'motherName': e['motherName'],
-      'mothersFatherName': e['mothersFatherName'],
-      'mothersGrandFatherName': e['mothersGrandFatherName'],
-      'dateOfBirth': _dateOnly(e['dateOfBirth']),
-      'countryOfBirth': e['countryOfBirth'],
-      'idType': identification['idType'],
-      'issuingCountry': identification['issuingCountry'],
-      'nationalId': identification['idNumber'],
-      'employeeIdNumber': e['employeeIdNumber'],
-      'familyNumber': e['familyNumber'],
-      'gender': e['gender'],
-      'nationality': e['nationality'],
-      'homeTown': e['homeTown'],
-      'motherTongue': e['motherTongue'],
-      'maritalStatus': e['maritalStatus'],
-      'bloodGroup': e['bloodGroup'],
-      'religion': e['religion'],
-      'notes': e['notes'],
-      'employmentType': e['employmentType'] ?? employment['employmentType'],
-      'employeeCategory':
-          e['employeeCategory'] ?? employment['employeeCategory'],
-      'status': _statusToInt(
-        currentStatusRecord['statusType'] ??
-            currentStatusRecord['StatusType'] ??
-            e['currentEmploymentStatus'] ??
-            e['status'],
-      ),
-      'statusDate': _dateOnly(currentStatusRecord['statusDate'] ??
-          currentStatusRecord['effectiveDate'] ??
-          currentStatusRecord['date']),
-      'statusReason': currentStatusRecord['reason'],
-      'jobDesignation': e['jobDesignation'] ?? employment['jobDesignation'],
-      'employmentGrade':
-          e['employmentGrade'] ?? employment['employmentGrade'],
-      'classification': e['classification'] ?? employment['classification'],
-      'currentPosition': currentPosition,
-      'positionType': positionType,
-      'dateOfStartWorking': _dateOnly(e['dateOfStartWorking']),
-      'educationLevel': e['educationLevel'] ?? employment['educationLevel'],
-      'universityName': e['universityName'] ?? employment['universityName'],
-      'graduationYear': _dateOnly(e['graduationYear']),
-      'specialization':
-          e['specialization'] ?? employment['specialization'],
-      'specialNeedsInformation': e['specialNeedsInformation'],
-      'emergencyContactName': e['emergencyContactName'],
-      'emergencyContactRelationship': e['emergencyContactRelationship'],
-      'emergencyContactPhoneNumber': e['emergencyContactPhoneNumber'],
-      'town': address['town'],
-      'area': address['area'],
-      'quarter': address['quarter'],
-      'street': address['street'],
-      'address1': address['address1'],
-      'address2': address['address2'],
-      'closestLocation': address['closestLocation'],
-      'email': address['email'],
-      'mobilePhoneNumber': address['mobilePhoneNumber'],
-    };
-
-    for (final entry in seed.entries) {
-      _c[entry.key] = TextEditingController(
-        text: entry.value == null ? '' : '${entry.value}',
-      );
-    }
-  }
-
-  String _dateOnly(dynamic value) {
-    if (value == null) return '';
-    final s = '$value';
-    return s.length >= 10 ? s.substring(0, 10) : s;
-  }
-
-  List<String> _optionEndpointCandidates(String key) {
-    if (key == 'positionType') return const ['/SelectOption/نوع الوظيفة'];
-    if (key == 'nationality') {
-      return const ['/selectoption/الجنسية', '/selectoption/بلد الولادة'];
-    }
-    return _commonOptionEndpoints.containsKey(key)
-        ? <String>[_commonOptionEndpoints[key]!]
-        : const [];
-  }
-
-  Future<void> _loadOption(String key) async {
-    for (final endpoint in _optionEndpointCandidates(key)) {
-      try {
-        final response = await http.get(
-          Uri.parse('https://emis.moedu.gov.iq/api$endpoint'),
-          headers: {'Authorization': widget.token, 'Accept': 'application/json'},
-        );
-        if (response.statusCode != 200) continue;
-        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        final raw = decoded is Map
-            ? (decoded['data'] ?? decoded['items'] ?? decoded['results'])
-            : decoded;
-        if (raw is List && raw.isNotEmpty) {
-          _options[key] = raw
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
-          return;
-        }
-      } catch (_) {}
-    }
-  }
-
-  List<Map<String, dynamic>>? _findPath(
-      List<Map<String, dynamic>> nodes, String targetId) {
-    for (final node in nodes) {
-      if (_optionValue(node)?.toString() == targetId) return [node];
-      final sub = _findPath(_childrenOf(node), targetId);
-      if (sub != null) return [node, ...sub];
-    }
-    return null;
   }
 
   Future<void> _loadCountryStructure() async {
     try {
-      final response = await http.get(
-        Uri.parse(
-            'https://emis.moedu.gov.iq/api/CountryStructure/getcountrystructure'),
-        headers: {'Authorization': widget.token, 'Accept': 'application/json'},
-      );
-      if (response.statusCode != 200) return;
-      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      final raw = decoded is Map
-          ? (decoded['data'] ?? decoded['items'] ?? decoded['results'])
-          : decoded;
-      if (raw is! List) return;
-      _addressCountries = raw
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
-      final address = _employee?['address'] is Map
-          ? Map<String, dynamic>.from(_employee!['address'])
+      final list = await _getOptions('/CountryStructure/getcountrystructure');
+      if (list.isEmpty) return;
+      _addressCountries = list;
+
+      final address = _teacherData?['address'] is Map
+          ? Map<String, dynamic>.from(_teacherData!['address'])
           : <String, dynamic>{};
       final stored = address['countryStructureId']?.toString();
 
-      if (stored != null && stored.isNotEmpty) {
-        final path = _findPath(_addressCountries, stored);
-        if (path != null && path.length >= 3) {
-          _addressCountryId = _optionValue(path[0])?.toString();
-          _addressGovernorates = _childrenOf(path[0]);
-          _addressGovernorateId = _optionValue(path[1])?.toString();
-          _addressDistricts = _childrenOf(path[1]);
-          _addressDistrictId = _optionValue(path.last)?.toString();
+      Map<String, dynamic>? iraq;
+      for (final item in _addressCountries) {
+        final text = _optionText(item);
+        if (text.contains('العراق') || text.toLowerCase() == 'iraq') {
+          iraq = item;
+          break;
         }
       }
+      iraq ??= _addressCountries.first;
+      _addressCountryId = _optionValue(iraq)?.toString();
+      _addressGovernorates = _childrenOf(iraq);
 
-      if (_addressCountryId == null) {
-        Map<String, dynamic>? iraq;
+      Map<String, dynamic>? selectedNode;
+      void walk(Map<String, dynamic> node, String? countryId, String? governorateId) {
+        final id = _optionValue(node)?.toString();
+        if (stored != null && id == stored) {
+          selectedNode = node;
+          _addressCountryId = countryId ?? id;
+          _addressGovernorateId = governorateId;
+        }
+        for (final child in _childrenOf(node)) {
+          walk(child, countryId ?? id, governorateId ?? id);
+        }
+      }
+      for (final country in _addressCountries) {
+        walk(country, _optionValue(country)?.toString(), null);
+      }
+
+      if (selectedNode != null) {
+        final selectedId = _optionValue(selectedNode!)?.toString();
         for (final country in _addressCountries) {
-          final t = _optionText(country);
-          if (t.contains('العراق') || t.toLowerCase() == 'iraq') {
-            iraq = country;
-            break;
+          for (final gov in _childrenOf(country)) {
+            final districts = _childrenOf(gov);
+            if (districts.any((d) => _optionValue(d)?.toString() == selectedId)) {
+              _addressCountryId = _optionValue(country)?.toString();
+              _addressGovernorateId = _optionValue(gov)?.toString();
+              _addressDistrictId = selectedId;
+              _addressGovernorates = _childrenOf(country);
+              _addressDistricts = districts;
+            }
           }
         }
-        iraq ??= _addressCountries.isNotEmpty ? _addressCountries.first : null;
-        if (iraq == null) return;
-        _addressCountryId = _optionValue(iraq)?.toString();
-        _addressGovernorates = _childrenOf(iraq);
       }
-
       if (mounted) setState(() {});
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('تعذر تحميل هيكل العناوين: $e');
+    }
   }
 
   List<Map<String, dynamic>> _childrenOf(Map<String, dynamic> node) {
-    final raw =
-        node['children'] ?? node['items'] ?? node['subItems'] ?? node['childs'];
+    final raw = node['children'] ?? node['items'] ?? node['subItems'] ?? node['childs'];
     if (raw is! List) return [];
-    return raw
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
+    return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
-  dynamic _optionValue(Map<String, dynamic> x) =>
-      x['value'] ?? x['id'] ?? x['code'];
+  String _formatDateValue(String value) {
+    final v = value.trim();
+    final iso = RegExp(r'^(\d{4})[-/]?(\d{2})[-/]?(\d{2})$').firstMatch(v);
+    if (iso != null) return '${iso.group(1)}-${iso.group(2)}-${iso.group(3)}';
+    final dmy = RegExp(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$').firstMatch(v);
+    if (dmy != null) {
+      return '${dmy.group(3)}-${dmy.group(2)!.padLeft(2, '0')}-${dmy.group(1)!.padLeft(2, '0')}';
+    }
+    return v.replaceAll('/', '-');
+  }
 
-  String _optionText(Map<String, dynamic> x) =>
-      '${x['displayName'] ?? x['label'] ?? x['name'] ?? x['text'] ?? _optionValue(x) ?? ''}';
+  String _formatTypedDate(String value) {
+    final digits = value
+        .replaceAll(RegExp(r'[^0-9٠-٩۰-۹]'), '')
+        .replaceAllMapped(RegExp('[٠-٩]'),
+            (m) => String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x0660 + 48))
+        .replaceAllMapped(RegExp('[۰-۹]'),
+            (m) => String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x06F0 + 48));
+    final limited = digits.length > 8 ? digits.substring(0, 8) : digits;
+    var out = limited.substring(0, limited.length >= 4 ? 4 : limited.length);
+    if (limited.length > 4) {
+      out += '-${limited.substring(4, limited.length >= 6 ? 6 : limited.length)}';
+    }
+    if (limited.length > 6) out += '-${limited.substring(6)}';
+    return out;
+  }
+
+  String _label(String key) => _officialArabicNames[key] ?? key;
+
+  bool _isDateField(String key) => <String>{
+        'dateOfBirth', 'issuingDate', 'dateOfStartWorking', 'graduationYear',
+        'statusDate',
+      }.contains(key);
+
+  dynamic _optionValue(Map<String, dynamic> option) => option['value'] ?? option['id'];
+  String _optionText(Map<String, dynamic> option) =>
+      (option['displayName'] ?? option['name'] ?? option['label'] ?? option['text'] ?? _optionValue(option)?.toString() ?? '').toString();
+
+  bool _sameValue(dynamic a, dynamic b) => a?.toString() == b?.toString();
 
   // ============================================================
-  // بناء الواجهة — كل شيء من _liveSchema
+  // WIDGETS
   // ============================================================
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'تعديل بيانات المعلم',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+  Widget _dropdownField({
+    required String key,
+    required Map<String, dynamic> owner,
+    required bool isDark,
+    required Color textColor,
+  }) {
+    final items = _options[key] ?? const <Map<String, dynamic>>[];
+    final value = owner[key];
+    Map<String, dynamic>? selected;
+    for (final item in items) {
+      if (_sameValue(_optionValue(item), value)) {
+        selected = item;
+        break;
+      }
+    }
+    final safeValue = selected == null ? null : _optionValue(selected);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: DropdownButtonFormField<dynamic>(
+        value: safeValue,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: _label(key),
+          labelStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+          filled: true,
+          fillColor: isDark ? Colors.black12 : Colors.grey[50],
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
-        centerTitle: true,
-        backgroundColor: const Color(0xFF4527A0),
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: Stack(
-        children: [
-          _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(_error!, textAlign: TextAlign.center),
-                      ),
-                    )
-                  : Directionality(
-                      textDirection: TextDirection.rtl,
-                      child: Form(
-                        key: _formKey,
-                        child: ListView(
-                          padding: const EdgeInsets.all(14),
-                          children: _buildContent(),
-                        ),
-                      ),
-                    ),
-          Positioned(
-            left: 0,
-            bottom: 0,
-            child: EmisLiveSync(
-              key: _liveSyncKey,
-              url:
-                  'https://emis.moedu.gov.iq/centers/schools/${widget.schoolId}/individuals/teachers/management/edit/${widget.teacherId}',
-              mode: 'edit',
-              entity: 'teacher',
-              token: widget.token,
-              recordId: widget.teacherId,
-              aliases: _liveAliases(),
-              onSnapshot: _applyLiveSnapshot,
-              onOptions: _applyLiveOptions,
-              onSchema: _applyLiveSchema,
-              onStatus: (v) {
-                if (mounted) setState(() => _liveStatus = v);
-              },
-            ),
-          ),
-        ],
+        dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
+        style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
+        items: items.map((item) {
+          return DropdownMenuItem<dynamic>(
+            value: _optionValue(item),
+            child: Text(_optionText(item),
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+          );
+        }).toList(),
+        validator: null,
+        onTap: () => _focusLive(key),
+        onChanged: (newValue) {
+          setState(() => owner[key] = newValue);
+          _focusLive(key);
+        },
       ),
     );
   }
 
-  List<Widget> _buildContent() {
-    final widgets = <Widget>[];
+  Future<void> _pickDate(Map<String, dynamic> owner, String key) async {
+    DateTime initial = DateTime.now();
+    final raw = owner[key]?.toString();
+    if (raw != null && raw.isNotEmpty) initial = DateTime.tryParse(raw) ?? initial;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1900),
+      lastDate: DateTime(2100),
+      locale: const Locale('ar'),
+    );
+    if (picked != null && mounted) {
+      final formatted =
+          '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+      _dateControllers.putIfAbsent(key, () => TextEditingController()).value =
+          TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+      setState(() => owner[key] = formatted);
+      _focusLive(key);
+    }
+  }
 
-    // 1) صورة المعلم (ثابتة — ليست من EMIS)
-    widgets.add(_buildTeacherImageCard());
-    widgets.add(const SizedBox(height: 14));
+  Widget _fieldFor(
+    String key,
+    dynamic value,
+    Map<String, dynamic> owner,
+    bool isDark,
+    Color textColor,
+  ) {
+    if (_optionEndpoints.containsKey(key) ||
+        key == 'employmentType' ||
+        key == 'employeeCategory' ||
+        key == 'classification' ||
+        key == 'status' ||
+        key == 'positionType') {
+      return _dropdownField(key: key, owner: owner, isDark: isDark, textColor: textColor);
+    }
 
-    // 2) بينما لم يصل schema: مؤشر تحميل
-    if (!_schemaReceived) {
-      widgets.add(Container(
-        padding: const EdgeInsets.all(28),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(20),
+    if (_isDateField(key)) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 15),
+        child: TextFormField(
+          key: ValueKey('date-$key'),
+          controller: _dateControllers.putIfAbsent(
+            key,
+            () => TextEditingController(
+                text: _formatDateValue(value?.toString() ?? '')),
+          ),
+          keyboardType: TextInputType.number,
+          inputFormatters: [
+            TextInputFormatter.withFunction((oldValue, newValue) {
+              final formatted = _formatTypedDate(newValue.text);
+              return TextEditingValue(
+                text: formatted,
+                selection:
+                    TextSelection.collapsed(offset: formatted.length),
+              );
+            }),
+          ],
+          onChanged: (v) {
+            owner[key] = v;
+            _focusLive(key);
+          },
+          onTap: () => _focusLive(key),
+          style: TextStyle(
+              color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
+          decoration: InputDecoration(
+            labelText: _label(key),
+            suffixIcon: IconButton(
+              tooltip: 'اختيار التاريخ',
+              onPressed: () => _pickDate(owner, key),
+              icon: const Icon(Icons.calendar_month),
+            ),
+            filled: true,
+            fillColor: isDark ? Colors.black12 : Colors.grey[50],
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          ),
         ),
+      );
+    }
+
+    return PlainTextField(
+      label: _label(key),
+      initialValue: value,
+      isDark: isDark,
+      textColor: textColor,
+      onChanged: (v) {
+        owner[key] = v;
+        _focusLive(key);
+      },
+      onTap: () => _focusLive(key),
+    );
+  }
+
+  // ============================================================
+  // SECTIONS
+  // ============================================================
+
+  Widget _teacherSection(
+    String title,
+    List<Widget> children,
+    bool isDark,
+  ) {
+    return Card(
+      color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+      margin: const EdgeInsets.only(bottom: 14),
+      elevation: 1.2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.all(15),
         child: Column(
-          children: const [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text(
-              'جاري جلب الحقول من EMIS...',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 6),
-            Text(
-              'ستظهر الحقول فور وصولها من موقع الإدارة',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.indigo.shade400)),
+            const SizedBox(height: 13),
+            ..._studentGrid(children),
           ],
         ),
-      ));
-      return widgets;
-    }
-
-    // 3) كل الحقول من المخطط — مرتبة حسب order
-    final sortedKeys = _liveSchema.keys.toList()
-      ..sort((a, b) {
-        final oa = (_liveSchema[a]?['order'] as num?)?.toInt() ?? 99999;
-        final ob = (_liveSchema[b]?['order'] as num?)?.toInt() ?? 99999;
-        return oa.compareTo(ob);
-      });
-
-    final fieldWidgets = <Widget>[];
-    for (final key in sortedKeys) {
-      final meta = _liveSchema[key];
-      if (meta == null) continue;
-      if (meta['visible'] == false) continue;
-      final w = _buildFieldFromSchema(key, meta);
-      if (w != null) fieldWidgets.add(w);
-    }
-
-    if (fieldWidgets.isNotEmpty) {
-      widgets.add(_section('بيانات المعلم', fieldWidgets));
-    } else {
-      widgets.add(_section('بيانات المعلم', [
-        const Padding(
-          padding: EdgeInsets.all(20),
-          child: Center(child: Text('لا توجد حقول ظاهرة حاليًا في EMIS')),
-        ),
-      ]));
-    }
-
-    // 4) قسم العنوان (شجرة)
-    if (_addressCountries.isNotEmpty) {
-      widgets.add(_buildAddressSection());
-    }
-
-    // 5) زر الحفظ
-    widgets.add(const SizedBox(height: 20));
-    widgets.add(_buildSaveButton());
-    widgets.add(const SizedBox(height: 40));
-
-    return widgets;
-  }
-
-  Widget? _buildFieldFromSchema(String key, Map<String, dynamic> meta) {
-    final type = '${meta['type'] ?? 'text'}';
-    final required = meta['required'] == true;
-    final label = _labels[key] ?? '${meta['label'] ?? key}'.trim();
-    if (label.isEmpty) return null;
-    if (RegExp(r'^(arrow_drop_down|expand_more|keyboard_arrow_down)$',
-            caseSensitive: false)
-        .hasMatch(label)) {
-      return null;
-    }
-
-    if (type == 'select' || type == 'checkbox') {
-      return _selectField(key, required: required, labelOverride: label);
-    }
-    if (type == 'date' || _dateKeys.contains(key)) {
-      return _textField(key,
-          required: required, readOnly: true, labelOverride: label);
-    }
-    if (type == 'textarea') {
-      return _textField(key,
-          required: required, maxLines: 3, labelOverride: label);
-    }
-
-    TextInputType? kb;
-    if (_numericKeys.contains(key)) {
-      kb = TextInputType.number;
-    } else if (_emailKeys.contains(key)) {
-      kb = TextInputType.emailAddress;
-    } else if (_phoneKeys.contains(key)) {
-      kb = TextInputType.phone;
-    }
-    return _textField(key,
-        required: required, keyboardType: kb, labelOverride: label);
-  }
-
-  Widget _buildAddressSection() {
-    final widgets = <Widget>[
-      _addressDropdown('الدولة', _addressCountryId, _addressCountries, (v) {
-        final country = _addressCountries
-            .where((x) => _optionValue(x)?.toString() == v)
-            .toList();
-        if (country.isEmpty) return;
-        setState(() {
-          _addressCountryId = v;
-          _addressGovernorates = _childrenOf(country.first);
-          _addressGovernorateId = null;
-          _addressDistricts = [];
-          _addressDistrictId = null;
-          if (_employee?['address'] is Map) {
-            _employee!['address']['countryStructureId'] = null;
-          }
-        });
-      }),
-      _addressDropdown(
-          'المحافظة', _addressGovernorateId, _addressGovernorates, (v) {
-        final gov = _addressGovernorates
-            .where((x) => _optionValue(x)?.toString() == v)
-            .toList();
-        if (gov.isEmpty) return;
-        setState(() {
-          _addressGovernorateId = v;
-          _addressDistricts = _childrenOf(gov.first);
-          _addressDistrictId = null;
-          if (_employee?['address'] is Map) {
-            _employee!['address']['countryStructureId'] = null;
-          }
-        });
-      }),
-      _addressDropdown('القضاء', _addressDistrictId, _addressDistricts, (v) {
-        setState(() {
-          _addressDistrictId = v;
-          if (_employee?['address'] is Map) {
-            _employee!['address']['countryStructureId'] =
-                v == null ? null : int.tryParse(v);
-          }
-        });
-      }),
-    ];
-    return _section('العنوان — التقسيم الإداري', widgets);
-  }
-
-  Widget _section(String title, List<Widget> children) {
-    if (children.isEmpty) return const SizedBox.shrink();
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 4)),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            title,
-            textAlign: TextAlign.right,
-            style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.deepPurple),
-          ),
-          const SizedBox(height: 14),
-          ..._grid(children),
-        ],
       ),
     );
   }
 
-  List<Widget> _grid(List<Widget> children) {
-    final result = <Widget>[];
-    for (int i = 0; i < children.length; i += 2) {
-      result.add(Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: children[i]),
-          const SizedBox(width: 10),
-          Expanded(
-            child: i + 1 < children.length
-                ? children[i + 1]
-                : const SizedBox(),
-          ),
-        ],
-      ));
-      result.add(const SizedBox(height: 12));
+  List<Widget> _studentGrid(List<Widget> children) {
+    final rows = <Widget>[];
+    for (var i = 0; i < children.length;) {
+      final current = children[i];
+      final isDate = current is Padding &&
+          current.child is TextFormField &&
+          (current.child as TextFormField).key is ValueKey &&
+          ((current.child as TextFormField).key as ValueKey)
+              .value
+              .toString()
+              .startsWith('date-');
+      if (isDate) {
+        rows.add(SizedBox(width: double.infinity, child: current));
+        i++;
+      } else {
+        final next = i + 1 < children.length
+            ? children[i + 1]
+            : const SizedBox();
+        final nextIsDate = next is Padding &&
+            next.child is TextFormField &&
+            (next.child as TextFormField).key is ValueKey &&
+            ((next.child as TextFormField).key as ValueKey)
+                .value
+                .toString()
+                .startsWith('date-');
+        if (nextIsDate) {
+          rows.add(SizedBox(width: double.infinity, child: current));
+          i++;
+        } else {
+          rows.add(Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: current),
+              const SizedBox(width: 10),
+              Expanded(child: next),
+            ],
+          ));
+          i += 2;
+        }
+      }
+      if (i < children.length) rows.add(const SizedBox(height: 12));
     }
-    return result;
+    return rows;
   }
 
-  Widget _textField(
-    String key, {
-    bool required = false,
-    int maxLines = 1,
-    TextInputType? keyboardType,
-    bool readOnly = false,
-    String? labelOverride,
-  }) {
-    final controller = _c[key];
-    if (controller == null) return const SizedBox.shrink();
-    return Focus(
-      onFocusChange: (has) {
-        _focusedKey = has ? key : null;
-      },
-      child: TextFormField(
-        controller: controller,
-        readOnly: readOnly,
-        maxLines: maxLines,
-        keyboardType: keyboardType,
-        textDirection: TextDirection.rtl,
+  Widget _addressDropdown(String label, String? value,
+      List<Map<String, dynamic>> items, ValueChanged<String?> onChanged) {
+    final safe =
+        items.any((x) => _optionValue(x)?.toString() == value) ? value : null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: DropdownButtonFormField<String>(
+        value: safe,
+        isExpanded: true,
         decoration: InputDecoration(
-          labelText: labelOverride ?? _labels[key],
-          labelStyle:
-              const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-          border:
-              OutlineInputBorder(borderRadius: BorderRadius.circular(13)),
+          labelText: label,
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           filled: true,
-          fillColor: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white.withOpacity(0.03)
-              : Colors.white,
         ),
-        validator: null,
-        onChanged: (v) => _pushAndObserve(key, v),
-        onTap: readOnly && _dateKeys.contains(key)
-            ? () => _pickDate(key)
-            : null,
+        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+        items: items
+            .map((item) => DropdownMenuItem<String>(
+                  value: _optionValue(item)?.toString(),
+                  child: Text(_optionText(item),
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                ))
+            .toList(),
+        onChanged: onChanged,
       ),
     );
   }
 
-  Widget _selectField(
-    String key, {
-    bool required = false,
-    String? labelOverride,
-  }) {
-    final values = _stringOptions(key);
-    return DropdownButtonFormField<String>(
-      value: _selected(key),
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: labelOverride ?? _labels[key],
-        labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(13)),
-        filled: true,
-        fillColor: Theme.of(context).brightness == Brightness.dark
-            ? Colors.white.withOpacity(0.03)
-            : Colors.white,
-      ),
-      style: const TextStyle(
-          fontWeight: FontWeight.bold, color: Colors.black87),
-      items: (() {
-        final raw = _options[key] ?? <Map<String, dynamic>>[];
-        final mapped = <DropdownMenuItem<String>>[];
-        for (final item in raw) {
-          final value = '${_optionValue(item) ?? ''}'.trim();
-          final label = _optionText(item).trim();
-          if (value.isNotEmpty && !mapped.any((x) => x.value == value)) {
-            mapped.add(DropdownMenuItem<String>(
-              value: value,
-              child: Text(
-                label.isEmpty ? value : label,
-                textDirection: TextDirection.rtl,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ));
-          }
-        }
-        for (final value in values) {
-          if (!mapped.any((x) => x.value == value)) {
-            mapped.add(DropdownMenuItem<String>(
-              value: value,
-              child: Text(
-                value,
-                textDirection: TextDirection.rtl,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ));
-          }
-        }
-        return mapped;
-      })(),
-      onChanged: (value) {
-        setState(() => _c[key]!.text = value ?? '');
-        _pushAndObserve(key, value ?? '');
-      },
-      validator: null,
-    );
-  }
-
-  Widget _addressDropdown(
-    String label,
-    String? value,
-    List<Map<String, dynamic>> items,
-    ValueChanged<String?> onChanged,
-  ) {
-    final safe = items.any((x) => _optionValue(x)?.toString() == value)
-        ? value
-        : null;
-    return DropdownButtonFormField<String>(
-      value: safe,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(13)),
-        filled: true,
-      ),
-      style: const TextStyle(
-          fontWeight: FontWeight.bold, color: Colors.black87),
-      items: items
-          .map((x) => DropdownMenuItem<String>(
-                value: _optionValue(x)?.toString(),
-                child: Text(
-                  _optionText(x),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ))
-          .toList(),
-      onChanged: onChanged,
-    );
-  }
-
-  List<String> _stringOptions(String key) {
-    final result = <String>[];
-    for (final item in _options[key] ?? const <Map<String, dynamic>>[]) {
-      final value = item['value'] ?? item['displayName'] ?? item['name'];
-      if (value != null && '$value'.trim().isNotEmpty) result.add('$value');
+  bool _identityFieldVisible(String key, dynamic idType) {
+    final t = int.tryParse(idType?.toString() ?? '');
+    if (t == 3) {
+      return {
+        'idNumber', 'jinsiyaIdNumber', 'issuer', 'recordNumber',
+        'pageNumber', 'issuingCountry', 'issuingDate', 'nameOfDocument'
+      }.contains(key);
     }
-    final current = _c[key]?.text.trim() ?? '';
-    if (current.isNotEmpty && !result.contains(current)) {
-      result.insert(0, current);
+    if (t == 12) return {'idNumber'}.contains(key);
+    if (t == 22) {
+      return {
+        'birthCertificateNumber', 'issuer', 'issuingDate',
+        'issuingCountry', 'nameOfDocument'
+      }.contains(key);
     }
+    if (t == 16) {
+      return {
+        'otherIdNumber', 'nameOfDocument', 'issuer', 'issuingDate',
+        'issuingCountry'
+      }.contains(key);
+    }
+    return true;
+  }
+
+  // ============================================================
+  // BUILD FORM
+  // ============================================================
+
+  List<Widget> _buildTeacherFormSections(bool isDark, Color textColor) {
+    final teacher = _teacherData!;
+    final identification = teacher['identification'] is Map<String, dynamic>
+        ? teacher['identification'] as Map<String, dynamic>
+        : teacher['identification'] is Map
+            ? Map<String, dynamic>.from(teacher['identification'] as Map)
+            : <String, dynamic>{};
+    final address = teacher['address'] is Map<String, dynamic>
+        ? teacher['address'] as Map<String, dynamic>
+        : teacher['address'] is Map
+            ? Map<String, dynamic>.from(teacher['address'] as Map)
+            : <String, dynamic>{};
+    final employment = teacher['employmentRecord'] is Map<String, dynamic>
+        ? teacher['employmentRecord'] as Map<String, dynamic>
+        : teacher['employmentRecord'] is Map
+            ? Map<String, dynamic>.from(teacher['employmentRecord'] as Map)
+            : <String, dynamic>{};
+    teacher['identification'] = identification;
+    teacher['address'] = address;
+    teacher['employmentRecord'] = employment;
+
+    Widget field(String key, [Map<String, dynamic>? owner]) {
+      final target = owner ?? teacher;
+      if (!target.containsKey(key)) return const SizedBox.shrink();
+      return _fieldFor(key, target[key], target, isDark, textColor);
+    }
+
+    final result = <Widget>[
+      // ============ الاسم الكامل ============
+      _teacherSection('الاسم الكامل', [
+        field('name'),
+        field('fatherName'),
+        field('grandFatherName'),
+        field('fathersGrandFatherName'),
+        field('surName'),
+        field('motherName'),
+        field('mothersFatherName'),
+        field('mothersGrandFatherName'),
+      ], isDark),
+
+      // ============ البيانات الشخصية ============
+      _teacherSection('البيانات الشخصية', [
+        field('dateOfBirth'),
+        field('countryOfBirth'),
+        field('gender'),
+        field('nationality'),
+        field('homeTown'),
+        field('motherTongue'),
+        field('maritalStatus'),
+        field('bloodGroup'),
+        field('religion'),
+        field('notes'),
+      ], isDark),
+
+      // ============ وثيقة التعريف ============
+      _teacherSection('وثيقة التعريف', [
+        if (identification.containsKey('idType'))
+          _dropdownField(
+              key: 'idType',
+              owner: identification,
+              isDark: isDark,
+              textColor: textColor),
+        ...identification.entries
+            .where((entry) =>
+                entry.key != 'idType' &&
+                _identityFieldVisible(entry.key, identification['idType']))
+            .map((entry) =>
+                _fieldFor(entry.key, entry.value, identification, isDark, textColor)),
+        field('employeeIdNumber'),
+        field('familyNumber'),
+      ], isDark),
+
+      // ============ البيانات الوظيفية ============
+      _teacherSection('البيانات الوظيفية', [
+        field('employmentType'),
+        field('employeeCategory'),
+        field('classification'),
+        field('jobDesignation'),
+        field('employmentGrade'),
+        field('currentPosition'),
+        field('positionType'),
+        field('dateOfStartWorking'),
+      ], isDark),
+
+      // ============ الحالة الوظيفية ============
+      _teacherSection('الحالة الوظيفية', [
+        field('status'),
+        field('statusDate'),
+        field('statusReason'),
+      ], isDark),
+
+      // ============ التحصيل الدراسي ============
+      _teacherSection('التحصيل الدراسي', [
+        field('educationLevel'),
+        field('universityName'),
+        field('graduationYear'),
+        field('specialization'),
+      ], isDark),
+
+      // ============ احتياجات خاصة واتصال طارئ ============
+      _teacherSection('ذوو الاحتياجات الخاصة والاتصال الطارئ', [
+        field('specialNeedsInformation'),
+        field('emergencyContactName'),
+        field('emergencyContactRelationship'),
+        field('emergencyContactPhoneNumber'),
+      ], isDark),
+
+      // ============ العنوان ============
+      _teacherSection('العنوان ومعلومات الاتصال', [
+        _addressDropdown('الدولة', _addressCountryId, _addressCountries, (v) {
+          final country =
+              _addressCountries.where((x) => _optionValue(x)?.toString() == v).toList();
+          if (country.isEmpty) return;
+          setState(() {
+            _addressCountryId = v;
+            _addressGovernorates = _childrenOf(country.first);
+            _addressGovernorateId = null;
+            _addressDistricts = [];
+            _addressDistrictId = null;
+            address['countryStructureId'] = null;
+          });
+          _focusLive('countryStructureId');
+        }),
+        _addressDropdown('المحافظة', _addressGovernorateId, _addressGovernorates, (v) {
+          final gov =
+              _addressGovernorates.where((x) => _optionValue(x)?.toString() == v).toList();
+          if (gov.isEmpty) return;
+          setState(() {
+            _addressGovernorateId = v;
+            _addressDistricts = _childrenOf(gov.first);
+            _addressDistrictId = null;
+            address['countryStructureId'] = null;
+          });
+          _focusLive('countryStructureId');
+        }),
+        _addressDropdown('القضاء', _addressDistrictId, _addressDistricts, (v) {
+          setState(() {
+            _addressDistrictId = v;
+            address['countryStructureId'] = v == null ? null : int.tryParse(v);
+          });
+          _focusLive('countryStructureId');
+        }),
+        field('town', address),
+        field('area', address),
+        field('quarter', address),
+        field('street', address),
+        field('address1', address),
+        field('address2', address),
+        field('closestLocation', address),
+        field('email', address),
+        field('mobilePhoneNumber', address),
+      ], isDark),
+    ];
+
     return result;
   }
 
-  String? _selected(String key) =>
-      _c[key]?.text.trim().isEmpty == true ? null : _c[key]?.text.trim();
-
-  Widget _buildSaveButton() {
-    return SizedBox(
-      height: 54,
-      child: ElevatedButton.icon(
-        onPressed: _saving ? null : _save,
-        icon: _saving
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white),
-              )
-            : const Icon(Icons.save),
-        label: Text(_saving ? 'جارٍ الحفظ...' : 'حفظ بيانات المعلم'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green,
-          foregroundColor: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        ),
-      ),
-    );
-  }
-
   // ============================================================
-  // الصور
+  // IMAGE
   // ============================================================
+
+  SelfieSegmenter? _selfieSegmenter;
 
   Future<void> _initializeSelfieSegmenter() async {
     _selfieSegmenter ??= SelfieSegmenter(
@@ -1138,8 +892,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     );
   }
 
-  Future<File?> _removeBackgroundUsingSelfieSegmentation(
-      File imageFile) async {
+  Future<File?> _removeBackgroundUsingSelfieSegmentation(File imageFile) async {
     File? normalizedFile;
     try {
       await _initializeSelfieSegmenter();
@@ -1163,15 +916,12 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
       normalizedFile = File(
           '${imageFile.path}_seg_${DateTime.now().millisecondsSinceEpoch}.jpg');
-      await normalizedFile
-          .writeAsBytes(img.encodeJpg(source, quality: 90), flush: true);
+      await normalizedFile.writeAsBytes(img.encodeJpg(source, quality: 90), flush: true);
 
-      final mask = await segmenter
-          .processImage(InputImage.fromFilePath(normalizedFile.path));
-      if (mask == null ||
-          mask.width <= 0 ||
-          mask.height <= 0 ||
-          mask.confidences.isEmpty) {
+      final mask = await segmenter.processImage(
+        InputImage.fromFilePath(normalizedFile.path),
+      );
+      if (mask == null || mask.width <= 0 || mask.height <= 0 || mask.confidences.isEmpty) {
         throw Exception('لم يتم الحصول على قناع صالح للشخص');
       }
       if (mask.width != source.width || mask.height != source.height) {
@@ -1189,8 +939,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         for (var x = 0; x < source.width; x++) {
           final index = y * source.width + x;
           final confidence = mask.confidences[index].clamp(0.0, 1.0);
-          final alpha =
-              ((confidence - 0.35) / 0.40 * 255.0).round().clamp(0, 255);
+          final alpha = ((confidence - 0.35) / 0.40 * 255.0).round().clamp(0, 255);
           final pixel = source.getPixel(x, y);
           result.setPixelRgba(x, y, pixel.r, pixel.g, pixel.b, alpha);
         }
@@ -1213,121 +962,112 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     File currentImage = imageFile;
     bool processing = false;
 
-    await showDialog<void>(
+    await showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20)),
-              title: const Text(
-                'معاينة صورة المعلم',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    height: 280,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: InteractiveViewer(
-                        panEnabled: true,
-                        scaleEnabled: true,
-                        boundaryMargin: const EdgeInsets.all(30),
-                        minScale: 0.5,
-                        maxScale: 5,
-                        child: Image.file(currentImage, fit: BoxFit.contain),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Text('معاينة صورة المعلم',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      height: 240,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: InteractiveViewer(
+                          panEnabled: true,
+                          boundaryMargin: const EdgeInsets.all(20),
+                          minScale: 0.5,
+                          maxScale: 4,
+                          child: Image.file(currentImage, fit: BoxFit.contain),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'يمكنك تقريب الصورة وتحريكها لمراجعتها قبل اعتمادها',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey,
-                        fontSize: 12),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: processing
-                          ? null
-                          : () async {
-                              setDialogState(() => processing = true);
-                              try {
-                                final processed =
-                                    await _removeBackgroundUsingSelfieSegmentation(
-                                        currentImage);
-                                if (!mounted) return;
-                                if (processed == null) {
-                                  throw Exception('لم يتم الحصول على الصورة');
-                                }
-                                setDialogState(() {
-                                  currentImage = processed;
-                                  processing = false;
-                                });
-                              } catch (e) {
-                                if (!mounted) return;
-                                setDialogState(() => processing = false);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content:
-                                        Text('تعذر إزالة الخلفية: $e'),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
+                    const SizedBox(height: 10),
+                    const Text('يمكنك تقريب الصورة لمراجعتها قبل اعتمادها',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey,
+                            fontSize: 12)),
+                    const SizedBox(height: 15),
+                    if (processing)
+                      const Column(
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 10),
+                          Text('جاري إزالة الخلفية...'),
+                        ],
+                      )
+                    else
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            setDialogState(() => processing = true);
+                            try {
+                              final processed =
+                                  await _removeBackgroundUsingSelfieSegmentation(
+                                      currentImage);
+                              if (processed == null) {
+                                throw Exception('لم يتم الحصول على الصورة المعالجة');
                               }
-                            },
-                      icon: processing
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2))
-                          : const Icon(Icons.auto_fix_high),
-                      label: Text(processing
-                          ? 'جاري إزالة الخلفية...'
-                          : 'إزالة الخلفية'),
-                    ),
-                  ),
-                ],
+                              if (!mounted) return;
+                              setDialogState(() {
+                                currentImage = processed;
+                                processing = false;
+                              });
+                            } catch (e) {
+                              if (!mounted) return;
+                              setDialogState(() => processing = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text('تعذر إزالة الخلفية: $e'),
+                                    backgroundColor: Colors.red),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.auto_fix_high, color: Colors.black87),
+                          label: const Text('حذف الخلفية',
+                              style: TextStyle(
+                                  color: Colors.black87,
+                                  fontWeight: FontWeight.bold)),
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.amberAccent),
+                        ),
+                      ),
+                  ],
+                ),
               ),
               actions: [
                 TextButton(
-                  onPressed: processing
-                      ? null
-                      : () => Navigator.pop(dialogContext),
+                  onPressed: processing ? null : () => Navigator.pop(dialogContext),
                   child: const Text('إلغاء'),
                 ),
                 ElevatedButton(
                   onPressed: processing
                       ? null
                       : () {
-                          setState(() {
-                            _pickedImage = currentImage;
-                            _removeExistingPhoto = false;
-                          });
+                          setState(() => _pickedImage = currentImage);
                           Navigator.pop(dialogContext);
                         },
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                   child: const Text('اعتماد',
                       style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white)),
+                          fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
               ],
             );
@@ -1339,29 +1079,36 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      final picked = await ImagePicker().pickImage(
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
         source: source,
         imageQuality: 90,
         maxWidth: 2500,
         maxHeight: 2500,
       );
-      if (picked == null || !mounted) return;
-      await _showImagePreviewDialog(File(picked.path));
+      if (picked != null && mounted) {
+        await _showImagePreviewDialog(File(picked.path));
+      }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('تعذر اختيار صورة المعلم: $e'),
-            backgroundColor: Colors.red),
-      );
+      debugPrint('خطأ في اختيار الصورة: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('تعذر فتح الكاميرا أو معرض الصور'),
+              backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
   void _deleteCurrentPhoto() {
     setState(() {
       _pickedImage = null;
-      _removeExistingPhoto = true;
+      if (_teacherData != null) _teacherData!['imageUrl'] = null;
     });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم حذف صورة المعلم')),
+    );
   }
 
   Future<String?> _uploadImageToEmisServer(File imageFile) async {
@@ -1371,75 +1118,66 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     );
     request.headers['Authorization'] = widget.token;
     request.headers['Accept'] = 'application/json';
-    request.files.add(
-      await http.MultipartFile.fromPath(
-        'image',
-        imageFile.path,
-        filename: imageFile.path.toLowerCase().endsWith('.png')
-            ? 'teacher.png'
-            : 'teacher.jpg',
-      ),
-    );
-    final response = await request.send();
-    final body = await response.stream.bytesToString();
-    if (response.statusCode != 200) {
-      throw Exception(
-          'فشل رفع صورة المعلم (${response.statusCode})${body.isEmpty ? '' : ': $body'}');
+    request.files.add(await http.MultipartFile.fromPath(
+      'image',
+      imageFile.path,
+      filename: 'teacher.png',
+    ));
+    try {
+      final streamedResponse = await request.send();
+      final responseData = await streamedResponse.stream.bytesToString();
+      if (streamedResponse.statusCode == 200) {
+        final jsonResponse = jsonDecode(responseData);
+        if (jsonResponse is Map) return jsonResponse['imageUrl']?.toString();
+      }
+      debugPrint('استجابة رفع الصورة: $responseData');
+    } catch (e) {
+      debugPrint('خطأ في رفع الصورة إلى EMIS: $e');
     }
-    final decoded = jsonDecode(body);
-    if (decoded is Map && decoded['imageUrl'] != null) {
-      return decoded['imageUrl'].toString();
-    }
-    throw Exception('لم يرجع خادم EMIS رابط الصورة');
-  }
-
-  Future<void> _pickDate(String key) async {
-    final initial = DateTime.tryParse(_c[key]!.text) ?? DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now(),
-      helpText: _labels[key],
-      locale: const Locale('ar'),
-    );
-    if (picked != null) {
-      final v =
-          '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-      _c[key]!.text = v;
-      _pushAndObserve(key, v);
-      setState(() {});
-    }
+    return null;
   }
 
   // ============================================================
-  // الحفظ
+  // SAVE
   // ============================================================
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_employee == null) return;
-    setState(() => _saving = true);
+  Future<void> _saveTeacherData() async {
+    if (_teacherData == null) return;
+    setState(() => _isSaving = true);
 
     try {
-      final old = _employee!;
-      final nationalId = _c['nationalId']?.text.trim() ?? '';
-      if (nationalId.isNotEmpty) {
-        final check = await http.get(
-          Uri.parse(
-              'https://emis.moedu.gov.iq/api/employee/checknationalidnumber?value=${Uri.encodeQueryComponent(nationalId)}&excludeId=${Uri.encodeQueryComponent(widget.teacherId)}'),
-          headers: {
-            'Authorization': widget.token,
-            'Accept': 'application/json'
-          },
-        );
-        if (check.statusCode == 200) {
-          final result = jsonDecode(utf8.decode(check.bodyBytes));
-          if (result is Map && result['isUnique'] == false) {
-            throw Exception('رقم البطاقة الوطنية مستخدم مسبقاً');
+      if (_pickedImage != null) {
+        final newImageUrl = await _uploadImageToEmisServer(_pickedImage!);
+        if (newImageUrl != null && newImageUrl.isNotEmpty) {
+          _teacherData!['imageUrl'] = newImageUrl;
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('تعذر رفع صورة المعلم'),
+                  backgroundColor: Colors.red),
+            );
           }
+          return;
         }
       }
+
+      String? dateOnly(dynamic value) {
+        if (value == null) return null;
+        final raw = value.toString().trim();
+        if (raw.isEmpty) return null;
+        final iso = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})').firstMatch(raw);
+        if (iso != null) {
+          final year = int.parse(iso.group(1)!);
+          final month = int.parse(iso.group(2)!);
+          final day = int.parse(iso.group(3)!);
+          return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+        }
+        return null;
+      }
+
+      // بناء Payload مطابق لـ EMIS updateemployee
+      final old = _teacherData!;
       final identification = old['identification'] is Map
           ? Map<String, dynamic>.from(old['identification'])
           : <String, dynamic>{};
@@ -1450,18 +1188,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           ? Map<String, dynamic>.from(old['employmentRecord'])
           : <String, dynamic>{};
 
-      String imageUrl = old['imageUrl']?.toString() ?? '';
-      if (_pickedImage != null) {
-        final uploaded = await _uploadImageToEmisServer(_pickedImage!);
-        if (uploaded == null || uploaded.isEmpty) {
-          throw Exception('تعذر رفع صورة المعلم');
-        }
-        imageUrl = uploaded;
-      } else if (_removeExistingPhoto) {
-        imageUrl = '';
+      String text(String key) {
+        final v = old[key];
+        return v == null ? '' : '$v'.trim();
       }
-
-      String text(String key) => _c[key]?.text.trim() ?? '';
 
       final payload = <String, dynamic>{
         'Id': old['id'],
@@ -1473,9 +1203,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'Classification': text('classification'),
         'JobDesignation': _nullable(text('jobDesignation')),
         'EmploymentGrade': _nullable(text('employmentGrade')),
-        'DateOfStartWorking': _nullable(text('dateOfStartWorking')),
+        'DateOfStartWorking': _nullable(dateOnly(text('dateOfStartWorking'))),
         'EducationLevel': _nullable(text('educationLevel')),
-        'GraduationYear': _nullable(text('graduationYear')),
+        'GraduationYear': _nullable(dateOnly(text('graduationYear'))),
         'UniversityName': _nullable(text('universityName')),
         'Specialization': _nullable(text('specialization')),
         'Name': text('name'),
@@ -1486,18 +1216,18 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'MotherName': text('motherName'),
         'MothersFatherName': text('mothersFatherName'),
         'MothersGrandFatherName': text('mothersGrandFatherName'),
-        'ImageUrl': imageUrl,
-        'DateOfBirth': _nullable(text('dateOfBirth')),
+        'ImageUrl': old['imageUrl']?.toString() ?? '',
+        'DateOfBirth': _nullable(dateOnly(text('dateOfBirth'))),
         'Gender': _intOrNull(text('gender')),
         'Nationality': text('nationality'),
         'CountryOfBirth': text('countryOfBirth'),
         'HomeTown': text('homeTown'),
         'IdentificationId': 0,
         'Identification': {
-          'IdNumber': nationalId,
-          'IssuingCountry': text('issuingCountry'),
-          'IdType': _intOrNull(text('idType')),
-          'issuingDate': identification['issuingDate'],
+          'IdNumber': identification['idNumber']?.toString() ?? '',
+          'IssuingCountry': identification['issuingCountry']?.toString() ?? '',
+          'IdType': _intOrNull(identification['idType']?.toString() ?? ''),
+          'issuingDate': dateOnly(identification['issuingDate']),
         },
         'FatherIdentificationId': old['fatherIdentificationId'],
         'FatherIdentification': {
@@ -1513,8 +1243,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'HomePhoneNumber': _nullable(old['homePhoneNumber']),
         'Status': _intOrNull(text('status')),
         'Notes': text('notes'),
-        'SpecialNeedsInformation':
-            _nullable(text('specialNeedsInformation')),
+        'SpecialNeedsInformation': _nullable(text('specialNeedsInformation')),
         'EmergencyContactName': _nullable(text('emergencyContactName')),
         'EmergencyContactRelationship':
             _nullable(text('emergencyContactRelationship')),
@@ -1522,23 +1251,21 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             _nullable(text('emergencyContactPhoneNumber')),
         'Address': {
           'AddressType': 1,
-          'Town': text('town'),
-          'Area': text('area'),
-          'Quarter': text('quarter'),
-          'Street': text('street'),
-          'ClosestLocation': text('closestLocation'),
-          'countryStructureId': _addressDistrictId == null
-              ? oldAddress['countryStructureId']
-              : int.tryParse(_addressDistrictId!),
+          'Town': oldAddress['town']?.toString() ?? '',
+          'Area': oldAddress['area']?.toString() ?? '',
+          'Quarter': oldAddress['quarter']?.toString() ?? '',
+          'Street': oldAddress['street']?.toString() ?? '',
+          'ClosestLocation': oldAddress['closestLocation']?.toString() ?? '',
+          'countryStructureId': oldAddress['countryStructureId'],
           'Latitude': '${oldAddress['latitude'] ?? 0}',
           'Longitude': '${oldAddress['longitude'] ?? 0}',
           'ApartmentNumber': oldAddress['apartmentNumber'] ?? '',
           'BuildingNumber': oldAddress['buildingNumber'] ?? '',
-          'Address1': text('address1'),
-          'Address2': text('address2'),
+          'Address1': oldAddress['address1']?.toString() ?? '',
+          'Address2': oldAddress['address2']?.toString() ?? '',
           'SchoolPhoneNumber': oldAddress['schoolPhoneNumber'] ?? '',
-          'MobilePhoneNumber': text('mobilePhoneNumber'),
-          'Email': text('email'),
+          'MobilePhoneNumber': oldAddress['mobilePhoneNumber']?.toString() ?? '',
+          'Email': oldAddress['email']?.toString() ?? '',
           'Fax': oldAddress['fax'] ?? '',
           'Website': oldAddress['website'] ?? '',
         },
@@ -1552,34 +1279,46 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         Uri.parse('https://emis.moedu.gov.iq/api/employee/updateemployee'),
         headers: {
           'Authorization': widget.token,
-          'Accept': 'application/json',
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
         body: jsonEncode(payload),
       );
 
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final body = utf8.decode(response.bodyBytes);
-        throw Exception(
-            'HTTP ${response.statusCode}${body.isEmpty ? '' : ': $body'}');
-      }
+      if (!mounted) return;
 
-      if (!mounted) return;
-      old['imageUrl'] = imageUrl;
-      _pickedImage = null;
-      _removeExistingPhoto = false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم تحديث المعلم بنجاح')),
-      );
-      Navigator.pop(context, true);
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('تم الحفظ بنجاح!'), backgroundColor: Colors.green),
+        );
+        Navigator.pop(context, true);
+      } else {
+        debugPrint('Update teacher status: ${response.statusCode}');
+        debugPrint('Update teacher response: ${response.body}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 12),
+            content: Text('فشل الحفظ (HTTP ${response.statusCode})\n${response.body}',
+                maxLines: 6, overflow: TextOverflow.ellipsis),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('فشل تحديث المعلم: $e'),
-            backgroundColor: Colors.red),
-      );
+      debugPrint('خطأ في حفظ بيانات المعلم: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 12),
+            content: Text('تعذر إكمال الحفظ\n$e',
+                maxLines: 6, overflow: TextOverflow.ellipsis),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -1598,31 +1337,25 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             .toList()
         : <Map<String, dynamic>>[];
 
-    final status = statuses.isNotEmpty ? statuses.first : <String, dynamic>{};
-    status['StatusType'] = _c['status']?.text.trim() ?? '';
-    status['Reason'] = (_c['statusReason']?.text.trim().isEmpty ?? true)
-        ? null
-        : _c['statusReason']!.text.trim();
-    status['StatusDate'] = (_c['statusDate']?.text.trim().isEmpty ?? true)
-        ? null
-        : _c['statusDate']!.text.trim();
-    status['CurrentBelongToEntityId'] = int.tryParse(widget.schoolId);
-    if (statuses.isEmpty) statuses.add(status);
-
-    final position =
-        positions.isNotEmpty ? positions.first : <String, dynamic>{};
-    position['Position'] = _c['currentPosition']?.text.trim() ?? '';
-    position['InitiateDate'] = _c['dateOfStartWorking']?.text.trim() ?? '';
-    if (positions.isEmpty) positions.add(position);
+    if (statuses.isNotEmpty) {
+      final status = statuses.first;
+      status['StatusType'] = _teacherData?['status']?.toString() ?? '';
+      status['Reason'] = _nullable(_teacherData?['statusReason']?.toString());
+      status['StatusDate'] = _nullable(_teacherData?['statusDate']?.toString());
+      status['CurrentBelongToEntityId'] = int.tryParse(widget.schoolId);
+    }
+    if (positions.isNotEmpty) {
+      final pos = positions.first;
+      pos['Position'] = _teacherData?['currentPosition']?.toString() ?? '';
+      pos['InitiateDate'] =
+          _teacherData?['dateOfStartWorking']?.toString() ?? '';
+    }
 
     record['EmploymentStatuses'] = statuses;
     record['EmploymentPositions'] = positions;
-    final statusValue = _c['status']?.text.trim() ?? '';
-    record['IsCurrentlyActive'] =
-        statusValue.isEmpty || statusValue == '1' || statusValue == 'مستمر';
     record['CurrentBelongToEntityId'] = int.tryParse(widget.schoolId);
     record['CurrentEmploymentPosition'] =
-        _c['positionType']?.text.trim() ?? '';
+        _teacherData?['positionType']?.toString() ?? '';
     return record;
   }
 
@@ -1634,134 +1367,291 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   int? _intOrNull(String value) => int.tryParse(value.trim());
 
-  Widget _buildTeacherImageCard() {
-    String imageUrl = _employee?['imageUrl']?.toString() ?? '';
-    if (imageUrl.isNotEmpty && !imageUrl.startsWith('http')) {
-      imageUrl = 'https://emis.moedu.gov.iq$imageUrl';
+  @override
+  void dispose() {
+    _liveTimer?.cancel();
+    final segmenter = _selfieSegmenter;
+    _selfieSegmenter = null;
+    if (segmenter != null) segmenter.close();
+    for (final controller in _dateControllers.values) {
+      controller.dispose();
     }
-    final hasImage =
-        _pickedImage != null || (!_removeExistingPhoto && imageUrl.isNotEmpty);
+    _dateControllers.clear();
+    super.dispose();
+  }
 
-    return Card(
-      elevation: 1.5,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            const Text(
-              'الصورة الشخصية للمعلم',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Stack(
-              alignment: Alignment.bottomRight,
-              children: [
-                Container(
-                  width: 150,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.grey.shade100,
-                    border: Border.all(color: Colors.deepPurple, width: 3),
-                  ),
-                  child: ClipOval(
-                    child: _pickedImage != null
-                        ? Image.file(_pickedImage!, fit: BoxFit.cover)
-                        : hasImage
-                            ? Image.network(
-                                imageUrl,
-                                headers: {'Authorization': widget.token},
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Icon(
-                                  Icons.person,
-                                  size: 80,
-                                  color: Colors.grey,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.person,
-                                size: 80,
-                                color: Colors.grey,
-                              ),
-                  ),
-                ),
-                Positioned(
-                  bottom: 2,
-                  right: 2,
-                  child: CircleAvatar(
-                    backgroundColor: Colors.deepPurple,
-                    child: IconButton(
-                      tooltip: 'الكاميرا',
-                      onPressed:
-                          _saving ? null : () => _pickImage(ImageSource.camera),
-                      icon: const Icon(
-                        Icons.camera_alt,
-                        color: Colors.white,
-                        size: 19,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _saving
-                        ? null
-                        : () => _pickImage(ImageSource.gallery),
-                    icon: const Icon(Icons.photo_library_outlined),
-                    label: const Text('من الجهاز'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: hasImage && !_saving
-                        ? () {
-                            final file = _pickedImage;
-                            if (file != null) {
-                              _showImagePreviewDialog(file);
-                            } else if (imageUrl.isNotEmpty) {
-                              showDialog<void>(
-                                context: context,
-                                builder: (context) => Dialog(
-                                  backgroundColor: Colors.black,
-                                  child: InteractiveViewer(
-                                    minScale: 0.5,
-                                    maxScale: 5,
-                                    child: Image.network(
-                                      imageUrl,
-                                      headers: {
-                                        'Authorization': widget.token
-                                      },
-                                      fit: BoxFit.contain,
-                                    ),
+  // ============================================================
+  // BUILD
+  // ============================================================
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F7FA);
+    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final textColor = isDark ? Colors.white : Colors.black87;
+
+    String imgUrl = _teacherData?['imageUrl']?.toString() ?? '';
+    if (imgUrl.isNotEmpty && !imgUrl.startsWith('http')) {
+      imgUrl = 'https://emis.moedu.gov.iq$imgUrl';
+    }
+
+    return Scaffold(
+      backgroundColor: bgColor,
+      appBar: AppBar(
+        title: const Text('تعديل بيانات المعلم',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+                colors: [Color(0xFF1A237E), Color(0xFF4A90E2)]),
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Stack(
+        children: [
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _teacherData == null
+                  ? const Center(child: Text('فشل جلب البيانات'))
+                  : Column(
+                      children: [
+                        Expanded(
+                          child: Form(
+                            key: _formKey,
+                            child: ListView(
+                              padding: const EdgeInsets.all(15),
+                              children: [
+                                Center(
+                                  child: Stack(
+                                    children: [
+                                      Container(
+                                        width: 140,
+                                        height: 140,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                              color: Colors.blueAccent, width: 3),
+                                        ),
+                                        child: ClipOval(
+                                          child: _pickedImage != null
+                                              ? Image.file(_pickedImage!,
+                                                  fit: BoxFit.cover)
+                                              : imgUrl.isNotEmpty
+                                                  ? Image.network(
+                                                      imgUrl,
+                                                      headers: {
+                                                        'Authorization':
+                                                            widget.token
+                                                      },
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder:
+                                                          (_, __, ___) => Icon(
+                                                              Icons.person,
+                                                              size: 80,
+                                                              color:
+                                                                  Colors.grey[400]),
+                                                    )
+                                                  : Icon(Icons.person,
+                                                      size: 80,
+                                                      color: Colors.grey[400]),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        bottom: 0,
+                                        right: 0,
+                                        child: CircleAvatar(
+                                          backgroundColor: Colors.blue,
+                                          radius: 20,
+                                          child: IconButton(
+                                            icon: const Icon(Icons.camera_alt,
+                                                color: Colors.white, size: 18),
+                                            onPressed: () =>
+                                                _pickImage(ImageSource.camera),
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        bottom: 0,
+                                        left: 0,
+                                        child: CircleAvatar(
+                                          backgroundColor: Colors.green,
+                                          radius: 20,
+                                          child: IconButton(
+                                            icon: const Icon(
+                                                Icons.photo_library,
+                                                color: Colors.white,
+                                                size: 18),
+                                            onPressed: () =>
+                                                _pickImage(ImageSource.gallery),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              );
-                            }
-                          }
-                        : null,
-                    icon: const Icon(Icons.zoom_in),
-                    label: const Text('Preview'),
+                                const SizedBox(height: 10),
+                                Center(
+                                  child: TextButton.icon(
+                                    onPressed: _deleteCurrentPhoto,
+                                    icon: const Icon(Icons.delete_forever,
+                                        color: Colors.red),
+                                    label: const Text('حذف الصورة الحالية',
+                                        style: TextStyle(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                                const SizedBox(height: 15),
+                                ..._buildTeacherFormSections(isDark, textColor),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.all(15),
+                          color: cardColor,
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: 55,
+                            child: ElevatedButton(
+                              onPressed: _isSaving ? null : _saveTeacherData,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green[700],
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: _isSaving
+                                  ? const CircularProgressIndicator(
+                                      color: Colors.white)
+                                  : const Text('حفظ',
+                                      style: TextStyle(
+                                          fontSize: 18,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+          Positioned(
+            left: 0,
+            bottom: 0,
+            child: EmisLiveSync(
+              key: _liveSyncKey,
+              url:
+                  'https://emis.moedu.gov.iq/centers/schools/${widget.schoolId}/individuals/teachers/management/edit/${widget.teacherId}',
+              mode: 'edit',
+              entity: 'teacher',
+              token: widget.token,
+              recordId: widget.teacherId,
+              aliases: _liveAliases(),
+              onSnapshot: _applyLiveSnapshot,
+              onStatus: (v) {
+                if (mounted) setState(() => _liveStatus = v);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ================================================================
+// NORMAL TEXT FIELD — نفس نمط صفحة الطالب
+// ================================================================
+
+class PlainTextField extends StatefulWidget {
+  final String label;
+  final dynamic initialValue;
+  final bool isDark;
+  final Color textColor;
+  final Function(String) onChanged;
+  final bool readOnly;
+  final VoidCallback? onTap;
+  final VoidCallback? onMic;
+  final bool micActive;
+
+  const PlainTextField({
+    super.key,
+    required this.label,
+    required this.initialValue,
+    required this.isDark,
+    required this.textColor,
+    required this.onChanged,
+    this.readOnly = false,
+    this.onTap,
+    this.onMic,
+    this.micActive = false,
+  });
+
+  @override
+  State<PlainTextField> createState() => _PlainTextFieldState();
+}
+
+class _PlainTextFieldState extends State<PlainTextField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller =
+        TextEditingController(text: widget.initialValue?.toString() ?? '');
+  }
+
+  @override
+  void didUpdateWidget(covariant PlainTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.initialValue?.toString() ?? '';
+    if (next != _controller.text) {
+      _controller.value = TextEditingValue(
+        text: next,
+        selection: TextSelection.collapsed(offset: next.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: TextFormField(
+        controller: _controller,
+        readOnly: widget.readOnly,
+        onChanged: widget.onChanged,
+        onTap: widget.onTap,
+        validator: null,
+        style: TextStyle(
+            fontWeight: FontWeight.bold, color: widget.textColor, fontSize: 16),
+        decoration: InputDecoration(
+          labelText: widget.label,
+          labelStyle:
+              const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+          filled: true,
+          fillColor: widget.isDark ? Colors.black12 : Colors.grey[50],
+          suffixIcon: widget.onMic == null
+              ? null
+              : IconButton(
+                  tooltip: 'الإدخال الصوتي',
+                  onPressed: widget.onMic,
+                  icon: Icon(
+                    widget.micActive ? Icons.mic_rounded : Icons.mic_none_rounded,
+                    color: widget.micActive ? Colors.red : null,
                   ),
                 ),
-              ],
-            ),
-            TextButton.icon(
-              onPressed: hasImage && !_saving ? _deleteCurrentPhoto : null,
-              icon: const Icon(Icons.delete_forever, color: Colors.red),
-              label: const Text(
-                'إزالة الصورة الحالية',
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, color: Colors.red),
-              ),
-            ),
-          ],
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
         ),
       ),
     );
