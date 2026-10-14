@@ -430,6 +430,12 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
       if (!mounted) return;
       setState(() => loading = false);
+      // يبدأ التنقل الصوتي تلقائياً فقط إذا اختار المستخدم ذلك من الإعدادات.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !saving && AppCore.voiceSequentialAutoStart) {
+          _startSequentialVoiceMode();
+        }
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -1293,7 +1299,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   Future<void> _startSequentialVoiceMode() async {
     if (saving || !AppCore.voiceInputEnabled) return;
-    if (!await _ensureMicrophoneAccess()) return;
+    if (!await _ensureMicrophoneAccess()) {
+      if (mounted) setState(() => _voiceSequentialMode = false);
+      return;
+    }
     final sequence = _currentVoiceSequence();
     if (sequence.isEmpty) return;
     setState(() {

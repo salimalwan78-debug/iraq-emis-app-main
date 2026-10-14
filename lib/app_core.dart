@@ -8,6 +8,8 @@ class AppCore {
   static bool isAudioMuted = true; // اجعل القيمة الافتراضية صحيحة (موقف لحين قراءة التفضيلات)
   static double currentVolume = 0.5;
   static bool voiceInputEnabled = true;
+  // التشغيل التلقائي للتنقل الصوتي بين الحقول في نموذج إضافة الطالب.
+  static bool voiceSequentialAutoStart = false;
   /// google = Android SpeechRecognizer (يفضل خدمة Google/الخدمة الافتراضية)،
   /// legacy = مسار speech_to_text القديم الذي كان يعمل سابقاً.
   static String voiceRecognitionEngine = 'google';
@@ -30,6 +32,7 @@ class AppCore {
     isAudioMuted = prefs.getBool('isAudioMuted') ?? true;
     currentVolume = prefs.getDouble('currentVolume') ?? 0.5;
     voiceInputEnabled = prefs.getBool('voiceInputEnabled') ?? true;
+    voiceSequentialAutoStart = prefs.getBool('voiceSequentialAutoStart') ?? false;
     voiceRecognitionEngine = prefs.getString('voiceRecognitionEngine') ?? 'google';
     voiceAutoRestart = prefs.getBool('voiceAutoRestart') ?? false;
     voicePossibleSilenceMs = prefs.getInt('voicePossibleSilenceMs') ?? 23000;
@@ -87,6 +90,12 @@ class AppCore {
     voiceInputEnabled = enabled;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('voiceInputEnabled', enabled);
+  }
+
+  static Future<void> setVoiceSequentialAutoStart(bool enabled) async {
+    voiceSequentialAutoStart = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('voiceSequentialAutoStart', enabled);
   }
 
   static Future<void> setVoiceRecognitionEngine(String engine) async {

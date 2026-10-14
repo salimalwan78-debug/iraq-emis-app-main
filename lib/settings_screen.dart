@@ -253,6 +253,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                 child: Column(
                   children: [
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: Icon(
+                        AppCore.voiceSequentialAutoStart
+                            ? Icons.keyboard_double_arrow_down_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        color: AppCore.voiceSequentialAutoStart ? Colors.green : Colors.grey,
+                        size: 30,
+                      ),
+                      title: Text(
+                        'التفعيل الافتراضي للتنقل الصوتي بين الحقول',
+                        style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      subtitle: Text(
+                        'عند التفعيل يبدأ التنقل الصوتي تلقائياً عند فتح صفحة إضافة طالب جديد. يمكنك إيقافه من داخل الصفحة.',
+                        style: TextStyle(color: isDark ? Colors.white70 : Colors.grey[700], height: 1.35),
+                      ),
+                      value: AppCore.voiceSequentialAutoStart,
+                      activeColor: Colors.green,
+                      onChanged: (value) async {
+                        await AppCore.setVoiceSequentialAutoStart(value);
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                    const Divider(),
                     SwitchListTile(
                       secondary: Icon(
                         AppCore.voiceInputEnabled ? Icons.mic : Icons.mic_off,
