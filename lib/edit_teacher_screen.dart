@@ -62,6 +62,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'educationLevel': '/selectoption/تحصیل الدراسي',
     'positionType': '/SelectOption/نوع الوظيفة',
     'specialization': '/selectoption/الإختصاص',
+    'employmentType': '/SelectOption/نوع الوظيفة',
   };
 
   final Map<String, String> _officialArabicNames = {
@@ -244,6 +245,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       }
       await _loadEmployeesOptions();
 
+      // دمج الخيارات لضمان ظهور القيمة الحالية للمعلم إن لم تكن موجودة ضمن جلب الـ API
+      _ensureOptionIncludesCurrentValue(teacher);
+
       _teacherData = teacher;
       await _loadCountryStructure();
 
@@ -255,6 +259,42 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     } catch (e) {
       debugPrint('خطأ في جلب بيانات المعلم: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _ensureOptionIncludesCurrentValue(Map<String, dynamic> teacher) {
+    final identification = teacher['identification'] is Map ? teacher['identification'] as Map : {};
+    
+    void checkAndAdd(String key, dynamic val, [Map? owner]) {
+      final targetVal = owner != null ? owner[key] : val;
+      if (targetVal != null && targetVal.toString().trim().isNotEmpty) {
+        final list = _options.putIfAbsent(key, () => []);
+        final exists = list.any((item) => _sameValue(_optionValue(item), targetVal));
+        if (!exists) {
+          list.add({'value': targetVal, 'displayName': targetVal.toString()});
+        }
+      }
+    }
+
+    checkAndAdd('employmentType', teacher['employmentType']);
+    checkAndAdd('employeeCategory', teacher['employeeCategory']);
+    checkAndAdd('classification', teacher['classification']);
+    checkAndAdd('status', teacher['status']);
+    checkAndAdd('educationLevel', teacher['educationLevel']);
+    checkAndAdd('positionType', teacher['positionType']);
+    checkAndAdd('currentPosition', teacher['currentPosition']);
+    checkAndAdd('specialization', teacher['specialization']);
+    checkAndAdd('gender', teacher['gender']);
+    checkAndAdd('nationality', teacher['nationality']);
+    checkAndAdd('countryOfBirth', teacher['countryOfBirth']);
+    checkAndAdd('motherTongue', teacher['motherTongue']);
+    checkAndAdd('maritalStatus', teacher['maritalStatus']);
+    checkAndAdd('bloodGroup', teacher['bloodGroup']);
+    checkAndAdd('religion', teacher['religion']);
+    
+    if (identification.isNotEmpty) {
+      checkAndAdd('idType', identification['idType'], identification);
+      checkAndAdd('issuingCountry', identification['issuingCountry'], identification);
     }
   }
 
@@ -314,6 +354,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
       loadSimple('classification', decoded['classification']);
       loadSimple('status', decoded['currentemploymentstatus']);
+      loadSimple('employeeCategory', decoded['employeecategory'] ?? decoded['employeeCategory']);
     } catch (_) {}
   }
 
@@ -1228,7 +1269,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'EmploymentRecord': _buildEmploymentRecord(oldEmployment),
       };
 
-      // ✅ PUT + form-urlencoded + حقل emp يحتوي JSON string
       final request = http.Request(
         'PUT',
         Uri.parse('https://emis.moedu.gov.iq/api/employee/updateemployee'),
