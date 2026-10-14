@@ -348,7 +348,6 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       return 'text';
     };
 
-    // ✅ تحقق فعلي من الظهور (يشمل v-show و display)
     const isReallyVisible = (el) => {
       if (!el) return false;
       if (el.offsetParent === null) {
@@ -368,7 +367,6 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       const now = Date.now();
       const domSize = document.querySelectorAll('.q-field').length;
 
-      // ✅ تخبئة: لا تفحص أكثر من مرة كل 80ms بنفس حجم DOM
       if (now - lastScanTime < 80 && domSize === lastDomSize) return;
       lastScanTime = now;
       lastDomSize = domSize;
@@ -604,10 +602,11 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         } catch(e) {}
       }
       scan();
-      setTimeout(scan, 300);
-      setTimeout(scan, 800);
-      setTimeout(scan, 1600);
-      setTimeout(scan, 3000);
+      setTimeout(scan, 200);
+      setTimeout(scan, 500);
+      setTimeout(scan, 1000);
+      setTimeout(scan, 2000);
+      setTimeout(scan, 3500);
     };
 
     window.__EMIS_APP_BRIDGE__.focusField = (key) => {
@@ -646,10 +645,6 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       }
       return false;
     };
-
-    // ============================================================
-    // نظام المراقبة الذكي: MutationObserver + debounce
-    // ============================================================
 
     let scanTimer = null;
     const scheduleScan = (delay) => {
@@ -730,7 +725,6 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       openAndScan();
       if (window.__EMIS_APP_BRIDGE__.opened || tries > 30) {
         clearInterval(bootstrapTimer);
-        // فحص احتياطي كل ثانيتين فقط
         setInterval(() => {
           if (document.hidden) return;
           scan();
