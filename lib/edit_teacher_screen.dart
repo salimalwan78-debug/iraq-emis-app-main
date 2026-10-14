@@ -1228,18 +1228,19 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'EmploymentRecord': _buildEmploymentRecord(oldEmployment),
       };
 
-      // ✅ الإرسال كـ Form Data — EMIS يتوقع field اسمه 'emp' يحتوي JSON string
-      final response = await http.post(
+      // ✅ PUT + form-urlencoded + حقل emp يحتوي JSON string
+      final request = http.Request(
+        'PUT',
         Uri.parse('https://emis.moedu.gov.iq/api/employee/updateemployee'),
-        headers: {
-          'Authorization': widget.token,
-          'Accept': 'application/json',
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: <String, String>{
-          'emp': jsonEncode(payload),
-        },
       );
+      request.headers['Authorization'] = widget.token;
+      request.headers['Accept'] = 'application/json';
+      request.headers['Content-Type'] =
+          'application/x-www-form-urlencoded; charset=utf-8';
+      request.body = 'emp=${Uri.encodeComponent(jsonEncode(payload))}';
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
 
       if (!mounted) return;
 
