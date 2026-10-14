@@ -49,7 +49,15 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   /// المخطط الحي من EMIS — هو الأساس لبناء الواجهة
   final Map<String, Map<String, dynamic>> _liveSchema = {};
 
-  /// الحقول التي تأتي من API مباشرة (تُحمّل من `_commonOptionEndpoints`)
+  // ✅ حقول شجرة العنوان (هذه كانت ناقصة)
+  List<Map<String, dynamic>> _addressCountries = [];
+  List<Map<String, dynamic>> _addressGovernorates = [];
+  List<Map<String, dynamic>> _addressDistricts = [];
+  String? _addressCountryId;
+  String? _addressGovernorateId;
+  String? _addressDistrictId;
+
+  /// الحقول التي تأتي من API مباشرة
   static const _apiBackedKeys = <String>{
     'countryOfBirth', 'idType', 'issuingCountry', 'gender',
     'nationality', 'motherTongue', 'maritalStatus', 'bloodGroup',
@@ -57,7 +65,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'classification', 'status',
   };
 
-  /// حقول لا تُعرض ديناميكيًا (تُدار من مكان آخر)
+  /// حقول لا تُعرض ديناميكيًا
   static const _excludedFromDynamic = <String>{
     'countryStructureId',
     'countryStructure',
@@ -86,7 +94,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'في إجازة دراسية', 'في إجازة أمومة', 'أخرى',
   ];
 
-  /// خريطة التسميات العربية (تُستخدم لربط مفاتيح API مع تسميات EMIS)
   static final Map<String, String> _labels = <String, String>{
     'name': 'الإسم',
     'fatherName': 'إسم الأب',
@@ -149,21 +156,17 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'mobilePhoneNumber': 'رقم هاتف المعلم',
   };
 
-  /// الحقول النصية الرقمية
   static const _numericKeys = <String>{
     'nationalId', 'employeeIdNumber', 'familyNumber',
     'documentNumber', 'recordNumber', 'pageNumber', 'civilRegistryNumber',
   };
 
-  /// حقول البريد
   static const _emailKeys = <String>{'email'};
 
-  /// حقول الهاتف
   static const _phoneKeys = <String>{
     'mobilePhoneNumber', 'emergencyContactPhoneNumber',
   };
 
-  /// حقول التاريخ (تُستخدم منتقي تاريخ)
   static const _dateKeys = <String>{
     'dateOfBirth', 'dateOfStartWorking', 'graduationYear', 'statusDate',
   };
@@ -190,11 +193,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   Map<String, List<String>> _liveAliases() {
     final result = <String, List<String>>{};
-    // 1) الحقول المعروفة
     _labels.forEach((key, label) {
       result[key] = <String>[key, label];
     });
-    // 2) الحقول المكتشفة حديثًا (نستخدم مفتاحها نفسه)
     _liveSchema.forEach((key, meta) {
       if (result.containsKey(key)) return;
       final label = '${meta['label'] ?? ''}'.trim();
@@ -324,18 +325,14 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       if (key.isNotEmpty) canonicalIncoming[key] = meta;
     });
 
-    // حذف الحقول التي اختفت من المخطط
     final incomingKeys = canonicalIncoming.keys.toSet();
-    final removed = _liveSchema.keys
-        .where((k) => !incomingKeys.contains(k))
-        .toList();
+    final removed =
+        _liveSchema.keys.where((k) => !incomingKeys.contains(k)).toList();
     for (final key in removed) {
       _liveSchema.remove(key);
-      // لا نحذف controller لأنه قد يُستخدَم في payload لاحقًا
       changed = true;
     }
 
-    // إضافة/تحديث الحقول
     for (final entry in canonicalIncoming.entries) {
       final key = entry.key;
       final meta = Map<String, dynamic>.from(entry.value);
@@ -350,7 +347,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       }
       _liveSchema[key] = meta;
 
-      // إنشاء controller إذا لم يوجد
       if (!_c.containsKey(key)) {
         _c[key] = TextEditingController(text: '${meta['value'] ?? ''}');
         changed = true;
@@ -360,7 +356,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         changed = true;
       }
 
-      // خيارات القوائم
       final rawOptions = meta['options'];
       if (rawOptions is List && rawOptions.isNotEmpty) {
         final parsed = <Map<String, dynamic>>[];
@@ -691,7 +686,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       '${x['displayName'] ?? x['label'] ?? x['name'] ?? x['text'] ?? _optionValue(x) ?? ''}';
 
   // ============================================================
-  // بناء الواجهة الديناميكيًا من المخطط
+  // بناء الواجهة
   // ============================================================
 
   @override
@@ -758,11 +753,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     );
   }
 
-  /// ✅ هنا السحر: نبني كل الأقسام من المخطط — لا قوائم يدوية
   List<Widget> _buildSchemaDrivenForm() {
     final result = <Widget>[];
 
-    // 1) مؤشر انتظار المخطط
     if (!_schemaReceived) {
       result.add(_section('جاري جلب الحقول من EMIS', [
         const Padding(
@@ -770,15 +763,12 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           child: Center(child: CircularProgressIndicator()),
         ),
       ]));
-      // حتى مع الانتظار: نعرض الحقول التي حمّلنا خياراتها من API
       result.addAll(_buildApiBackedFallback());
       return result;
     }
 
-    // 2) كل حقول EMIS بالترتيب
     result.addAll(_buildDynamicFieldsFromSchema());
 
-    // 3) قسم العنوان (شجرة الدولة/المحافظة/القضاء)
     if (_addressCountries.isNotEmpty) {
       result.add(_buildAddressSection());
     }
@@ -786,7 +776,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return result;
   }
 
-  /// عرض كل حقول المخطط بترتيب `order`
   List<Widget> _buildDynamicFieldsFromSchema() {
     final sortedKeys = _liveSchema.keys.toList()
       ..sort((a, b) {
@@ -820,7 +809,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return [_section('بيانات المعلم', widgets)];
   }
 
-  /// بناء عنصر واحد من مخطط EMIS
   Widget? _buildFieldFromSchema(String key, Map<String, dynamic> meta) {
     final type = '${meta['type'] ?? 'text'}';
     final required = meta['required'] == true;
@@ -832,12 +820,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       return null;
     }
 
-    // قائمة منسدلة
     if (type == 'select' || type == 'checkbox') {
       return _selectField(key, required: required, labelOverride: label);
     }
 
-    // حقل تاريخ
     if (type == 'date' || _dateKeys.contains(key)) {
       return _textField(
         key,
@@ -847,7 +833,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       );
     }
 
-    // textarea
     if (type == 'textarea') {
       return _textField(
         key,
@@ -857,7 +842,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       );
     }
 
-    // نص — حدّد لوحة المفاتيح تلقائيًا
     TextInputType? kb;
     if (_numericKeys.contains(key)) {
       kb = TextInputType.number;
@@ -874,7 +858,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     );
   }
 
-  /// عرض احتياطي قبل وصول المخطط — الحقول التي حمّلنا خياراتها من API
   List<Widget> _buildApiBackedFallback() {
     final widgets = <Widget>[];
     for (final key in _commonOptionEndpoints.keys) {
@@ -887,7 +870,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return [_section('حقول محمّلة من EMIS API', widgets)];
   }
 
-  /// قسم العنوان
   Widget _buildAddressSection() {
     final widgets = <Widget>[
       _addressDropdown('الدولة', _addressCountryId, _addressCountries, (v) {
@@ -932,7 +914,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       }),
     ];
 
-    // أضف حقول العنوان النصية من المخطط (town, area, ...)
     const addressTextKeys = <String>[
       'town', 'area', 'quarter', 'street', 'address1', 'address2',
       'closestLocation',
@@ -947,10 +928,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
     return _section('العنوان — التقسيم الإداري', widgets);
   }
-
-  // ============================================================
-  // عناصر الواجهة
-  // ============================================================
 
   Widget _section(String title, List<Widget> children) {
     if (children.isEmpty) return const SizedBox.shrink();
