@@ -233,6 +233,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   Future<void> _fetchTeacherData() async {
     try {
+      setState(() => _isLoading = true);
+
       final response = await http.get(
         Uri.parse('https://emis.moedu.gov.iq/api/employee/getemployee/${widget.teacherId}'),
         headers: {'Authorization': widget.token, 'Accept': 'application/json'},
@@ -245,7 +247,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       }
       await _loadEmployeesOptions();
 
-      // دمج الخيارات لضمان ظهور القيمة الحالية للمعلم إن لم تكن موجودة ضمن جلب الـ API
       _ensureOptionIncludesCurrentValue(teacher);
 
       _teacherData = teacher;
@@ -258,7 +259,12 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       });
     } catch (e) {
       debugPrint('خطأ في جلب بيانات المعلم: $e');
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('فشل جلب بيانات المعلم: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -299,16 +305,21 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   Future<List<Map<String, dynamic>>> _getOptions(String path) async {
-    final response = await http.get(
-      Uri.parse('https://emis.moedu.gov.iq/api$path'),
-      headers: {'Authorization': widget.token, 'Accept': 'application/json'},
-    );
-    if (response.statusCode != 200) return <Map<String, dynamic>>[];
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-    dynamic value = decoded;
-    if (value is Map) value = value['data'] ?? value['items'] ?? value['results'] ?? value;
-    if (value is! List) return <Map<String, dynamic>>[];
-    return value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    try {
+      final response = await http.get(
+        Uri.parse('https://emis.moedu.gov.iq/api$path'),
+        headers: {'Authorization': widget.token, 'Accept': 'application/json'},
+      );
+      if (response.statusCode != 200) return <Map<String, dynamic>>[];
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      dynamic value = decoded;
+      if (value is Map) value = value['data'] ?? value['items'] ?? value['results'] ?? value;
+      if (value is! List) return <Map<String, dynamic>>[];
+      return value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (e) {
+      debugPrint('تجاوز خطأ خيارات $path: $e');
+      return <Map<String, dynamic>>[];
+    }
   }
 
   Future<void> _loadOptions(String key) async {
