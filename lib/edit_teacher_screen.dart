@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_selfie_segmentation/google_mlkit_selfie_segmentation.dart';
@@ -67,9 +68,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'specialization': '/selectoption/الإختصاص',
   };
 
-  // ✅ خريطة الأسماء العربية الموحّدة — نفس نمط صفحة الطالب
   final Map<String, String> _officialArabicNames = {
-    // الاسم
     'name': 'الإسم',
     'fatherName': 'إسم الأب',
     'grandFatherName': 'اسم والد الأب',
@@ -78,7 +77,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'motherName': 'إسم الأم',
     'mothersFatherName': 'اسم والد الأم',
     'mothersGrandFatherName': 'اسم جد الأم',
-    // شخصية
     'dateOfBirth': 'تاريخ التولّد',
     'gender': 'الجنس',
     'nationality': 'الجنسية',
@@ -89,7 +87,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'bloodGroup': 'فئة الدم',
     'religion': 'الديانة',
     'notes': 'ملاحظات',
-    // وثيقة التعريف
     'idType': 'نوع الهوية',
     'issuingCountry': 'بلد الإصدار',
     'idNumber': 'رقم البطاقة الوطنية الموحدة',
@@ -103,7 +100,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'jinsiyaIdNumber': 'رقم شهادة الجنسية',
     'otherIdNumber': 'رقم الهوية الأخرى',
     'birthCertificateNumber': 'رقم شهادة الولادة',
-    // وظيفية
     'employmentType': 'نوع التوظيف',
     'employeeCategory': 'نوع الموظف',
     'classification': 'التصنيف',
@@ -112,21 +108,17 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'currentPosition': 'المنصب الحالي',
     'positionType': 'نوع الوظيفة',
     'dateOfStartWorking': 'تاريخ أول تعيين للموظف',
-    // حالة وظيفية
     'status': 'الحالة الوظيفية',
     'statusDate': 'تاريخ سريان الحالة الوظيفية',
     'statusReason': 'سبب تغيير الحالة الوظيفية',
-    // تحصيل
     'educationLevel': 'التحصيل الدراسي',
     'universityName': 'إسم الكلية / المعهد',
     'graduationYear': 'سنة التخرج',
     'specialization': 'الإختصاص',
-    // احتياجات خاصة واتصال طارئ
     'specialNeedsInformation': 'معلومات ذوي الاحتياجات الخاصة إن وجدت',
     'emergencyContactName': 'اسم جهة الاتصال في الحالات الطارئة',
     'emergencyContactRelationship': 'صلة جهة الاتصال',
     'emergencyContactPhoneNumber': 'رقم هاتف جهة الاتصال',
-    // عنوان
     'countryStructureId': 'الموقع الجغرافي',
     'town': 'المدينة/القرية',
     'area': 'الحي',
@@ -138,9 +130,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'email': 'البريد الإلكتروني',
     'mobilePhoneNumber': 'رقم هاتف المعلم',
     'homePhoneNumber': 'رقم الهاتف',
-    // صور
     'imageUrl': 'الصورة',
-    // مرافق
     'identification': 'وثيقة التعريف',
     'address': 'العنوان',
     'employmentRecord': 'سجل التوظيف',
@@ -149,7 +139,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   @override
   void initState() {
     super.initState();
-    // ✅ مثل صفحة الطالب: polling كل 700ms لدفع القيم إلى WebView
     _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _fetchTeacherData();
   }
@@ -159,7 +148,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           entry.key: <String>[entry.key, entry.value],
       };
 
-  /// ✅ نسخة من قيم المعلم — تُرسَل إلى EMIS live
   Map<String, String> _liveValues() {
     final result = <String, String>{};
     final data = _teacherData;
@@ -197,7 +185,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return value;
   }
 
-  /// ✅ يحفظ التغييرات القادمة من EMIS في `_teacherData`
   void _applyLiveSnapshot(Map<String, String> values) {
     final data = _teacherData;
     if (data == null) return;
@@ -256,7 +243,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       if (response.statusCode != 200) throw Exception('HTTP ${response.statusCode}');
       final teacher = _unwrap(jsonDecode(utf8.decode(response.bodyBytes)));
 
-      // حمّل الخيارات المعروفة
       for (final key in _optionEndpoints.keys) {
         await _loadOptions(key);
       }
@@ -441,10 +427,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   bool _sameValue(dynamic a, dynamic b) => a?.toString() == b?.toString();
 
-  // ============================================================
-  // WIDGETS
-  // ============================================================
-
   Widget _dropdownField({
     required String key,
     required Map<String, dynamic> owner,
@@ -589,10 +571,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     );
   }
 
-  // ============================================================
-  // SECTIONS
-  // ============================================================
-
   Widget _teacherSection(
     String title,
     List<Widget> children,
@@ -718,10 +696,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return true;
   }
 
-  // ============================================================
-  // BUILD FORM
-  // ============================================================
-
   List<Widget> _buildTeacherFormSections(bool isDark, Color textColor) {
     final teacher = _teacherData!;
     final identification = teacher['identification'] is Map<String, dynamic>
@@ -750,7 +724,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     }
 
     final result = <Widget>[
-      // ============ الاسم الكامل ============
       _teacherSection('الاسم الكامل', [
         field('name'),
         field('fatherName'),
@@ -762,7 +735,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         field('mothersGrandFatherName'),
       ], isDark),
 
-      // ============ البيانات الشخصية ============
       _teacherSection('البيانات الشخصية', [
         field('dateOfBirth'),
         field('countryOfBirth'),
@@ -776,7 +748,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         field('notes'),
       ], isDark),
 
-      // ============ وثيقة التعريف ============
       _teacherSection('وثيقة التعريف', [
         if (identification.containsKey('idType'))
           _dropdownField(
@@ -794,7 +765,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         field('familyNumber'),
       ], isDark),
 
-      // ============ البيانات الوظيفية ============
       _teacherSection('البيانات الوظيفية', [
         field('employmentType'),
         field('employeeCategory'),
@@ -806,14 +776,12 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         field('dateOfStartWorking'),
       ], isDark),
 
-      // ============ الحالة الوظيفية ============
       _teacherSection('الحالة الوظيفية', [
         field('status'),
         field('statusDate'),
         field('statusReason'),
       ], isDark),
 
-      // ============ التحصيل الدراسي ============
       _teacherSection('التحصيل الدراسي', [
         field('educationLevel'),
         field('universityName'),
@@ -821,7 +789,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         field('specialization'),
       ], isDark),
 
-      // ============ احتياجات خاصة واتصال طارئ ============
       _teacherSection('ذوو الاحتياجات الخاصة والاتصال الطارئ', [
         field('specialNeedsInformation'),
         field('emergencyContactName'),
@@ -829,7 +796,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         field('emergencyContactPhoneNumber'),
       ], isDark),
 
-      // ============ العنوان ============
       _teacherSection('العنوان ومعلومات الاتصال', [
         _addressDropdown('الدولة', _addressCountryId, _addressCountries, (v) {
           final country =
@@ -878,10 +844,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
     return result;
   }
-
-  // ============================================================
-  // IMAGE
-  // ============================================================
 
   SelfieSegmenter? _selfieSegmenter;
 
@@ -1137,10 +1099,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return null;
   }
 
-  // ============================================================
-  // SAVE
-  // ============================================================
-
   Future<void> _saveTeacherData() async {
     if (_teacherData == null) return;
     setState(() => _isSaving = true);
@@ -1176,7 +1134,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         return null;
       }
 
-      // بناء Payload مطابق لـ EMIS updateemployee
       final old = _teacherData!;
       final identification = old['identification'] is Map
           ? Map<String, dynamic>.from(old['identification'])
@@ -1380,10 +1337,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     super.dispose();
   }
 
-  // ============================================================
-  // BUILD
-  // ============================================================
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -1559,10 +1512,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     );
   }
 }
-
-// ================================================================
-// NORMAL TEXT FIELD — نفس نمط صفحة الطالب
-// ================================================================
 
 class PlainTextField extends StatefulWidget {
   final String label;
