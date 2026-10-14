@@ -227,7 +227,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       if (data is Map) return Map<String, dynamic>.from(data);
       return decoded;
     }
-    if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    if (decoded is Map) {
+      return decoded.map((k, v) => MapEntry(k.toString(), v));
+    }
     throw Exception('استجابة بيانات المعلم غير صالحة');
   }
 
@@ -315,7 +317,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       dynamic value = decoded;
       if (value is Map) value = value['data'] ?? value['items'] ?? value['results'] ?? value;
       if (value is! List) return <Map<String, dynamic>>[];
-      return value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      return value.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
     } catch (e) {
       debugPrint('تجاوز خطأ خيارات $path: $e');
       return <Map<String, dynamic>>[];
@@ -432,7 +434,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   List<Map<String, dynamic>> _childrenOf(Map<String, dynamic> node) {
     final raw = node['children'] ?? node['items'] ?? node['subItems'] ?? node['childs'];
     if (raw is! List) return [];
-    return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    return raw.whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
   }
 
   String _formatDateValue(String value) {
