@@ -39,7 +39,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   bool _speechStopRequested = false;
   bool _micPointerDown = false;
   bool _voiceArrowPointerDown = false;
-  bool _voiceSequentialMode = true;
+  // يأخذ القيمة الافتراضية من الإعدادات (AppCore.voiceSequentialAutoStart) بدلاً من true الثابتة
+  bool _voiceSequentialMode = AppCore.voiceSequentialAutoStart;
   int _sequentialVoiceIndex = 0;
   String? _voiceDropdownTarget;
   bool _voiceDropdownDialogOpen = false;
@@ -211,6 +212,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   @override
   void initState() {
     super.initState();
+    // الالتزام الدقيق بحالة زر الإعدادات عند فتح الصفحة
+    _voiceSequentialMode =
+        AppCore.voiceInputEnabled && AppCore.voiceSequentialAutoStart;
+
     for (final key in [
       'name', 'fatherName', 'grandFatherName', 'fathersGrandFatherName',
       'surName', 'motherName', 'mothersFatherName', 'mothersGrandFatherName',
@@ -225,7 +230,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     ]) {
       c[key] = TextEditingController();
     }
-    
+
     c['nationality']!.text = 'العراق';
     c['countryOfBirth']!.text = 'العراق';
     c['issuingCountry']!.text = 'العراق';
@@ -238,8 +243,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     c['address2']!.text = '0';
     c['closestLocation']!.text = '0';
 
-    _googleSpeechSubscription = GoogleSpeechService.events.listen(_handleGoogleSpeechEvent);
-    _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
+    _googleSpeechSubscription =
+        GoogleSpeechService.events.listen(_handleGoogleSpeechEvent);
+    _liveTimer =
+        Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _load();
   }
 
@@ -266,7 +273,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'addressGovernorate': ['addressGovernorate', 'المحافظة', 'governorate'],
         'addressDistrict': ['addressDistrict', 'القضاء', 'district'],
         'countryStructureId': ['countryStructureId', 'الموقع الجغرافي'],
-        'isCoveredBySocialWelfare': ['isCoveredBySocialWelfare', 'مشمول بمنحة الرعاية الاجتماعية'],
+        'isCoveredBySocialWelfare': [
+          'isCoveredBySocialWelfare',
+          'مشمول بمنحة الرعاية الاجتماعية'
+        ],
       };
 
   Map<String, String> _liveValues() => {
@@ -305,7 +315,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
     if (values.containsKey('stageId') && stages.isNotEmpty) {
       final v = values['stageId']!;
-      final match = stages.where((x) => _value(x) == v || _text(x) == v).toList();
+      final match =
+          stages.where((x) => _value(x) == v || _text(x) == v).toList();
       if (match.isNotEmpty && stageId != _value(match.first)) {
         _stageChanged(_value(match.first));
         changed = true;
@@ -313,7 +324,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
     if (values.containsKey('classRoomId') && rooms.isNotEmpty) {
       final v = values['classRoomId']!;
-      final match = rooms.where((x) => _value(x) == v || _text(x) == v).toList();
+      final match =
+          rooms.where((x) => _value(x) == v || _text(x) == v).toList();
       if (match.isNotEmpty && roomId != _value(match.first)) {
         roomId = _value(match.first);
         changed = true;
@@ -321,16 +333,21 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
     if (values.containsKey('addressCountry') && _addressCountries.isNotEmpty) {
       final v = values['addressCountry']!;
-      final match = _addressCountries.where((x) => _value(x) == v || _text(x) == v).toList();
+      final match = _addressCountries
+          .where((x) => _value(x) == v || _text(x) == v)
+          .toList();
       if (match.isNotEmpty) {
         _addressCountryId = _value(match.first);
         _setAddressGovernorates(match.first);
         changed = true;
       }
     }
-    if (values.containsKey('addressGovernorate') && _addressGovernorates.isNotEmpty) {
+    if (values.containsKey('addressGovernorate') &&
+        _addressGovernorates.isNotEmpty) {
       final v = values['addressGovernorate']!;
-      final match = _addressGovernorates.where((x) => _value(x) == v || _text(x) == v).toList();
+      final match = _addressGovernorates
+          .where((x) => _value(x) == v || _text(x) == v)
+          .toList();
       if (match.isNotEmpty) {
         _addressGovernorateId = _value(match.first);
         _setAddressDistricts(match.first);
@@ -347,7 +364,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
     if (values.containsKey('addressDistrict') && _addressDistricts.isNotEmpty) {
       final v = values['addressDistrict']!;
-      final match = _addressDistricts.where((x) => _value(x) == v || _text(x) == v).toList();
+      final match = _addressDistricts
+          .where((x) => _value(x) == v || _text(x) == v)
+          .toList();
       if (match.isNotEmpty) {
         _addressDistrictId = _value(match.first);
         changed = true;
@@ -367,10 +386,12 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         )
         .timeout(
           const Duration(seconds: 15),
-          onTimeout: () => throw TimeoutException('انتهت مهلة الاتصال بخادم EMIS.'),
+          onTimeout: () =>
+              throw TimeoutException('انتهت مهلة الاتصال بخادم EMIS.'),
         );
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('HTTP ${response.statusCode}: ${utf8.decode(response.bodyBytes)}');
+      throw Exception(
+          'HTTP ${response.statusCode}: ${utf8.decode(response.bodyBytes)}');
     }
     return jsonDecode(utf8.decode(response.bodyBytes));
   }
@@ -409,31 +430,47 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       options.addAll(results);
       await _loadAddressStructure();
       _applyDefaultAddressValues();
-      options['nationality'] = List<Map<String, dynamic>>.from(options['countryOfBirth'] ?? const []);
-      options['studyLanguage'] = List<Map<String, dynamic>>.from(options['motherTongue'] ?? const []);
-      
+      options['nationality'] =
+          List<Map<String, dynamic>>.from(options['countryOfBirth'] ?? const []);
+      options['studyLanguage'] =
+          List<Map<String, dynamic>>.from(options['motherTongue'] ?? const []);
+
       if ((c['gender']?.text.trim() ?? '').isEmpty) {
-        final genderItems = options['gender'] ?? const <Map<String, dynamic>>[];
+        final genderItems =
+            options['gender'] ?? const <Map<String, dynamic>>[];
         Map<String, dynamic>? male;
         for (final item in genderItems) {
           final label = _normalizeArabicForMatch(_text(item));
-          if (label == _normalizeArabicForMatch('ذكر') || label.contains(_normalizeArabicForMatch('ذكر'))) {
+          if (label == _normalizeArabicForMatch('ذكر') ||
+              label.contains(_normalizeArabicForMatch('ذكر'))) {
             male = item;
             break;
           }
         }
         if (male == null) {
-          for (final item in genderItems) { if (_value(item) == '1') { male = item; break; } }
+          for (final item in genderItems) {
+            if (_value(item) == '1') {
+              male = item;
+              break;
+            }
+          }
         }
         if (male != null) c['gender']!.text = _value(male);
       }
 
       if (!mounted) return;
-      setState(() => loading = false);
-      // يبدأ التنقل الصوتي تلقائياً عند فتح نموذج إضافة الطالب، ويمكن إيقافه
-      // من المفتاح الظاهر داخل النموذج.
+      setState(() {
+        loading = false;
+        _voiceSequentialMode =
+            AppCore.voiceInputEnabled && AppCore.voiceSequentialAutoStart;
+      });
+
+      // لا يبدأ التنقل الصوتي تلقائياً إلا إذا كان المستخدم قد فعّله من شاشة الإعدادات
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !saving && _voiceSequentialMode) {
+        if (mounted &&
+            !saving &&
+            AppCore.voiceInputEnabled &&
+            AppCore.voiceSequentialAutoStart) {
           _startSequentialVoiceMode();
         }
       });
@@ -450,7 +487,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     try {
       final raw = _unwrap(await _get('/CountryStructure/getcountrystructure'));
       if (raw is! List) return;
-      final nodes = raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      final nodes =
+          raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
       if (nodes.isEmpty) return;
 
       _addressCountries = nodes;
@@ -472,7 +510,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   List<Map<String, dynamic>> _children(Map<String, dynamic> node) {
-    final raw = node['children'] ?? node['items'] ?? node['subItems'] ?? node['childs'];
+    final raw =
+        node['children'] ?? node['items'] ?? node['subItems'] ?? node['childs'];
     if (raw is! List) return [];
     return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   }
@@ -534,7 +573,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
     try {
       final result = await Future.wait([
-        _list('/selectoption/getClassRooms?schoolId=${widget.schoolId}&stageId=$value'),
+        _list(
+            '/selectoption/getClassRooms?schoolId=${widget.schoolId}&stageId=$value'),
         _get('/selectoption/getstagedetails/$value'),
       ]);
       if (!mounted) return;
@@ -595,18 +635,29 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   List<Map<String, dynamic>> _dropdownOptionsForVoice(String key) {
     final all = <Map<String, dynamic>>[];
     switch (key) {
-      case 'stageId': all.addAll(stages); break;
-      case 'classRoomId': all.addAll(rooms); break;
-      case 'addressCountry': all.addAll(_addressCountries); break;
-      case 'addressGovernorate': all.addAll(_addressGovernorates); break;
-      case 'addressDistrict': all.addAll(_addressDistricts); break;
+      case 'stageId':
+        all.addAll(stages);
+        break;
+      case 'classRoomId':
+        all.addAll(rooms);
+        break;
+      case 'addressCountry':
+        all.addAll(_addressCountries);
+        break;
+      case 'addressGovernorate':
+        all.addAll(_addressGovernorates);
+        break;
+      case 'addressDistrict':
+        all.addAll(_addressDistricts);
+        break;
       case 'isCoveredBySocialWelfare':
         all.addAll(const [
           {'value': false, 'displayName': 'لا'},
           {'value': true, 'displayName': 'نعم'},
         ]);
         break;
-      default: all.addAll(options[key] ?? []);
+      default:
+        all.addAll(options[key] ?? []);
     }
     if (key == 'studyLanguage') {
       all.add({'value': 'العربية', 'displayName': 'العربية'});
@@ -655,7 +706,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         _focusLive('addressDistrict');
         break;
       case 'isCoveredBySocialWelfare':
-        _socialWelfare = value == 'true' || _normalizeArabicForMatch(_text(item)) == _normalizeArabicForMatch('نعم');
+        _socialWelfare = value == 'true' ||
+            _normalizeArabicForMatch(_text(item)) ==
+                _normalizeArabicForMatch('نعم');
         _focusLive('isCoveredBySocialWelfare');
         break;
       default:
@@ -667,22 +720,26 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   Widget _dropdownVoiceMic(String key) => Listener(
-    behavior: HitTestBehavior.opaque,
-    onPointerDown: (_) => _markMicPointerDown(),
-    child: IconButton(
-      tooltip: 'اختيار ${labels[key] ?? key} بالصوت',
-      onPressed: () => _startDropdownVoice(key),
-      icon: Icon(
-        _speechListening && _activeVoiceField == key ? Icons.mic_rounded : Icons.mic_none_rounded,
-        color: _speechListening && _activeVoiceField == key ? Colors.red : null,
-      ),
-    ),
-  );
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (_) => _markMicPointerDown(),
+        child: IconButton(
+          tooltip: 'اختيار ${labels[key] ?? key} بالصوت',
+          onPressed: () => _startDropdownVoice(key),
+          icon: Icon(
+            _speechListening && _activeVoiceField == key
+                ? Icons.mic_rounded
+                : Icons.mic_none_rounded,
+            color:
+                _speechListening && _activeVoiceField == key ? Colors.red : null,
+          ),
+        ),
+      );
 
   Map<String, dynamic>? _matchDropdownOption(String key, String spoken) {
     var target = _normalizeArabicForMatch(spoken);
     if (target.isEmpty) return null;
-    target = target.replaceAll(RegExp(r'^(?:اختيار|القيمة|هي|هو)\s+'), '').trim();
+    target =
+        target.replaceAll(RegExp(r'^(?:اختيار|القيمة|هي|هو)\s+'), '').trim();
     final items = _dropdownOptionsForVoice(key);
     if (items.isEmpty) return null;
 
@@ -693,14 +750,16 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final exact = items.where((item) {
       final label = _normalizeArabicForMatch(_text(item));
       final value = _normalizeArabicForMatch(_value(item));
-      return label == target || value == target || compact(label) == compact(target);
+      return label == target ||
+          value == target ||
+          compact(label) == compact(target);
     }).toList();
     if (exact.length == 1) return exact.first;
     if (exact.length > 1) return exact.first;
 
     final targetTokens = target.split(' ').where((x) => x.length >= 2).toSet();
     if (targetTokens.isEmpty) return items.firstOrNull;
-    
+
     int bestScore = 0;
     Map<String, dynamic>? best;
     for (final item in items) {
@@ -710,9 +769,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       final labelCompact = compact(label);
       final targetCompact = compact(target);
       int score = 0;
-      if (labelCompact.length >= 3 && targetCompact.length >= 3 &&
-          (labelCompact.contains(targetCompact) || targetCompact.contains(labelCompact))) {
-        score = 100 + (labelCompact.length < targetCompact.length ? labelCompact.length : targetCompact.length);
+      if (labelCompact.length >= 3 &&
+          targetCompact.length >= 3 &&
+          (labelCompact.contains(targetCompact) ||
+              targetCompact.contains(labelCompact))) {
+        score = 100 +
+            (labelCompact.length < targetCompact.length
+                ? labelCompact.length
+                : targetCompact.length);
       } else {
         final tokens = label.split(' ').where((x) => x.length >= 2).toSet();
         final overlap = targetTokens.intersection(tokens).length;
@@ -732,7 +796,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   String _normalizeSpokenWord(String word) {
     var out = _normalizeArabicForMatch(word).replaceAll(' ', '');
     const exact = {'واحد', 'واحدة', 'واحده'};
-    if (out.startsWith('و') && out.length > 1 && !exact.contains(out)) out = out.substring(1);
+    if (out.startsWith('و') && out.length > 1 && !exact.contains(out)) {
+      out = out.substring(1);
+    }
     return out;
   }
 
@@ -771,20 +837,44 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     for (var i = 0; i < words.length; i++) {
       final word = _normalizeSpokenWord(words[i]);
       if (word.isEmpty || word == 'و') continue;
-      if (word == 'الفين' || word == 'ألفين') { total += 2000; found = true; continue; }
-      if (word == 'الف' || word == 'الاف') { total += 1000; found = true; continue; }
-      if (word == 'مائة' || word == 'مائه' || word == 'مئه' || word == 'مئة' || word == 'ميه') { total += 100; found = true; continue; }
+      if (word == 'الفين' || word == 'ألفين') {
+        total += 2000;
+        found = true;
+        continue;
+      }
+      if (word == 'الف' || word == 'الاف') {
+        total += 1000;
+        found = true;
+        continue;
+      }
+      if (word == 'مائة' ||
+          word == 'مائه' ||
+          word == 'مئه' ||
+          word == 'مئة' ||
+          word == 'ميه') {
+        total += 100;
+        found = true;
+        continue;
+      }
       const hundreds = <String, int>{
         'مائتين': 200, 'مئتين': 200, 'ثلاثمائه': 300, 'اربعمائه': 400,
         'خمسمائه': 500, 'ستمائه': 600, 'سبعمائه': 700, 'ثمانمائه': 800,
         'تسعمائه': 900,
       };
-      if (hundreds.containsKey(word)) { total += hundreds[word]!; found = true; continue; }
+      if (hundreds.containsKey(word)) {
+        total += hundreds[word]!;
+        found = true;
+        continue;
+      }
 
-      final next = i + 1 < words.length ? _normalizeSpokenWord(words[i + 1]) : '';
+      final next =
+          i + 1 < words.length ? _normalizeSpokenWord(words[i + 1]) : '';
       const hundredWords = {'مائة', 'مائه', 'مئه', 'مئة', 'ميه'};
       final leadingNumber = _smallArabicNumber(word);
-      if (leadingNumber != null && leadingNumber >= 2 && leadingNumber <= 9 && hundredWords.contains(next)) {
+      if (leadingNumber != null &&
+          leadingNumber >= 2 &&
+          leadingNumber <= 9 &&
+          hundredWords.contains(next)) {
         total += leadingNumber * 100;
         found = true;
         i++;
@@ -792,28 +882,46 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       }
 
       final n = _smallArabicNumber(word);
-      if (n != null) { total += n; found = true; continue; }
+      if (n != null) {
+        total += n;
+        found = true;
+        continue;
+      }
       final numeric = RegExp(r'\d{3,4}').firstMatch(_normalizeDigits(word));
-      if (numeric != null) { total += int.parse(numeric.group(0)!); found = true; }
+      if (numeric != null) {
+        total += int.parse(numeric.group(0)!);
+        found = true;
+      }
     }
     return found ? total : null;
   }
 
   DateTime? _parseSpokenDate(String raw, String key) {
     final normalizedDigits = _normalizeDigits(raw);
-    final digitGroups = RegExp(r'\d+').allMatches(normalizedDigits)
-        .map((m) => int.tryParse(m.group(0)!)).whereType<int>().toList();
+    final digitGroups = RegExp(r'\d+')
+        .allMatches(normalizedDigits)
+        .map((m) => int.tryParse(m.group(0)!))
+        .whereType<int>()
+        .toList();
     int? day, month, year;
     if (digitGroups.length >= 3) {
       if (digitGroups[0] >= 1900) {
-        year = digitGroups[0]; month = digitGroups[1]; day = digitGroups[2];
+        year = digitGroups[0];
+        month = digitGroups[1];
+        day = digitGroups[2];
       } else {
-        day = digitGroups[0]; month = digitGroups[1]; year = digitGroups[2];
+        day = digitGroups[0];
+        month = digitGroups[1];
+        year = digitGroups[2];
       }
     } else {
-      final cleaned = raw.replaceAll(RegExp(r'[,،;؛/\\|]+'), ' ')
-          .replaceAll('-', ' ').replaceAll('ـ', ' ').trim();
-      final words = cleaned.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      final cleaned = raw
+          .replaceAll(RegExp(r'[,،;؛/\\|]+'), ' ')
+          .replaceAll('-', ' ')
+          .replaceAll('ـ', ' ')
+          .trim();
+      final words =
+          cleaned.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
       if (words.length < 3) return null;
       day = _smallArabicNumber(words[0]);
       month = _smallArabicNumber(words[1]);
@@ -821,7 +929,12 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
     if (day == null || month == null || year == null) return null;
     if (year < 100) year += year >= 50 ? 1900 : 2000;
-    if (year < 1900 || year > DateTime.now().year || month < 1 || month > 12 || day < 1 || day > 31) return null;
+    if (year < 1900 ||
+        year > DateTime.now().year ||
+        month < 1 ||
+        month > 12 ||
+        day < 1 ||
+        day > 31) return null;
     final date = DateTime(year, month, day);
     if (date.year != year || date.month != month || date.day != day) return null;
     if (key == 'dateOfBirth' && date.isAfter(DateTime.now())) return null;
@@ -829,7 +942,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   void _applySpokenDate(String key, DateTime date) {
-    final value = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    final value =
+        '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
     c[key]?.value = TextEditingValue(
       text: value,
       selection: TextSelection.collapsed(offset: value.length),
@@ -843,21 +957,25 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (value.isEmpty) return null;
     final iso = RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
     if (iso) return value;
-    final display = RegExp(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$').firstMatch(value);
+    final display =
+        RegExp(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$').firstMatch(value);
     if (display != null) {
       return '${display.group(3)}-${display.group(2)!.padLeft(2, '0')}-${display.group(1)!.padLeft(2, '0')}';
     }
     return value.replaceAll('/', '-');
   }
 
-  bool _handleSpecialVoiceResult(String key, String raw, {required bool isFinal}) {
+  bool _handleSpecialVoiceResult(String key, String raw,
+      {required bool isFinal}) {
     if (_dropdownVoiceFields.contains(key)) {
       final matched = _matchDropdownOption(key, raw);
       if (matched == null) return true;
       _applyDropdownVoiceChoice(key, matched);
       _voiceDropdownTarget = null;
       _specialVoiceFailureShown = false;
-      if (_voiceDropdownDialogOpen && mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (_voiceDropdownDialogOpen && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       _requestSpeechStop();
       if (mounted) setState(() {});
       return true;
@@ -867,7 +985,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       if (parsed == null) {
         if (isFinal && !_specialVoiceFailureShown) {
           _specialVoiceFailureShown = true;
-          _showVoiceMessage('يرجى نطق اليوم ثم الشهر ثم السنة بشكل واضح لتسجيل التاريخ.');
+          _showVoiceMessage(
+              'يرجى نطق اليوم ثم الشهر ثم السنة بشكل واضح لتسجيل التاريخ.');
         }
         return true;
       }
@@ -882,7 +1001,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   Future<void> _startDropdownVoice(String key) async {
     if (_activeVoiceField == key && _activeVoiceSessionId != null) {
       _voiceDropdownTarget = null;
-      if (_voiceDropdownDialogOpen && mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (_voiceDropdownDialogOpen && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       _requestSpeechStop();
       return;
     }
@@ -899,26 +1020,38 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       context: context,
       barrierDismissible: true,
       builder: (dialogContext) => AlertDialog(
-        title: Text('انطق قيمة ${labels[key] ?? key}', textAlign: TextAlign.center),
+        title:
+            Text('انطق قيمة ${labels[key] ?? key}', textAlign: TextAlign.center),
         content: SizedBox(
           width: double.maxFinite,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('انطق الاسم الكامل أو جزءاً منه.', textAlign: TextAlign.center),
+            const Text('انطق الاسم الكامل أو جزءاً منه.',
+                textAlign: TextAlign.center),
             const SizedBox(height: 10),
-            SizedBox(height: 320, child: ListView(shrinkWrap: true, children: items.map((item) => ListTile(
-              title: Text(_text(item), textAlign: TextAlign.right),
-              onTap: () {
-                _applyDropdownVoiceChoice(key, item);
-                _voiceDropdownTarget = null;
-                _voiceDropdownDialogOpen = false;
-                Navigator.of(dialogContext).pop();
-                _requestSpeechStop();
-                if (mounted) setState(() {});
-              },
-            )).toList())),
+            SizedBox(
+                height: 320,
+                child: ListView(
+                    shrinkWrap: true,
+                    children: items
+                        .map((item) => ListTile(
+                              title: Text(_text(item), textAlign: TextAlign.right),
+                              onTap: () {
+                                _applyDropdownVoiceChoice(key, item);
+                                _voiceDropdownTarget = null;
+                                _voiceDropdownDialogOpen = false;
+                                Navigator.of(dialogContext).pop();
+                                _requestSpeechStop();
+                                if (mounted) setState(() {});
+                              },
+                            ))
+                        .toList())),
           ]),
         ),
-        actions: [TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('إلغاء'))],
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('إلغاء'))
+        ],
       ),
     ).then<void>((_) {
       _voiceDropdownDialogOpen = false;
@@ -939,7 +1072,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   String _cleanNumericSpeech(String value) {
-    const arabicIndic = '٠١٣٤٥٦٧٨٩';
+    const arabicIndic = '٠١٢٣٤٥٦٧٨٩';
     const easternArabicIndic = '۰۱۲۳۴۵۶۷۸۹';
     const wordDigits = <String, String>{
       'صفر': '0', 'واحد': '1', 'واحدة': '1', 'اثنان': '2', 'اثنين': '2',
@@ -962,9 +1095,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       for (final rune in word.runes) {
         final ch = String.fromCharCode(rune);
         final a = arabicIndic.indexOf(ch);
-        if (a >= 0) { out.write(a); continue; }
+        if (a >= 0) {
+          out.write(a);
+          continue;
+        }
         final e = easternArabicIndic.indexOf(ch);
-        if (e >= 0) { out.write(e); continue; }
+        if (e >= 0) {
+          out.write(e);
+          continue;
+        }
         if (RegExp(r'[0-9]').hasMatch(ch)) out.write(ch);
       }
     }
@@ -995,7 +1134,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         if (!mounted || !_usingLegacyVoice) return;
         final listening = status == 'listening';
         setState(() => _speechListening = listening);
-        if (!listening && (_activeVoiceSessionId != null || _speechStopRequested)) {
+        if (!listening &&
+            (_activeVoiceSessionId != null || _speechStopRequested)) {
           _scheduleLegacyFinalization();
         }
       },
@@ -1056,14 +1196,21 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     try {
       await LegacySpeechService.listen(
         onResult: (dynamic result) {
-          if (!mounted || !_usingLegacyVoice || _activeVoiceSessionId != sessionId) return;
+          if (!mounted ||
+              !_usingLegacyVoice ||
+              _activeVoiceSessionId != sessionId) return;
           final raw = '${result.recognizedWords ?? ''}'.trim();
           if (raw.isEmpty) return;
-          if (_handleSpecialVoiceResult(key, raw, isFinal: result.finalResult == true)) {
-            if (result.finalResult == true && _speechStopRequested) _finishLegacyVoiceSessionAndStartPending();
+          if (_handleSpecialVoiceResult(key, raw,
+              isFinal: result.finalResult == true)) {
+            if (result.finalResult == true && _speechStopRequested) {
+              _finishLegacyVoiceSessionAndStartPending();
+            }
             return;
           }
-          final text = _numericVoiceFields.contains(key) ? _cleanNumericSpeech(raw) : _cleanArabicSpeech(raw);
+          final text = _numericVoiceFields.contains(key)
+              ? _cleanNumericSpeech(raw)
+              : _cleanArabicSpeech(raw);
           if (text.isEmpty) return;
           final controller = c[key];
           if (controller == null) return;
@@ -1090,12 +1237,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (_speechStopRequested) return;
     _speechStopRequested = true;
     if (mounted) setState(() => _speechListening = false);
-    unawaited(LegacySpeechService.stop().whenComplete(_scheduleLegacyFinalization));
+    unawaited(
+        LegacySpeechService.stop().whenComplete(_scheduleLegacyFinalization));
   }
 
   void _scheduleGoogleFinalizationFallback() {
     _googleFinalizationTimer?.cancel();
-    _googleFinalizationTimer = Timer(Duration(milliseconds: AppCore.voiceFinalizationTimeoutMs), () {
+    _googleFinalizationTimer =
+        Timer(Duration(milliseconds: AppCore.voiceFinalizationTimeoutMs), () {
       if (!mounted || _usingLegacyVoice) return;
       if (_activeVoiceSessionId != null && _speechStopRequested) {
         _finishVoiceSessionAndStartPending();
@@ -1112,7 +1261,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     final key = _activeVoiceField;
     if (key == null) return;
 
-    if (type == 'listening' || type == 'ready' || type == 'begin' || type == 'partial') {
+    if (type == 'listening' ||
+        type == 'ready' ||
+        type == 'begin' ||
+        type == 'partial') {
       if (!_speechListening) setState(() => _speechListening = true);
     }
 
@@ -1125,21 +1277,27 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         ...alternates,
       ].map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
 
-      if (_dropdownVoiceFields.contains(key) || _dateVoiceFields.contains(key)) {
+      if (_dropdownVoiceFields.contains(key) ||
+          _dateVoiceFields.contains(key)) {
         if (candidates.isNotEmpty) {
           for (final candidate in candidates) {
-            if (_handleSpecialVoiceResult(key, candidate, isFinal: type == 'result')) {
+            if (_handleSpecialVoiceResult(key, candidate,
+                isFinal: type == 'result')) {
               break;
             }
           }
         }
-        if (type == 'result' && _speechStopRequested) _finishVoiceSessionAndStartPending();
+        if (type == 'result' && _speechStopRequested) {
+          _finishVoiceSessionAndStartPending();
+        }
         return;
       }
 
       String text = '';
       for (final raw in candidates) {
-        final cleaned = _numericVoiceFields.contains(key) ? _cleanNumericSpeech(raw) : _cleanArabicSpeech(raw);
+        final cleaned = _numericVoiceFields.contains(key)
+            ? _cleanNumericSpeech(raw)
+            : _cleanArabicSpeech(raw);
         if (cleaned.isNotEmpty) {
           text = cleaned;
           break;
@@ -1150,7 +1308,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         final controller = c[key];
         if (controller != null) {
           final current = controller.text.trim();
-          final shouldApply = type == 'result' || current.isEmpty || text.length >= current.length;
+          final shouldApply = type == 'result' ||
+              current.isEmpty ||
+              text.length >= current.length;
           if (shouldApply) {
             controller.value = TextEditingValue(
               text: text,
@@ -1276,16 +1436,29 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   bool _isVoiceFieldCurrentlyVisible(String key) {
-    if (!_voiceFields.contains(key) && !_numericVoiceFields.contains(key) &&
-        !_dropdownVoiceFields.contains(key) && !_dateVoiceFields.contains(key)) return false;
+    if (!_voiceFields.contains(key) &&
+        !_numericVoiceFields.contains(key) &&
+        !_dropdownVoiceFields.contains(key) &&
+        !_dateVoiceFields.contains(key)) return false;
     if (key == 'nationalId') return _isNationalId;
-    if (key == 'idNumber' || key == 'jinsiyaIdNumber' || key == 'recordNumber' || key == 'pageNumber') return _isCivilId;
+    if (key == 'idNumber' ||
+        key == 'jinsiyaIdNumber' ||
+        key == 'recordNumber' ||
+        key == 'pageNumber') return _isCivilId;
     if (key == 'birthCertificateNumber') return _isBirthCertificate;
     if (key == 'otherIdNumber') return _isOtherId;
-    if (key == 'nameOfDocument') return _isBirthCertificate || _isOtherId || _isCivilId;
-    if (key == 'issuingDate' || key == 'issuingCountry' || key == 'issuer' ||
-        key == 'recordNumber' || key == 'pageNumber' || key == 'jinsiyaIdNumber' ||
-        key == 'nameOfDocument') return _isCivilId || _isBirthCertificate || _isOtherId;
+    if (key == 'nameOfDocument') {
+      return _isBirthCertificate || _isOtherId || _isCivilId;
+    }
+    if (key == 'issuingDate' ||
+        key == 'issuingCountry' ||
+        key == 'issuer' ||
+        key == 'recordNumber' ||
+        key == 'pageNumber' ||
+        key == 'jinsiyaIdNumber' ||
+        key == 'nameOfDocument') {
+      return _isCivilId || _isBirthCertificate || _isOtherId;
+    }
     if (key == 'stageId') return stages.isNotEmpty;
     if (key == 'classRoomId') return rooms.isNotEmpty;
     if (key == 'addressCountry') return _addressCountries.isNotEmpty;
@@ -1376,12 +1549,17 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: SwitchListTile(
         secondary: Icon(
-          enabled ? Icons.keyboard_double_arrow_down_rounded : Icons.keyboard_arrow_down_rounded,
+          enabled
+              ? Icons.keyboard_double_arrow_down_rounded
+              : Icons.keyboard_arrow_down_rounded,
           color: enabled ? Colors.green : Colors.grey,
           size: 32,
         ),
-        title: const Text('التنقل الصوتي بين الحقول', style: TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: const Text('عند التفعيل يظهر سهمان للتنقل الصوتي السريع بين الحقول.', textDirection: TextDirection.rtl),
+        title: const Text('التنقل الصوتي بين الحقول',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: const Text(
+            'عند التفعيل يظهر سهمان للتنقل الصوتي السريع بين الحقول.',
+            textDirection: TextDirection.rtl),
         value: enabled,
         activeColor: Colors.green,
         onChanged: (_) => _toggleSequentialModeFromButton(),
@@ -1393,9 +1571,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (!_voiceSequentialMode) return const SizedBox.shrink();
     final sequence = _currentVoiceSequence();
     final atFirst = _sequentialVoiceIndex <= 0 || sequence.isEmpty;
-    final atLast = sequence.isEmpty || _sequentialVoiceIndex >= sequence.length - 1;
+    final atLast =
+        sequence.isEmpty || _sequentialVoiceIndex >= sequence.length - 1;
 
-    Widget arrowButton({required IconData icon, required VoidCallback? onTap, required bool disabled, required String tooltip}) {
+    Widget arrowButton({
+      required IconData icon,
+      required VoidCallback? onTap,
+      required bool disabled,
+      required String tooltip,
+    }) {
       return Tooltip(
         message: tooltip,
         child: Material(
@@ -1406,7 +1590,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             child: SizedBox(
               width: 58,
               height: 68,
-              child: Icon(icon, size: 54, color: disabled ? Colors.grey.shade400 : Colors.green.shade700),
+              child: Icon(icon,
+                  size: 54,
+                  color:
+                      disabled ? Colors.grey.shade400 : Colors.green.shade700),
             ),
           ),
         ),
@@ -1426,16 +1613,27 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             padding: const EdgeInsets.symmetric(vertical: 4),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(AppCore.voiceArrowOpacity),
-              borderRadius: const BorderRadius.horizontal(right: Radius.circular(24)),
-              boxShadow: const [BoxShadow(blurRadius: 9, offset: Offset(1, 2), color: Colors.black26)],
+              borderRadius:
+                  const BorderRadius.horizontal(right: Radius.circular(24)),
+              boxShadow: const [
+                BoxShadow(blurRadius: 9, offset: Offset(1, 2), color: Colors.black26)
+              ],
               border: Border.all(color: Colors.green, width: 2),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                arrowButton(icon: Icons.keyboard_arrow_up_rounded, onTap: _retreatSequentialVoice, disabled: atFirst, tooltip: 'السابق'),
+                arrowButton(
+                    icon: Icons.keyboard_arrow_up_rounded,
+                    onTap: _retreatSequentialVoice,
+                    disabled: atFirst,
+                    tooltip: 'السابق'),
                 Container(width: 36, height: 2, color: Colors.green.shade200),
-                arrowButton(icon: Icons.keyboard_arrow_down_rounded, onTap: _advanceSequentialVoice, disabled: atLast, tooltip: 'التالي'),
+                arrowButton(
+                    icon: Icons.keyboard_arrow_down_rounded,
+                    onTap: _advanceSequentialVoice,
+                    disabled: atLast,
+                    tooltip: 'التالي'),
               ],
             ),
           ),
@@ -1466,19 +1664,29 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   void _onDateTextChanged(String key, String value) {
     final clean = _normalizeDigits(value).replaceAll(RegExp(r'[^\d]'), '');
     final limited = clean.length > 8 ? clean.substring(0, 8) : clean;
-    var formatted = limited.substring(0, limited.length >= 4 ? 4 : limited.length);
-    if (limited.length > 4) formatted += '-${limited.substring(4, limited.length >= 6 ? 6 : limited.length)}';
+    var formatted =
+        limited.substring(0, limited.length >= 4 ? 4 : limited.length);
+    if (limited.length > 4) {
+      formatted +=
+          '-${limited.substring(4, limited.length >= 6 ? 6 : limited.length)}';
+    }
     if (limited.length > 6) formatted += '-${limited.substring(6)}';
     if (formatted != value) {
-      c[key]?.value = TextEditingValue(text: formatted, selection: TextSelection.collapsed(offset: formatted.length));
+      c[key]?.value = TextEditingValue(
+          text: formatted,
+          selection: TextSelection.collapsed(offset: formatted.length));
     }
     _liveSyncKey.currentState?.pushValues(_liveValues());
   }
 
-  Widget _textField(String key, {bool required = false, int maxLines = 1, TextInputType? keyboard}) {
+  Widget _textField(String key,
+      {bool required = false, int maxLines = 1, TextInputType? keyboard}) {
     final isDate = _dateVoiceFields.contains(key);
     return TextFormField(
-      key: _voiceFieldKeys.containsKey(key) || _voiceFields.contains(key) || _numericVoiceFields.contains(key) || isDate
+      key: _voiceFieldKeys.containsKey(key) ||
+              _voiceFields.contains(key) ||
+              _numericVoiceFields.contains(key) ||
+              isDate
           ? _voiceFieldKey(key)
           : null,
       controller: c[key],
@@ -1499,9 +1707,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
         fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
-        suffixIcon: (_voiceFields.contains(key) || _numericVoiceFields.contains(key) || isDate)
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
+        suffixIcon: (_voiceFields.contains(key) ||
+                _numericVoiceFields.contains(key) ||
+                isDate)
             ? Row(mainAxisSize: MainAxisSize.min, children: [
                 Listener(
                   behavior: HitTestBehavior.opaque,
@@ -1510,8 +1724,12 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                     tooltip: 'الإدخال الصوتي',
                     onPressed: () => _toggleVoiceInput(key),
                     icon: Icon(
-                      _speechListening && _activeVoiceField == key ? Icons.mic_rounded : Icons.mic_none_rounded,
-                      color: _speechListening && _activeVoiceField == key ? Colors.red : null,
+                      _speechListening && _activeVoiceField == key
+                          ? Icons.mic_rounded
+                          : Icons.mic_none_rounded,
+                      color: _speechListening && _activeVoiceField == key
+                          ? Colors.red
+                          : null,
                     ),
                   ),
                 ),
@@ -1527,12 +1745,22 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(.045), blurRadius: 12, offset: const Offset(0, 5))],
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(.045),
+                blurRadius: 12,
+                offset: const Offset(0, 5))
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(title, textAlign: TextAlign.right, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF3949AB))),
+            Text(title,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF3949AB))),
             const SizedBox(height: 14),
             ...children,
           ],
@@ -1553,7 +1781,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
-        content: Text(message, textDirection: TextDirection.rtl, style: const TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(message,
+            textDirection: TextDirection.rtl,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade700,
         behavior: SnackBarBehavior.floating,
       ),
@@ -1579,10 +1809,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       final idType = int.parse(c['idType']!.text);
       final identificationNumber = _isNationalId
           ? _normalizeDigits(_n('nationalId') ?? '')
-          : (_isCivilId ? (_n('idNumber') ?? '') : (_isBirthCertificate ? (_n('birthCertificateNumber') ?? '') : (_isOtherId ? (_n('otherIdNumber') ?? '') : '')));
+          : (_isCivilId
+              ? (_n('idNumber') ?? '')
+              : (_isBirthCertificate
+                  ? (_n('birthCertificateNumber') ?? '')
+                  : (_isOtherId ? (_n('otherIdNumber') ?? '') : '')));
 
       if (_isNationalId) {
-        final check = await _get('/student/checknationalidnumber?value=${Uri.encodeQueryComponent(identificationNumber)}');
+        final check = await _get(
+            '/student/checknationalidnumber?value=${Uri.encodeQueryComponent(identificationNumber)}');
         if (check is Map && check['isUnique'] == false) {
           throw Exception('رقم البطاقة الوطنية مستخدم مسبقاً في EMIS');
         }
@@ -1622,7 +1857,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           'issuingDate': _dateForApi(_n('issuingDate')),
         },
         'fatherIdentification': null,
-        'specialNeeds': _n('specialNeeds') == null ? null : <String>[_n('specialNeeds')!],
+        'specialNeeds':
+            _n('specialNeeds') == null ? null : <String>[_n('specialNeeds')!],
         'studyLanguage': _n('studyLanguage') ?? 'العربية',
         'economicLevel': _n('economicLevel') ?? '',
         'isCoveredBySocialWelfare': _socialWelfare,
@@ -1630,7 +1866,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'lastYearResult': 3,
         'schoolId': int.parse(widget.schoolId),
         'stageId': int.parse(stageId!),
-        'classRoomId': (roomId != null && roomId!.isNotEmpty) ? int.parse(roomId!) : null,
+        'classRoomId':
+            (roomId != null && roomId!.isNotEmpty) ? int.parse(roomId!) : null,
         'ageExceptionReason': null,
         'genderExceptionReason': null,
         'address': {
@@ -1645,32 +1882,47 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           'address1': _n('address1') ?? '',
           'address2': _n('address2') ?? '',
           'closestLocation': _n('closestLocation') ?? '',
-          'latitude': 0, 'longitude': 0,
-          'schoolPhoneNumber': '', 'mobilePhoneNumber': '', 'email': '', 'website': '',
+          'latitude': 0,
+          'longitude': 0,
+          'schoolPhoneNumber': '',
+          'mobilePhoneNumber': '',
+          'email': '',
+          'website': '',
         },
       };
 
-      final response = await http.post(
-        Uri.parse('https://emis.moedu.gov.iq/api/student/addstudent'),
-        headers: h,
-        body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .post(
+            Uri.parse('https://emis.moedu.gov.iq/api/student/addstudent'),
+            headers: h,
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 15));
 
       final responseText = utf8.decode(response.bodyBytes);
       dynamic responseJson;
-      try { responseJson = jsonDecode(responseText); } catch (_) {}
+      try {
+        responseJson = jsonDecode(responseText);
+      } catch (_) {}
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final serverMessage = responseJson is Map ? '${responseJson['message'] ?? responseJson['error'] ?? responseText}' : responseText;
+        final serverMessage = responseJson is Map
+            ? '${responseJson['message'] ?? responseJson['error'] ?? responseText}'
+            : responseText;
         throw Exception('رفض EMIS الطلب: $serverMessage');
       }
 
-      final successMessage = responseJson is Map && '${responseJson['message'] ?? ''}'.trim().isNotEmpty
+      final successMessage = responseJson is Map &&
+              '${responseJson['message'] ?? ''}'.trim().isNotEmpty
           ? '${responseJson['message']}'
           : 'تمت إضافة الطالب بنجاح';
 
       if (!mounted) return;
-      setState(() { error = null; _saveStatus = successMessage; _saveStatusIsError = false; });
+      setState(() {
+        error = null;
+        _saveStatus = successMessage;
+        _saveStatusIsError = false;
+      });
       _showSaveMessage(successMessage, isError: false);
 
       await Future<void>.delayed(const Duration(milliseconds: 1200));
@@ -1678,7 +1930,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     } catch (e) {
       final friendly = _friendlyError(e);
       if (mounted) {
-        setState(() { error = friendly; _saveStatus = friendly; _saveStatusIsError = true; });
+        setState(() {
+          error = friendly;
+          _saveStatus = friendly;
+          _saveStatusIsError = true;
+        });
         _showSaveMessage(friendly, isError: true);
       }
     } finally {
@@ -1699,14 +1955,18 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if ((_n('grandFatherName') ?? '').isEmpty) return 'يرجى إدخال اسم والد الأب';
     if ((_n('dateOfBirth') ?? '').isEmpty) return 'يرجى إدخال تاريخ التولد';
     if (stageId == null || stageId!.isEmpty) return 'يرجى اختيار الصف الدراسي';
-    if (_addressDistrictId == null || _addressDistrictId!.isEmpty) return 'يرجى اختيار القضاء في العنوان';
+    if (_addressDistrictId == null || _addressDistrictId!.isEmpty) {
+      return 'يرجى اختيار القضاء في العنوان';
+    }
     return null;
   }
 
   String _friendlyError(Object error) {
     final message = '$error';
     if (message.contains('SocketException')) return 'تعذر الاتصال بخادم EMIS.';
-    return message.startsWith('Exception: ') ? message.substring('Exception: '.length) : message;
+    return message.startsWith('Exception: ')
+        ? message.substring('Exception: '.length)
+        : message;
   }
 
   @override
@@ -1717,12 +1977,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFFF5F7FA),
         appBar: AppBar(
-          title: const Text('إضافة طالب جديد', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          title: const Text('إضافة طالب جديد',
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           centerTitle: true,
           iconTheme: const IconThemeData(color: Colors.white),
           flexibleSpace: Container(
             decoration: const BoxDecoration(
-              gradient: LinearGradient(colors: [Color(0xFF1A237E), Color(0xFF4A90E2)]),
+              gradient: LinearGradient(
+                  colors: [Color(0xFF1A237E), Color(0xFF4A90E2)]),
             ),
           ),
         ),
@@ -1744,19 +2007,30 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             const SizedBox(height: 8),
                             Container(
                               padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(12)),
-                              child: const Text('الميكروفون مغلق من الإعدادات.', style: TextStyle(fontWeight: FontWeight.w600)),
+                              decoration: BoxDecoration(
+                                  color: Colors.orange.shade50,
+                                  borderRadius: BorderRadius.circular(12)),
+                              child: const Text('الميكروفون مغلق من الإعدادات.',
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.w600)),
                             ),
                           ],
                           if (_speechError != null) ...[
                             const SizedBox(height: 8),
                             Container(
                               padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(12)),
-                              child: Text(_speechError!, style: const TextStyle(fontWeight: FontWeight.w600)),
+                              decoration: BoxDecoration(
+                                  color: Colors.orange.shade50,
+                                  borderRadius: BorderRadius.circular(12)),
+                              child: Text(_speechError!,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600)),
                             ),
                           ],
-                          if (error != null) ...[const SizedBox(height: 12), _error(error!)],
+                          if (error != null) ...[
+                            const SizedBox(height: 12),
+                            _error(error!)
+                          ],
                           const SizedBox(height: 14),
                           _section('البيانات الأساسية', [
                             _textField('name', required: true),
@@ -1775,9 +2049,13 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             const SizedBox(height: 10),
                             _textField('mothersGrandFatherName'),
                             const SizedBox(height: 10),
-                            SizedBox(width: double.infinity, child: _textField('dateOfBirth')),
+                            SizedBox(
+                                width: double.infinity,
+                                child: _textField('dateOfBirth')),
                             const SizedBox(height: 10),
-                            SizedBox(width: double.infinity, child: _select('gender', required: true)),
+                            SizedBox(
+                                width: double.infinity,
+                                child: _select('gender', required: true)),
                             const SizedBox(height: 10),
                             Row(
                               children: [
@@ -1792,24 +2070,33 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                           _section('وثيقة التعريف', [
                             _select('idType', required: true),
                             const SizedBox(height: 10),
-                            if (_isNationalId) _textField('nationalId', required: true, keyboard: TextInputType.number),
+                            if (_isNationalId)
+                              _textField('nationalId',
+                                  required: true,
+                                  keyboard: TextInputType.number),
                             if (_isCivilId) ...[
-                              _textField('idNumber', required: true, keyboard: TextInputType.number),
+                              _textField('idNumber',
+                                  required: true,
+                                  keyboard: TextInputType.number),
                               const SizedBox(height: 10),
-                              _textField('jinsiyaIdNumber', keyboard: TextInputType.number),
+                              _textField('jinsiyaIdNumber',
+                                  keyboard: TextInputType.number),
                               const SizedBox(height: 10),
                               _textField('issuer'),
                               const SizedBox(height: 10),
-                              _textField('recordNumber', keyboard: TextInputType.number),
+                              _textField('recordNumber',
+                                  keyboard: TextInputType.number),
                               const SizedBox(height: 10),
-                              _textField('pageNumber', keyboard: TextInputType.number),
+                              _textField('pageNumber',
+                                  keyboard: TextInputType.number),
                               const SizedBox(height: 10),
                               _select('issuingCountry'),
                               const SizedBox(height: 10),
                               _textField('issuingDate'),
                             ],
                             if (_isBirthCertificate) ...[
-                              _textField('birthCertificateNumber', required: true),
+                              _textField('birthCertificateNumber',
+                                  required: true),
                               const SizedBox(height: 10),
                               _textField('issuer'),
                               const SizedBox(height: 10),
@@ -1836,7 +2123,9 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                               children: [
                                 Expanded(child: _select('motherTongue')),
                                 const SizedBox(width: 10),
-                                Expanded(child: _select('studyLanguage', fallback: const ['العربية'])),
+                                Expanded(
+                                    child: _select('studyLanguage',
+                                        fallback: const ['العربية'])),
                               ],
                             ),
                             const SizedBox(height: 10),
@@ -1860,7 +2149,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             const SizedBox(height: 10),
                             _socialWelfareSelect(),
                             const SizedBox(height: 10),
-                            _textField('homePhoneNumber', required: true, keyboard: TextInputType.phone),
+                            _textField('homePhoneNumber',
+                                required: true, keyboard: TextInputType.phone),
                             const SizedBox(height: 10),
                             _textField('notes', maxLines: 3),
                           ]),
@@ -1868,7 +2158,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             _selectStage(),
                             const SizedBox(height: 10),
                             _selectRoom(),
-                            if (stageDetails != null) ...[const SizedBox(height: 10), _stageInfo()],
+                            if (stageDetails != null) ...[
+                              const SizedBox(height: 10),
+                              _stageInfo()
+                            ],
                           ]),
                           _section('العنوان', [
                             _addressDropdown(
@@ -1878,9 +2171,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                               items: _addressCountries,
                               showMic: false,
                               onChanged: (v) {
-                                final item = _addressCountries.where((x) => _value(x) == v).toList();
+                                final item = _addressCountries
+                                    .where((x) => _value(x) == v)
+                                    .toList();
                                 if (item.isEmpty) return;
-                                setState(() { _addressCountryId = v; _setAddressGovernorates(item.first); });
+                                setState(() {
+                                  _addressCountryId = v;
+                                  _setAddressGovernorates(item.first);
+                                });
                                 _focusLive('addressCountry');
                               },
                             ),
@@ -1891,9 +2189,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                               value: _addressGovernorateId,
                               items: _addressGovernorates,
                               onChanged: (v) {
-                                final item = _addressGovernorates.where((x) => _value(x) == v).toList();
+                                final item = _addressGovernorates
+                                    .where((x) => _value(x) == v)
+                                    .toList();
                                 if (item.isEmpty) return;
-                                setState(() { _addressGovernorateId = v; _setAddressDistricts(item.first); });
+                                setState(() {
+                                  _addressGovernorateId = v;
+                                  _setAddressDistricts(item.first);
+                                });
                                 _focusLive('addressGovernorate');
                               },
                             ),
@@ -1903,7 +2206,12 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                               voiceKey: 'addressDistrict',
                               value: _addressDistrictId,
                               items: _addressDistricts,
-                              onChanged: (v) { setState(() { _addressDistrictId = v; }); _focusLive('addressDistrict'); },
+                              onChanged: (v) {
+                                setState(() {
+                                  _addressDistrictId = v;
+                                });
+                                _focusLive('addressDistrict');
+                              },
                             ),
                             const SizedBox(height: 10),
                             _textField('town'),
@@ -1933,19 +2241,41 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: _saveStatusIsError ? Colors.red.shade50 : Colors.green.shade50,
+                                color: _saveStatusIsError
+                                    ? Colors.red.shade50
+                                    : Colors.green.shade50,
                                 borderRadius: BorderRadius.circular(14),
                               ),
-                              child: Text(_saveStatus!, style: TextStyle(fontWeight: FontWeight.bold, color: _saveStatusIsError ? Colors.red.shade800 : Colors.green.shade800)),
+                              child: Text(_saveStatus!,
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: _saveStatusIsError
+                                          ? Colors.red.shade800
+                                          : Colors.green.shade800)),
                             ),
                           ],
                           const SizedBox(height: 15),
                           SizedBox(
                             height: 55,
                             child: FilledButton.icon(
-                              onPressed: (saving || _activeVoiceSessionId != null) ? null : _save,
-                              icon: saving ? const SizedBox(width: 21, height: 21, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.person_add_alt_1_rounded),
-                              label: Text(_activeVoiceSessionId != null ? 'أوقف الميكروفون أولاً' : 'حفظ الطالب', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                              onPressed:
+                                  (saving || _activeVoiceSessionId != null)
+                                      ? null
+                                      : _save,
+                              icon: saving
+                                  ? const SizedBox(
+                                      width: 21,
+                                      height: 21,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2))
+                                  : const Icon(Icons.person_add_alt_1_rounded),
+                              label: Text(
+                                  _activeVoiceSessionId != null
+                                      ? 'أوقف الميكروفون أولاً'
+                                      : 'حفظ الطالب',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 17)),
                             ),
                           ),
                           const SizedBox(height: 25),
@@ -1960,13 +2290,16 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                 bottom: 0,
                 child: EmisLiveSync(
                   key: _liveSyncKey,
-                  url: 'https://emis.moedu.gov.iq/centers/schools/${widget.schoolId}/individuals/students/management',
+                  url:
+                      'https://emis.moedu.gov.iq/centers/schools/${widget.schoolId}/individuals/students/management',
                   mode: 'add',
                   entity: 'student',
                   token: widget.token,
                   aliases: _liveAliases(),
                   onSnapshot: _applyLiveSnapshot,
-                  onStatus: (v) { if (mounted) setState(() => _liveStatus = v); },
+                  onStatus: (v) {
+                    if (mounted) setState(() => _liveStatus = v);
+                  },
                 ),
               ),
           ],
@@ -1984,7 +2317,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (current.isNotEmpty && !values.any((x) => _value(x) == current)) {
       values.insert(0, {'value': current, 'displayName': current});
     }
-    // Special-needs is optional: provide a genuinely empty first option.
     if (key == 'specialNeeds') {
       values.removeWhere((x) => _value(x).isEmpty);
       values.insert(0, {'value': '', 'displayName': ''});
@@ -1999,13 +2331,27 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
         fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
-        suffixIcon: _dropdownVoiceFields.contains(key) ? _dropdownVoiceMic(key) : null,
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
+        suffixIcon:
+            _dropdownVoiceFields.contains(key) ? _dropdownVoiceMic(key) : null,
       ),
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-      items: values.map((x) => DropdownMenuItem<String>(value: _value(x), child: Text(_text(x), overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
-      onChanged: (v) { setState(() => c[key]!.text = v ?? ''); _focusLive(key); },
+      items: values
+          .map((x) => DropdownMenuItem<String>(
+              value: _value(x),
+              child: Text(_text(x),
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold))))
+          .toList(),
+      onChanged: (v) {
+        setState(() => c[key]!.text = v ?? '');
+        _focusLive(key);
+      },
     );
   }
 
@@ -2016,8 +2362,12 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       decoration: _decoration('مشمول بمنحة الرعاية الاجتماعية؟'),
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       items: const [
-        DropdownMenuItem<bool>(value: false, child: Text('لا', style: TextStyle(fontWeight: FontWeight.bold))),
-        DropdownMenuItem<bool>(value: true, child: Text('نعم', style: TextStyle(fontWeight: FontWeight.bold))),
+        DropdownMenuItem<bool>(
+            value: false,
+            child: Text('لا', style: TextStyle(fontWeight: FontWeight.bold))),
+        DropdownMenuItem<bool>(
+            value: true,
+            child: Text('نعم', style: TextStyle(fontWeight: FontWeight.bold))),
       ],
       onChanged: (value) {
         if (value == null) return;
@@ -2027,7 +2377,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     );
   }
 
-  Widget _addressDropdown({required String label, required String voiceKey, required String? value, required List<Map<String, dynamic>> items, required ValueChanged<String?> onChanged, bool showMic = true}) {
+  Widget _addressDropdown({
+    required String label,
+    required String voiceKey,
+    required String? value,
+    required List<Map<String, dynamic>> items,
+    required ValueChanged<String?> onChanged,
+    bool showMic = true,
+  }) {
     final safe = items.any((x) => _value(x) == value) ? value : null;
     return DropdownButtonFormField<String>(
       key: ValueKey<String>('voice-address-$voiceKey-${safe ?? ''}'),
@@ -2035,9 +2392,16 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       isExpanded: true,
       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       decoration: _decoration(label).copyWith(
-        suffixIcon: showMic && _dropdownVoiceFields.contains(voiceKey) ? _dropdownVoiceMic(voiceKey) : null,
+        suffixIcon: showMic && _dropdownVoiceFields.contains(voiceKey)
+            ? _dropdownVoiceMic(voiceKey)
+            : null,
       ),
-      items: items.map((x) => DropdownMenuItem<String>(value: _value(x), child: Text(_text(x), style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
+      items: items
+          .map((x) => DropdownMenuItem<String>(
+              value: _value(x),
+              child: Text(_text(x),
+                  style: const TextStyle(fontWeight: FontWeight.bold))))
+          .toList(),
       onChanged: onChanged,
     );
   }
@@ -2046,9 +2410,18 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         key: ValueKey<String>('voice-stage-${stageId ?? ''}'),
         value: stageId,
         isExpanded: true,
-        decoration: _decoration('الصف الدراسي').copyWith(suffixIcon: _dropdownVoiceMic('stageId')),
-        items: stages.map((x) => DropdownMenuItem(value: _value(x), child: Text(_text(x), style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
-        onChanged: (v) { _stageChanged(v); _focusLive('stageId'); },
+        decoration: _decoration('الصف الدراسي')
+            .copyWith(suffixIcon: _dropdownVoiceMic('stageId')),
+        items: stages
+            .map((x) => DropdownMenuItem(
+                value: _value(x),
+                child: Text(_text(x),
+                    style: const TextStyle(fontWeight: FontWeight.bold))))
+            .toList(),
+        onChanged: (v) {
+          _stageChanged(v);
+          _focusLive('stageId');
+        },
       );
 
   Widget _selectRoom() => DropdownButtonFormField<String>(
@@ -2056,19 +2429,30 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         value: roomId,
         isExpanded: true,
         decoration: _decoration('الشعبة'),
-        items: rooms.map((x) => DropdownMenuItem(value: _value(x), child: Text(_text(x), style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
-        onChanged: (v) { setState(() => roomId = v); _focusLive('classRoomId'); },
+        items: rooms
+            .map((x) => DropdownMenuItem(
+                value: _value(x),
+                child: Text(_text(x),
+                    style: const TextStyle(fontWeight: FontWeight.bold))))
+            .toList(),
+        onChanged: (v) {
+          setState(() => roomId = v);
+          _focusLive('classRoomId');
+        },
       );
 
   Widget _stageInfo() {
     final d = stageDetails!;
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: const Color(0xFFEAF2FF), borderRadius: BorderRadius.circular(13)),
+      decoration: BoxDecoration(
+          color: const Color(0xFFEAF2FF),
+          borderRadius: BorderRadius.circular(13)),
       child: Text(
         'العمر المسموح: ${d['minAge'] ?? '-'} إلى ${d['maxAge'] ?? '-'} سنة',
         textAlign: TextAlign.right,
-        style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF294A85)),
+        style: const TextStyle(
+            fontWeight: FontWeight.bold, color: Color(0xFF294A85)),
       ),
     );
   }
@@ -2077,27 +2461,46 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         labelText: label,
         filled: true,
         fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
       );
 
   Widget _intro() => Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [Color(0xFF1A237E), Color(0xFF4A90E2)], begin: Alignment.topRight, end: Alignment.bottomLeft),
+          gradient: const LinearGradient(
+              colors: [Color(0xFF1A237E), Color(0xFF4A90E2)],
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft),
           borderRadius: BorderRadius.circular(22),
         ),
         child: const Row(
           children: [
-            CircleAvatar(radius: 27, backgroundColor: Colors.white24, child: Icon(Icons.person_add_alt_1_rounded, color: Colors.white, size: 30)),
+            CircleAvatar(
+                radius: 27,
+                backgroundColor: Colors.white24,
+                child: Icon(Icons.person_add_alt_1_rounded,
+                    color: Colors.white, size: 30)),
             SizedBox(width: 13),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('إضافة طالب جديد', style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.bold)),
+                  Text('إضافة طالب جديد',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.bold)),
                   SizedBox(height: 5),
-                  Text('الخيارات والصفوف والشعب تُقرأ مباشرة من EMIS.', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70, fontSize: 13)),
+                  Text('الخيارات والصفوف والشعب تُقرأ مباشرة من EMIS.',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white70,
+                          fontSize: 13)),
                 ],
               ),
             ),
@@ -2107,7 +2510,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
   Widget _error(String text) => Container(
         padding: const EdgeInsets.all(13),
-        decoration: BoxDecoration(color: Colors.red.withOpacity(.07), borderRadius: BorderRadius.circular(14)),
-        child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+        decoration: BoxDecoration(
+            color: Colors.red.withOpacity(.07),
+            borderRadius: BorderRadius.circular(14)),
+        child: Text(text,
+            style: const TextStyle(
+                fontWeight: FontWeight.bold, color: Colors.red)),
       );
 }
