@@ -39,7 +39,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   bool _speechStopRequested = false;
   bool _micPointerDown = false;
   bool _voiceArrowPointerDown = false;
-  // يأخذ القيمة الافتراضية من الإعدادات (AppCore.voiceSequentialAutoStart) بدلاً من true الثابتة
   bool _voiceSequentialMode = AppCore.voiceSequentialAutoStart;
   int _sequentialVoiceIndex = 0;
   String? _voiceDropdownTarget;
@@ -212,7 +211,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   @override
   void initState() {
     super.initState();
-    // الالتزام الدقيق بحالة زر الإعدادات عند فتح الصفحة
     _voiceSequentialMode =
         AppCore.voiceInputEnabled && AppCore.voiceSequentialAutoStart;
 
@@ -465,7 +463,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
             AppCore.voiceInputEnabled && AppCore.voiceSequentialAutoStart;
       });
 
-      // لا يبدأ التنقل الصوتي تلقائياً إلا إذا كان المستخدم قد فعّله من شاشة الإعدادات
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted &&
             !saving &&
@@ -2309,6 +2306,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   Widget _select(String key, {bool required = false, List<String>? fallback}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
     final values = <Map<String, dynamic>>[
       ...(options[key] ?? []),
       ...((fallback ?? []).map((x) => {'value': x, 'displayName': x})),
@@ -2326,27 +2325,28 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       key: ValueKey<String>('voice-select-$key-$current'),
       value: current.isEmpty ? null : current,
       isExpanded: true,
+      dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
       decoration: InputDecoration(
         labelText: labels[key] ?? key,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
-        fillColor: Colors.white,
+        fillColor: isDark ? Colors.black12 : Colors.white,
         border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
+            borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF))),
         enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
+            borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF))),
         suffixIcon:
             _dropdownVoiceFields.contains(key) ? _dropdownVoiceMic(key) : null,
       ),
-      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+      style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
       items: values
           .map((x) => DropdownMenuItem<String>(
               value: _value(x),
               child: Text(_text(x),
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.bold))))
+                  style: TextStyle(fontWeight: FontWeight.bold, color: textColor))))
           .toList(),
       onChanged: (v) {
         setState(() => c[key]!.text = v ?? '');
@@ -2356,18 +2356,21 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   }
 
   Widget _socialWelfareSelect() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
     return DropdownButtonFormField<bool>(
       value: _socialWelfare,
       isExpanded: true,
-      decoration: _decoration('مشمول بمنحة الرعاية الاجتماعية؟'),
-      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-      items: const [
+      dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
+      decoration: _decoration('مشمول بمنحة الرعاية الاجتماعية؟', isDark),
+      style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+      items: [
         DropdownMenuItem<bool>(
             value: false,
-            child: Text('لا', style: TextStyle(fontWeight: FontWeight.bold))),
+            child: Text('لا', style: TextStyle(fontWeight: FontWeight.bold, color: textColor))),
         DropdownMenuItem<bool>(
             value: true,
-            child: Text('نعم', style: TextStyle(fontWeight: FontWeight.bold))),
+            child: Text('نعم', style: TextStyle(fontWeight: FontWeight.bold, color: textColor))),
       ],
       onChanged: (value) {
         if (value == null) return;
@@ -2385,13 +2388,16 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     required ValueChanged<String?> onChanged,
     bool showMic = true,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
     final safe = items.any((x) => _value(x) == value) ? value : null;
     return DropdownButtonFormField<String>(
       key: ValueKey<String>('voice-address-$voiceKey-${safe ?? ''}'),
       value: safe,
       isExpanded: true,
-      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-      decoration: _decoration(label).copyWith(
+      dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
+      style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+      decoration: _decoration(label, isDark).copyWith(
         suffixIcon: showMic && _dropdownVoiceFields.contains(voiceKey)
             ? _dropdownVoiceMic(voiceKey)
             : null,
@@ -2400,46 +2406,58 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           .map((x) => DropdownMenuItem<String>(
               value: _value(x),
               child: Text(_text(x),
-                  style: const TextStyle(fontWeight: FontWeight.bold))))
+                  style: TextStyle(fontWeight: FontWeight.bold, color: textColor))))
           .toList(),
       onChanged: onChanged,
     );
   }
 
-  Widget _selectStage() => DropdownButtonFormField<String>(
-        key: ValueKey<String>('voice-stage-${stageId ?? ''}'),
-        value: stageId,
-        isExpanded: true,
-        decoration: _decoration('الصف الدراسي')
-            .copyWith(suffixIcon: _dropdownVoiceMic('stageId')),
-        items: stages
-            .map((x) => DropdownMenuItem(
-                value: _value(x),
-                child: Text(_text(x),
-                    style: const TextStyle(fontWeight: FontWeight.bold))))
-            .toList(),
-        onChanged: (v) {
-          _stageChanged(v);
-          _focusLive('stageId');
-        },
-      );
+  Widget _selectStage() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    return DropdownButtonFormField<String>(
+      key: ValueKey<String>('voice-stage-${stageId ?? ''}'),
+      value: stageId,
+      isExpanded: true,
+      dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
+      style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+      decoration: _decoration('الصف الدراسي', isDark)
+          .copyWith(suffixIcon: _dropdownVoiceMic('stageId')),
+      items: stages
+          .map((x) => DropdownMenuItem(
+              value: _value(x),
+              child: Text(_text(x),
+                  style: TextStyle(fontWeight: FontWeight.bold, color: textColor))))
+          .toList(),
+      onChanged: (v) {
+        _stageChanged(v);
+        _focusLive('stageId');
+      },
+    );
+  }
 
-  Widget _selectRoom() => DropdownButtonFormField<String>(
-        key: ValueKey<String>('voice-room-${roomId ?? ''}'),
-        value: roomId,
-        isExpanded: true,
-        decoration: _decoration('الشعبة'),
-        items: rooms
-            .map((x) => DropdownMenuItem(
-                value: _value(x),
-                child: Text(_text(x),
-                    style: const TextStyle(fontWeight: FontWeight.bold))))
-            .toList(),
-        onChanged: (v) {
-          setState(() => roomId = v);
-          _focusLive('classRoomId');
-        },
-      );
+  Widget _selectRoom() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    return DropdownButtonFormField<String>(
+      key: ValueKey<String>('voice-room-${roomId ?? ''}'),
+      value: roomId,
+      isExpanded: true,
+      dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
+      style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+      decoration: _decoration('الشعبة', isDark),
+      items: rooms
+          .map((x) => DropdownMenuItem(
+              value: _value(x),
+              child: Text(_text(x),
+                  style: TextStyle(fontWeight: FontWeight.bold, color: textColor))))
+          .toList(),
+      onChanged: (v) {
+        setState(() => roomId = v);
+        _focusLive('classRoomId');
+      },
+    );
+  }
 
   Widget _stageInfo() {
     final d = stageDetails!;
@@ -2457,16 +2475,16 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     );
   }
 
-  InputDecoration _decoration(String label) => InputDecoration(
+  InputDecoration _decoration(String label, bool isDark) => InputDecoration(
         labelText: label,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: isDark ? Colors.black12 : Colors.white,
         border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
+            borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF))),
         enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFE1E6EF))),
+            borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF))),
       );
 
   Widget _intro() => Container(
