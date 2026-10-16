@@ -1,10 +1,7 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'app_core.dart';
-import 'google_speech_service.dart';
 
 class GradeEntryScreen extends StatefulWidget {
   final String token;
@@ -34,13 +31,6 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
   bool togglingIgnore = false;
   bool? examIgnored;
   String? error;
-  StreamSubscription<Map<String, dynamic>>? _speechSubscription;
-  int _speechSessionId = 0;
-  int? _activeSpeechSessionId;
-  int? _activeGradeStudentId;
-  bool _speechListening = false;
-  bool _voiceSequentialMode = false;
-  int _sequentialStudentIndex = 0;
 
   Map<String, String> get h => {
         'Authorization': widget.token.toLowerCase().startsWith('bearer ')
@@ -97,20 +87,11 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
   @override
   void initState() {
     super.initState();
-    _voiceSequentialMode = false;
-    _speechSubscription = GoogleSpeechService.events.listen(
-      _handleSpeechEvent,
-      onError: (_) {
-        if (mounted) setState(() => _speechListening = false);
-      },
-    );
     _loadStages();
   }
 
   @override
   void dispose() {
-    _speechSubscription?.cancel();
-    unawaited(GoogleSpeechService.cancelListening());
     for (final c in grades.values) {
       c.dispose();
     }
@@ -662,8 +643,6 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
                     const Center(child: CircularProgressIndicator()),
                   ] else if (students.isNotEmpty) ...[
                     const SizedBox(height: 10),
-                    _sequentialVoiceControl(),
-                    if (_voiceSequentialMode) _sequentialStudentControls(),
                     ...students.map((student) => _studentCard(student, max)),
                     const SizedBox(height: 12),
                     SizedBox(
@@ -754,74 +733,28 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
       DropdownButtonFormField<String>(
         value: data.any((x) => _id(x) == value) ? value : null,
         isExpanded: true,
-        dropdownColor: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF242424)
-            : Colors.white,
-        style: TextStyle(
+        style: const TextStyle(
           fontWeight: FontWeight.bold,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white
-              : Colors.black87,
+          color: Colors.black87,
         ),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Theme.of(context).brightness == Brightness.dark
-                ? Colors.white
-                : null,
-          ),
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
           filled: true,
-          fillColor: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF242424)
-              : Colors.white,
+          fillColor: Colors.white,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(15),
           ),
         ),
-        // Flutter may render the selected value using the surrounding theme
-        // instead of the menu item's TextStyle. Set both paths explicitly.
-        selectedItemBuilder: (context) => data
-            .where((x) => _id(x) != null && _id(x)!.isNotEmpty)
-            .map(
-              (x) => Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: Text(
-                  _label(x),
-                  overflow: TextOverflow.ellipsis,
-                  textDirection: TextDirection.rtl,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white
-                        : Colors.black87,
-                  ),
-                ),
-              ),
-            )
-            .toList(),
         items: data
             .map(
               (x) => DropdownMenuItem<String>(
                 value: _id(x),
-                child: DefaultTextStyle.merge(
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white
-                        : Colors.black87,
-                  ),
-                  child: Text(
-                    _label(x),
-                    overflow: TextOverflow.ellipsis,
-                    textDirection: TextDirection.rtl,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? Colors.white
-                          : Colors.black87,
-                    ),
-                  ),
+                child: Text(
+                  _label(x),
+                  overflow: TextOverflow.ellipsis,
+                  textDirection: TextDirection.rtl,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
             )
@@ -963,234 +896,28 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
               ),
             ),
             SizedBox(
-              width: 132,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      enabled: !ignored && !loadingStudents,
-                      controller: grades[id],
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.white
-                            : Colors.black87,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: '',
-                        filled: true,
-                        fillColor: Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0xFF303030)
-                            : const Color(0xFFF7F8FB),
-                        border: const OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(12)),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 6),
-                      ),
-                    ),
+              width: 86,
+              child: TextField(
+                enabled: !ignored && !loadingStudents,
+                controller: grades[id],
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+                decoration: const InputDecoration(
+                  hintText: '',
+                  filled: true,
+                  fillColor: Color(0xFFF7F8FB),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
                   ),
-                  IconButton(
-                    tooltip: _speechListening && _activeGradeStudentId == id
-                        ? 'إيقاف المايكروفون'
-                        : 'إدخال الدرجة بالصوت',
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(width: 38, height: 44),
-                    onPressed: ignored || loadingStudents || saving || !AppCore.voiceInputEnabled
-                        ? null
-                        : () => _toggleGradeMicrophone(id),
-                    icon: Icon(
-                      _speechListening && _activeGradeStudentId == id
-                          ? Icons.mic_rounded
-                          : Icons.mic_none_rounded,
-                      color: _speechListening && _activeGradeStudentId == id
-                          ? Colors.red
-                          : Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ],
         ),
       ),
     );
-  }
-
-  Future<void> _toggleGradeMicrophone(int studentId) async {
-    if (!AppCore.voiceInputEnabled) {
-      _showVoiceMessage('يرجى تفعيل التعرف الصوتي من الإعدادات أولاً.');
-      return;
-    }
-    if (_speechListening && _activeGradeStudentId == studentId) {
-      await GoogleSpeechService.stopListening();
-      return;
-    }
-    await GoogleSpeechService.cancelListening();
-    final info = await GoogleSpeechService.getInfo();
-    if (info['available'] != true) {
-      _showVoiceMessage('خدمة التعرف الصوتي غير متوفرة على هذا الجهاز.');
-      return;
-    }
-    final session = ++_speechSessionId;
-    _activeSpeechSessionId = session;
-    _activeGradeStudentId = studentId;
-    if (mounted) setState(() => _speechListening = true);
-    try {
-      final started = await GoogleSpeechService.startListening(
-        sessionId: session,
-        locale: 'ar-IQ',
-      );
-      if (!started && mounted && _activeSpeechSessionId == session) {
-        setState(() => _speechListening = false);
-        _showVoiceMessage('تعذر تشغيل المايكروفون.');
-      }
-    } catch (e) {
-      if (mounted && _activeSpeechSessionId == session) {
-        setState(() => _speechListening = false);
-        _showVoiceMessage('تعذر تشغيل المايكروفون: $e');
-      }
-    }
-  }
-
-  void _handleSpeechEvent(Map<String, dynamic> event) {
-    final eventSession = int.tryParse('${event['sessionId'] ?? ''}');
-    if (_activeSpeechSessionId == null ||
-        (eventSession != null && eventSession != _activeSpeechSessionId)) return;
-    final type = '${event['type'] ?? ''}';
-    if (type == 'result') {
-      final studentId = _activeGradeStudentId;
-      final text = '${event['text'] ?? event['recognizedWords'] ?? ''}'.trim();
-      if (studentId != null && text.isNotEmpty) {
-        final parsed = _parseSpokenGrade(text);
-        if (parsed != null && parsed >= 0) {
-          final controller = grades[studentId];
-          if (controller != null) {
-            controller.value = TextEditingValue(
-              text: '$parsed',
-              selection: TextSelection.collapsed(offset: '$parsed'.length),
-            );
-          }
-        }
-      }
-      if (mounted) setState(() => _speechListening = false);
-      unawaited(GoogleSpeechService.stopListening());
-      _activeSpeechSessionId = null;
-      _activeGradeStudentId = null;
-    } else if (type == 'stopped' || type == 'error') {
-      if (mounted) setState(() => _speechListening = false);
-      _activeSpeechSessionId = null;
-      _activeGradeStudentId = null;
-    }
-  }
-
-  int? _parseSpokenGrade(String input) {
-    var text = input.trim().toLowerCase();
-    const digits = {
-      '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
-      '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
-      '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
-      '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
-    };
-    digits.forEach((from, to) => text = text.replaceAll(from, to));
-    final numeric = RegExp(r'\d+').firstMatch(text);
-    if (numeric != null) return int.tryParse(numeric.group(0)!);
-    const words = <String, int>{
-      'صفر': 0, 'واحد': 1, 'واحده': 1, 'واحداً': 1,
-      'اثنين': 2, 'اثنان': 2, 'ثنين': 2, 'اثنينه': 2,
-      'ثلاثة': 3, 'ثلاثه': 3, 'ثلاث': 3,
-      'أربعة': 4, 'اربعة': 4, 'اربعه': 4, 'أربع': 4, 'اربع': 4,
-      'خمسة': 5, 'خمسه': 5, 'خمس': 5,
-      'ستة': 6, 'سته': 6, 'ست': 6,
-      'سبعة': 7, 'سبعه': 7, 'سبع': 7,
-      'ثمانية': 8, 'ثمانيه': 8, 'ثمان': 8,
-      'تسعة': 9, 'تسعه': 9, 'تسع': 9,
-      'عشرة': 10, 'عشره': 10, 'عشر': 10,
-      'عشرين': 20, 'ثلاثين': 30, 'أربعين': 40, 'اربعين': 40,
-      'خمسين': 50, 'ستين': 60, 'سبعين': 70, 'ثمانين': 80, 'تسعين': 90,
-      'مئة': 100, 'مائه': 100, 'مية': 100,
-    };
-    for (final part in text.split(RegExp(r'[\s،,]+'))) {
-      if (words.containsKey(part)) return words[part];
-    }
-    return null;
-  }
-
-  void _showVoiceMessage(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
-    );
-  }
-
-  Widget _sequentialVoiceControl() => Card(
-        margin: const EdgeInsets.only(bottom: 8),
-        child: SwitchListTile(
-          secondary: Icon(
-            _voiceSequentialMode
-                ? Icons.keyboard_double_arrow_down_rounded
-                : Icons.keyboard_arrow_down_rounded,
-            color: _voiceSequentialMode ? Colors.green : Colors.grey,
-            size: 30,
-          ),
-          title: const Text('التنقل الصوتي بين درجات الطلاب',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: const Text('التنقل بين الطلاب وتشغيل المايكروفون لكل درجة'),
-          value: _voiceSequentialMode,
-          activeColor: Colors.green,
-          onChanged: !AppCore.voiceInputEnabled
-              ? null
-              : (enabled) async {
-                  setState(() {
-                    _voiceSequentialMode = enabled;
-                    _sequentialStudentIndex = 0;
-                  });
-                  if (enabled && students.isNotEmpty) {
-                    final id = int.tryParse('${students.first['id']}');
-                    if (id != null) await _toggleGradeMicrophone(id);
-                  } else if (!enabled) {
-                    await GoogleSpeechService.stopListening();
-                  }
-                },
-        ),
-      );
-
-  Widget _sequentialStudentControls() {
-    final canPrevious = _sequentialStudentIndex > 0;
-    final canNext = _sequentialStudentIndex < students.length - 1;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: canPrevious ? () => _moveSequentialStudent(-1) : null,
-              icon: const Icon(Icons.keyboard_arrow_up_rounded),
-              label: const Text('الطالب السابق'),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: canNext ? () => _moveSequentialStudent(1) : null,
-              icon: const Icon(Icons.keyboard_arrow_down_rounded),
-              label: const Text('الطالب التالي'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _moveSequentialStudent(int delta) async {
-    if (students.isEmpty) return;
-    final next = (_sequentialStudentIndex + delta).clamp(0, students.length - 1).toInt();
-    setState(() => _sequentialStudentIndex = next);
-    final id = int.tryParse('${students[next]['id']}');
-    if (id != null) await _toggleGradeMicrophone(id);
   }
 
   Widget _messageCard(String text, Color color) => Container(

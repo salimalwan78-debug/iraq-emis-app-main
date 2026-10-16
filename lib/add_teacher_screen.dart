@@ -844,12 +844,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         fillColor: Colors.white,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
       ),
-      style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white
-              : Colors.black87,
-        ),
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       items: items
           .map((x) => DropdownMenuItem<String>(
                 value: _value(x),
@@ -930,12 +925,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
           borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
       ),
-      style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white
-              : Colors.black87,
-        ),
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       validator: required
           ? (v) => (v == null || v.trim().isEmpty) ? 'هذا الحقل مطلوب' : null
           : null,
@@ -986,15 +976,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     return DropdownButtonFormField<String>(
       value: safeValue,
       isExpanded: true,
-      style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white
-              : Colors.black87,
-        ),
-        dropdownColor: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF242424)
-            : Colors.white,
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       decoration: InputDecoration(
         labelText: labels[key] ?? key,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),

@@ -1692,12 +1692,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       controller: c[key],
       maxLines: maxLines,
       keyboardType: isDate ? TextInputType.number : keyboard,
-      style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white
-              : Colors.black87,
-        ),
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       textDirection: TextDirection.rtl,
       onChanged: (val) {
         if (isDate) {
@@ -2345,15 +2340,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         suffixIcon:
             _dropdownVoiceFields.contains(key) ? _dropdownVoiceMic(key) : null,
       ),
-      style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white
-              : Colors.black87,
-        ),
-        dropdownColor: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF242424)
-            : Colors.white,
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       items: values
           .map((x) => DropdownMenuItem<String>(
               value: _value(x),
@@ -2373,15 +2360,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       value: _socialWelfare,
       isExpanded: true,
       decoration: _decoration('مشمول بمنحة الرعاية الاجتماعية؟'),
-      style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white
-              : Colors.black87,
-        ),
-        dropdownColor: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF242424)
-            : Colors.white,
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       items: const [
         DropdownMenuItem<bool>(
             value: false,
@@ -2411,15 +2390,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       key: ValueKey<String>('voice-address-$voiceKey-${safe ?? ''}'),
       value: safe,
       isExpanded: true,
-      style: TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.white
-              : Colors.black87,
-        ),
-        dropdownColor: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF242424)
-            : Colors.white,
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       decoration: _decoration(label).copyWith(
         suffixIcon: showMic && _dropdownVoiceFields.contains(voiceKey)
             ? _dropdownVoiceMic(voiceKey)
