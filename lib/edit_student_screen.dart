@@ -1005,7 +1005,15 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           filled: true,
         ),
-        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Colors.white
+              : Colors.black87,
+        ),
+        dropdownColor: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF242424)
+            : Colors.white,
         items: items.map((item) => DropdownMenuItem<String>(
           value: _optionValue(item)?.toString(),
           child: Text(_optionText(item), style: const TextStyle(fontWeight: FontWeight.bold)),
