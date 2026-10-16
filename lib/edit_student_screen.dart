@@ -548,7 +548,8 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
         items: items.map((item) => DropdownMenuItem<dynamic>(
-          value: _optionValue(item), child: Text(_optionText(item), style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : textColor)),
+          value: _optionValue(item),
+          child: Text(_optionText(item), style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : textColor)),
         )).toList(),
         validator: null,
         onTap: () => _focusLive(key),
@@ -565,6 +566,27 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         },
       ),
     );
+  }
+
+  Future<void> _pickDate(Map<String, dynamic> owner, String key) async {
+    DateTime initial = DateTime.now();
+    final raw = owner[key]?.toString();
+    if (raw != null && raw.isNotEmpty) initial = DateTime.tryParse(raw) ?? initial;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1900),
+      lastDate: DateTime(2100),
+      locale: const Locale('ar'),
+    );
+    if (picked != null && mounted) {
+      final formatted = '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+      _dateControllers.putIfAbsent(key, () => TextEditingController()).value = TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+      setState(() => owner[key] = formatted);
+    }
   }
 
   Widget _fieldFor(String key, dynamic value, Map<String, dynamic> owner, bool isDark, Color textColor) {
@@ -594,7 +616,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
           decoration: InputDecoration(
             labelText: _isRequired(key, owner) ? '${_label(key)} *' : _label(key),
             suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(tooltip: 'الإدخال الصوتي', onPressed: () => _toggleFieldMic(owner, key), icon: Icon(_speechListening && _activeSpeechKey == key ? Icons.mic : Icons.mic_none, color: _speechListening && _activeSpeechKey == key ? Icons.red : null)),
+              IconButton(tooltip: 'الإدخال الصوتي', onPressed: () => _toggleFieldMic(owner, key), icon: Icon(_speechListening && _activeSpeechKey == key ? Icons.mic : Icons.mic_none, color: _speechListening && _activeSpeechKey == key ? Colors.red : null)),
               IconButton(tooltip: 'اختيار التاريخ', onPressed: () => _pickDate(owner, key), icon: const Icon(Icons.calendar_month)),
             ]),
             filled: true, fillColor: isDark ? Colors.black12 : Colors.grey[50],
@@ -645,6 +667,31 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       onMic: _speechEnabledFields.contains(key) ? () => _toggleFieldMic(owner, key) : null,
       micActive: _speechListening && _activeSpeechKey == key,
     );
+  }
+
+  static const Set<String> _visibleStudentFields = {
+    'name', 'fatherName', 'grandFatherName', 'fathersGrandFatherName', 'surName', 'motherName', 'mothersFatherName', 'mothersGrandFatherName', 'dateOfBirth', 'gender', 'nationality', 'countryOfBirth', 'homeTown', 'motherTongue', 'maritalStatus', 'bloodGroup', 'religion', 'homePhoneNumber', 'notes', 'specialNeeds', 'studyLanguage', 'economicLevel', 'isCoveredBySocialWelfare', 'isDroppedOutFromSchool', 'academicYearId', 'stageId', 'classRoomId', 'identification', 'address', 'ageExceptionReason', 'genderExceptionReason',
+  };
+
+  static const Set<String> _visibleAddressFields = {
+    'countryStructureId', 'town', 'area', 'quarter', 'street', 'address1', 'address2', 'closestLocation',
+  };
+
+  static const Set<String> _hiddenStudentResponseFields = {
+    'id', 'createdAt', 'updatedAt', 'imageUrl', 'schoolId', 'schoolName', 'schoolCensusNumber', 'stageName', 'classRoomName', 'academicYearName', 'studentStatusName', 'studentStatus', 'classificationName', 'classification', 'classifications', 'lastSchoolClassifications', 'lastSchoolClassification', 'lastSchoolName', 'lastCompletedStageName', 'lastAcademicYearName', 'lastYearResult', 'lastAcademicYearId', 'lastCompletedStageId', 'lastSchoolId', 'censusNumber',
+  };
+
+  static const Set<String> _hiddenAddressResponseFields = {
+    'apartmentNumber', 'buildingNumber', 'latitude', 'longitude', 'schoolPhoneNumber', 'mobilePhoneNumber', 'employeePhoneNumber', 'email', 'website',
+  };
+
+  bool _identityFieldVisible(String key, dynamic idType) {
+    final t = int.tryParse(idType?.toString() ?? '');
+    if (t == 3) return {'idNumber','jinsiyaIdNumber','issuer','recordNumber','pageNumber','issuingCountry','issuingDate','nameOfDocument'}.contains(key);
+    if (t == 12) return {'idNumber'}.contains(key);
+    if (t == 22) return {'birthCertificateNumber','issuer','issuingDate','issuingCountry','nameOfDocument'}.contains(key);
+    if (t == 16) return {'otherIdNumber','nameOfDocument','issuer','issuingDate','issuingCountry'}.contains(key);
+    return true;
   }
 
   Widget _addressDropdown(String label, String? value, List<Map<String, dynamic>> items, ValueChanged<String?> onChanged, bool isDark, Color textColor) {
@@ -806,16 +853,114 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     return result;
   }
 
-  Future<void> _pickImage(ImageSource source) async {
-    final picked = await ImagePicker().pickImage(source: source, imageQuality: 90, maxWidth: 2000, maxHeight: 2000);
-    if (picked != null && mounted) setState(() => _pickedImage = File(picked.path));
+  SelfieSegmenter? _selfieSegmenter;
+
+  Future<void> _initializeSelfieSegmenter() async {
+    _selfieSegmenter ??= SelfieSegmenter(mode: SegmenterMode.single, enableRawSizeMask: false);
   }
 
-  void _deleteCurrentPhoto() => setState(() => _pickedImage = null);
+  Future<File?> _removeBackgroundUsingSelfieSegmentation(File imageFile) async {
+    File? normalizedFile;
+    try {
+      await _initializeSelfieSegmenter();
+      final segmenter = _selfieSegmenter;
+      if (segmenter == null) throw Exception('تعذر تهيئة أداة إزالة الخلفية');
+      final bytes = await imageFile.readAsBytes();
+      var source = img.decodeImage(bytes);
+      if (source == null) throw Exception('تعذر قراءة الصورة');
+      source = img.bakeOrientation(source);
+      const maxDimension = 512;
+      if (source.width > maxDimension || source.height > maxDimension) {
+        source = img.copyResize(source, width: source.width >= source.height ? maxDimension : null, height: source.height > source.width ? maxDimension : null);
+      }
+      normalizedFile = File('${imageFile.path}_seg_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await normalizedFile.writeAsBytes(img.encodeJpg(source, quality: 90), flush: true);
+      final mask = await segmenter.processImage(InputImage.fromFilePath(normalizedFile.path));
+      if (mask == null) throw Exception('لم يتم الحصول على قناع الشخص');
+      final result = img.Image(width: source.width, height: source.height, numChannels: 4);
+      for (var y = 0; y < source.height; y++) {
+        for (var x = 0; x < source.width; x++) {
+          final index = y * source.width + x;
+          final confidence = mask.confidences[index].clamp(0.0, 1.0);
+          final alpha = ((confidence - 0.35) / 0.40 * 255.0).round().clamp(0, 255);
+          final p = source.getPixel(x, y);
+          result.setPixelRgba(x, y, p.r, p.g, p.b, alpha);
+        }
+      }
+      final out = File('${imageFile.path}_nobg_${DateTime.now().millisecondsSinceEpoch}.png');
+      await out.writeAsBytes(img.encodePng(result, level: 6), flush: true);
+      return out;
+    } finally {
+      if (normalizedFile != null) { try { if (await normalizedFile.exists()) await normalizedFile.delete(); } catch (_) {} }
+    }
+  }
+
+  Future<void> _showImagePreviewDialog(File imageFile) async {
+    File currentImage = imageFile;
+    bool isProcessing = false;
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('معاينة الصورة الشخصية', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 220, width: double.infinity,
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(currentImage, fit: BoxFit.contain)),
+              ),
+              const SizedBox(height: 15),
+              isProcessing
+                  ? const CircularProgressIndicator()
+                  : ElevatedButton.icon(
+                      onPressed: () async {
+                        setDialogState(() => isProcessing = true);
+                        try {
+                          final processed = await _removeBackgroundUsingSelfieSegmentation(currentImage);
+                          if (processed != null && mounted) {
+                            setDialogState(() { currentImage = processed; isProcessing = false; });
+                          }
+                        } catch (e) {
+                          if (mounted) setDialogState(() => isProcessing = false);
+                        }
+                      },
+                      icon: const Icon(Icons.auto_fix_high),
+                      label: const Text('حذف الخلفية'),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.amberAccent),
+                    ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: isProcessing ? null : () => Navigator.pop(dialogContext), child: const Text('إلغاء')),
+            ElevatedButton(
+              onPressed: isProcessing ? null : () { setState(() => _pickedImage = currentImage); Navigator.pop(dialogContext); },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              child: const Text('اعتماد', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 90, maxWidth: 2000, maxHeight: 2000);
+    if (picked != null && mounted) await _showImagePreviewDialog(File(picked.path));
+  }
+
+  void _deleteCurrentPhoto() {
+    setState(() { _pickedImage = null; if (_studentData != null) _studentData!['imageUrl'] = null; });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حذف صورة الطالب')));
+  }
 
   Future<String?> _uploadImageToEmisServer(File imageFile) async {
     final request = http.MultipartRequest('POST', Uri.parse('https://emis.moedu.gov.iq/api/student/uploadimage'));
     request.headers['Authorization'] = widget.token;
+    request.headers['Accept'] = 'application/json';
     request.files.add(await http.MultipartFile.fromPath('image', imageFile.path, filename: 'avatar.png'));
     try {
       final res = await request.send();
