@@ -834,7 +834,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     required ValueChanged<String?> onChanged,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDark ? Colors.white : Colors.black87;
+    final menuTextColor = isDark ? Colors.white : Colors.black87;
     final safe = items.any((x) => _value(x) == value) ? value : null;
     return DropdownButtonFormField<String>(
       value: safe,
@@ -844,17 +844,26 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         labelText: label,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
-        fillColor: isDark ? Colors.black12 : Colors.white,
+        fillColor: Colors.white,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
       ),
-      style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+      selectedItemBuilder: (context) => items
+          .map((x) => Text(
+                _text(x),
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, color: Colors.black87),
+              ))
+          .toList(),
       items: items
           .map((x) => DropdownMenuItem<String>(
                 value: _value(x),
                 child: Text(
                   _text(x),
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, color: menuTextColor),
                 ),
               ))
           .toList(),
@@ -967,7 +976,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     List<String> fallback = const [],
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDark ? Colors.white : Colors.black87;
+    final menuTextColor = isDark ? Colors.white : Colors.black87;
     final values = _values(key);
     for (final x in fallback) {
       if (!values.any((v) => _value(v) == x)) {
@@ -975,19 +984,22 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       }
     }
 
+    final validValues =
+        values.where((x) => _value(x).isNotEmpty).toList(growable: false);
     final current = c[key]!.text.trim();
-    final safeValue = values.any((x) => _value(x) == current) ? current : null;
+    final safeValue =
+        validValues.any((x) => _value(x) == current) ? current : null;
 
     return DropdownButtonFormField<String>(
       value: safeValue,
       isExpanded: true,
       dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
-      style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       decoration: InputDecoration(
         labelText: labels[key] ?? key,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
-        fillColor: isDark ? Colors.black12 : Colors.white,
+        fillColor: Colors.white,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
@@ -997,18 +1009,28 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
           borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
       ),
-      items: values
+      selectedItemBuilder: (context) => validValues
+          .map(
+            (x) => Text(
+              _text(x),
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontWeight: FontWeight.bold, color: Colors.black87),
+            ),
+          )
+          .toList(),
+      items: validValues
           .map(
             (x) => DropdownMenuItem<String>(
               value: _value(x),
               child: Text(
                 _text(x),
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, color: menuTextColor),
               ),
             ),
           )
-          .where((x) => x.value != null && x.value!.isNotEmpty)
           .toList(),
       onTap: () => _focusLive(key),
       onChanged: (v) {
