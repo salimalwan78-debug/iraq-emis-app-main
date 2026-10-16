@@ -17,10 +17,16 @@ class DashboardScreen extends StatelessWidget {
   final Map<String, List<Map<String, dynamic>>> examsBySubject;
 
   const DashboardScreen({
-    super.key, required this.token, required this.schoolId,
-    required this.schoolName, required this.userName,
-    required this.allStudents, required this.allTeachers,
-    required this.stages, required this.subjectsByStage, required this.examsBySubject,
+    super.key,
+    required this.token,
+    required this.schoolId,
+    required this.schoolName,
+    required this.userName,
+    required this.allStudents,
+    required this.allTeachers,
+    required this.stages,
+    required this.subjectsByStage,
+    required this.examsBySubject,
   });
 
   @override
@@ -42,19 +48,24 @@ class DashboardScreen extends StatelessWidget {
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     colors: [Color(0xFF1A237E), Color(0xFF4A90E2)],
-                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
                   ),
-                  borderRadius: BorderRadius.only(bottomLeft: Radius.circular(40), bottomRight: Radius.circular(40)),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(40),
+                    bottomRight: Radius.circular(40),
+                  ),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // إزالة صورة التلميذ واستبدالها بأيقونة مستخدم احترافية
                     Container(
-                      width: 70, height: 70,
+                      width: 70,
+                      height: 70,
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.2),
-                        shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
                       ),
                       child: const Icon(Icons.person, color: Colors.white, size: 40),
                     ),
@@ -63,19 +74,47 @@ class DashboardScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('مرحباً أستاذ،', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white70, fontSize: 16)),
+                          const Text(
+                            'مرحباً أستاذ،',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white70,
+                              fontSize: 16,
+                            ),
+                          ),
                           const SizedBox(height: 5),
-                          Text(userName, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                          Text(
+                            userName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                           const SizedBox(height: 10),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(15)),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(15),
+                            ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 const Icon(Icons.school, color: Colors.amber, size: 18),
                                 const SizedBox(width: 5),
-                                Flexible(child: Text(schoolName, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.white, fontSize: 12), overflow: TextOverflow.ellipsis)),
+                                Flexible(
+                                  child: Text(
+                                    schoolName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -84,7 +123,10 @@ class DashboardScreen extends StatelessWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.settings, color: Colors.white, size: 30),
-                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen())),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const SettingsScreen()),
+                      ),
                     )
                   ],
                 ),
@@ -94,9 +136,23 @@ class DashboardScreen extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
                   children: [
-                    _buildStatCard('إجمالي المعلمين', allTeachers.length.toString(), Icons.work, Colors.orange, cardColor, textColor),
+                    _buildStatCard(
+                      'إجمالي المعلمين',
+                      allTeachers.length.toString(),
+                      Icons.work,
+                      Colors.orange,
+                      cardColor,
+                      textColor,
+                    ),
                     const SizedBox(width: 15),
-                    _buildStatCard('إجمالي الطلاب', allStudents.length.toString(), Icons.people, Colors.blue, cardColor, textColor),
+                    _buildStatCard(
+                      'إجمالي الطلاب',
+                      allStudents.length.toString(),
+                      Icons.people,
+                      Colors.blue,
+                      cardColor,
+                      textColor,
+                    ),
                   ],
                 ),
               ),
@@ -104,105 +160,180 @@ class DashboardScreen extends StatelessWidget {
               Expanded(
                 child: GridView.count(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  crossAxisCount: 2, crossAxisSpacing: 15, mainAxisSpacing: 15, childAspectRatio: 0.95,
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 15,
+                  mainAxisSpacing: 15,
+                  childAspectRatio: 0.95,
                   children: [
-                    _buildMenuCard(title: 'إدارة الطلاب', icon: Icons.people_alt_rounded, color: Colors.blueAccent, cardColor: cardColor, textColor: textColor, onTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => StudentManagementScreen(token: token, schoolId: schoolId, allStudents: allStudents)));
-                    }),
-                    _buildMenuCard(title: 'إدارة المعلمين', icon: Icons.work_rounded, color: Colors.deepPurple, cardColor: cardColor, textColor: textColor, onTap: () {
-                      _openTeachersWithWarning(context);
-                    }),
-                    _buildMenuCard(title: 'الدرجات', icon: Icons.bar_chart_rounded, color: Colors.orange, cardColor: cardColor, textColor: textColor, onTap: () { Navigator.push(context, MaterialPageRoute(builder: (_) => GradesScreen(
-                        token: token,
-                        schoolId: schoolId,
-                        stages: stages,
-                        subjectsByStage: subjectsByStage,
-                        examsBySubject: examsBySubject,
-                      ))); }),
-                    _buildMenuCard(title: 'إرسال البيانات', icon: Icons.cloud_upload_rounded, color: Colors.green, cardColor: cardColor, textColor: textColor, onTap: () {}),
+                    _buildMenuCard(
+                      title: 'إدارة الطلاب',
+                      icon: Icons.people_alt_rounded,
+                      color: Colors.blueAccent,
+                      cardColor: cardColor,
+                      textColor: textColor,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => StudentManagementScreen(
+                              token: token,
+                              schoolId: schoolId,
+                              allStudents: allStudents,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildMenuCard(
+                      title: 'إدارة المعلمين',
+                      icon: Icons.work_rounded,
+                      color: Colors.deepPurple,
+                      cardColor: cardColor,
+                      textColor: textColor,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TeachersListScreen(
+                              token: token,
+                              schoolId: schoolId,
+                              initialTeachers: allTeachers,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildMenuCard(
+                      title: 'الدرجات',
+                      icon: Icons.bar_chart_rounded,
+                      color: Colors.orange,
+                      cardColor: cardColor,
+                      textColor: textColor,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => GradesScreen(
+                              token: token,
+                              schoolId: schoolId,
+                              stages: stages,
+                              subjectsByStage: subjectsByStage,
+                              examsBySubject: examsBySubject,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildMenuCard(
+                      title: 'إرسال البيانات',
+                      icon: Icons.cloud_upload_rounded,
+                      color: Colors.green,
+                      cardColor: cardColor,
+                      textColor: textColor,
+                      onTap: () {},
+                    ),
                   ],
                 ),
               ),
             ],
           ),
         );
-      }
+      },
     );
   }
 
-  Future<void> _openTeachersWithWarning(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange),
-            SizedBox(width: 8),
-            Expanded(child: Text('تنبيه مهم قبل فتح إدارة المعلمين')),
-          ],
-        ),
-        content: const Text(
-          'توجد حالياً مشاكل في وظائف إضافة معلم جديد وتعديل بيانات المعلم في EMIS داخل التطبيق.\n\n'
-          'وظيفة تحديث حالة المعلم هي الوظيفة التي تعمل بشكل طبيعي حالياً. إذا تابعت، يُفضّل استخدام تحديث حالة المعلم فقط وعدم إضافة أو تعديل بيانات المعلمين إلى أن يتم إصلاح تلك الوظائف.',
-          textDirection: TextDirection.rtl,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            icon: const Icon(Icons.arrow_forward_rounded),
-            label: const Text('تأكيد والمتابعة'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !context.mounted) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => TeachersListScreen(
-          token: token,
-          schoolId: schoolId,
-          initialTeachers: allTeachers,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatCard(String title, String count, IconData icon, Color color, Color cardColor, Color textColor) {
+  Widget _buildStatCard(
+    String title,
+    String count,
+    IconData icon,
+    Color color,
+    Color cardColor,
+    Color textColor,
+  ) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))]),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            )
+          ],
+        ),
         child: Column(
           children: [
             Icon(icon, color: color, size: 35),
             const SizedBox(height: 10),
-            Text(count, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textColor)),
+            Text(
+              count,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+            ),
             const SizedBox(height: 5),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 14, color: Colors.grey)),
+            Text(
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                color: Colors.grey,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildMenuCard({required String title, required IconData icon, required Color color, required Color cardColor, required Color textColor, required VoidCallback onTap}) {
+  Widget _buildMenuCard({
+    required String title,
+    required IconData icon,
+    required Color color,
+    required Color cardColor,
+    required Color textColor,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
-      onTap: onTap, borderRadius: BorderRadius.circular(25),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(25),
       child: Container(
-        decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(25), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))]),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(25),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            )
+          ],
+        ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, size: 45, color: color)),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 45, color: color),
+            ),
             const SizedBox(height: 15),
-            Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor)),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+            ),
           ],
         ),
       ),
