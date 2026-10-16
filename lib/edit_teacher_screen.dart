@@ -235,11 +235,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'employeeCategory': 'نوع الموظف *',
     'classification': 'التصنيف *',
     'jobDesignation': 'المسمى الوظيفي',
+    'positionType': 'العنوان الوظيفي *',
     'employmentGrade': 'الدرجة الوظيفية',
     'weeklyTeachingQuota': 'النصاب الأسبوعي للحصص',
-    'currentPosition': 'المنصب الحالي *',
-    'positionType': 'العنوان الوظيفي *',
     'dateOfStartWorking': 'تاريخ أول تعيين للموظف *',
+    'currentPosition': 'المنصب الحالي *',
     'employmentStatus': 'الحالة الوظيفية *',
     'employmentStatusReason': 'سبب الحالة الوظيفية',
     'assignedEntityName': 'الجهة المنسب أو المكلف إليها',
@@ -265,6 +265,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'homePhoneNumber': 'رقم الهاتف الأرضي',
     'imageUrl': 'الصورة الشخصية',
   };
+
+  Map<String, String> get h => {'Authorization': widget.token, 'Accept': 'application/json'};
 
   @override
   void initState() {
@@ -875,6 +877,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       child: DropdownButtonFormField<dynamic>(
         value: safeValue,
         isExpanded: true,
+        dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
+        style: TextStyle(color: isDark ? Colors.white : textColor, fontSize: 16, fontWeight: FontWeight.bold),
         decoration: InputDecoration(
           labelText: _label(key),
           labelStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
@@ -882,18 +886,15 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           fillColor: isDark ? Colors.black12 : Colors.grey[50],
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
-        dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
-        style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
         items: uniqueItems.map((item) {
           return DropdownMenuItem<dynamic>(
             value: _optionValue(item),
             child: Text(
               _optionText(item),
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : textColor),
             ),
           );
         }).toList(),
-        onTap: () => _focusLive(key),
         onChanged: (newValue) {
           setState(() => owner[key] = newValue);
           _focusLive(key);
@@ -1093,13 +1094,13 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           filled: true,
           fillColor: isDark ? Colors.black12 : Colors.grey[50],
         ),
-        style: TextStyle(fontWeight: FontWeight.bold, color: textColor, fontSize: 16),
+        style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : textColor, fontSize: 16),
         items: items
             .map((item) => DropdownMenuItem<String>(
                   value: _optionValue(item)?.toString(),
                   child: Text(
                     _optionText(item),
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : textColor),
                   ),
                 ))
             .toList(),
@@ -1278,7 +1279,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             textColor,
             (v) {
               final country = _addressCountries
-                  .where((x) => _optionValue(x)?.toString() == v)
+                  .where((x) => _value(x) == v)
                   .toList();
               if (country.isEmpty) return;
               setState(() {
@@ -1300,7 +1301,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             textColor,
             (v) {
               final gov = _addressGovernorates
-                  .where((x) => _optionValue(x)?.toString() == v)
+                  .where((x) => _value(x) == v)
                   .toList();
               if (gov.isEmpty) return;
               setState(() {
@@ -1606,7 +1607,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return null;
   }
 
-  // تحويل الكائن المتداخل إلى حقول FormData مسطحة ليتوافق مع ASP.NET FromForm
   void _flattenToFormFields(
     Map<String, String> target,
     String prefix,
@@ -1631,7 +1631,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     final uri = Uri.parse('https://emis.moedu.gov.iq/api/employee/updateemployee');
     final jsonString = jsonEncode(payload);
 
-    // 1. المحاولة الأولى: PUT مع application/json
     var response = await http.put(
       uri,
       headers: {
@@ -1645,7 +1644,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       return response;
     }
 
-    // 2. المحاولة الثانية: POST مع application/json
     response = await http.post(
       uri,
       headers: {
@@ -1659,7 +1657,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       return response;
     }
 
-    // 3. المحاولة الثالثة: POST مع multipart/form-data (الطريقة المعتمدة للنماذج التي تحتوي مرفقات في ASP.NET)
     final postMultipart = http.MultipartRequest('POST', uri);
     postMultipart.headers['Authorization'] = widget.token;
     postMultipart.headers['Accept'] = 'application/json';
@@ -1671,7 +1668,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       return response;
     }
 
-    // 4. المحاولة الرابعة: PUT مع multipart/form-data
     final putMultipart = http.MultipartRequest('PUT', uri);
     putMultipart.headers['Authorization'] = widget.token;
     putMultipart.headers['Accept'] = 'application/json';
