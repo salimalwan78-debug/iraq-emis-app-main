@@ -33,9 +33,11 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
   List<Map<String, dynamic>> _addressCountries = [];
   List<Map<String, dynamic>> _addressGovernorates = [];
   List<Map<String, dynamic>> _addressDistricts = [];
+  List<Map<String, dynamic>> _addressTowns = [];
   String? _addressCountryId;
   String? _addressGovernorateId;
   String? _addressDistrictId;
+  String? _addressTownId;
 
   File? _pickedImage;
   String _uploadedImageUrl = '';
@@ -550,6 +552,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
           _addressDistricts = _childrenOf(gov);
           if (_addressDistricts.isNotEmpty) {
             _addressDistrictId = _value(_addressDistricts.first);
+            _addressTowns = _childrenOf(_addressDistricts.first);
           }
           break;
         }
@@ -573,12 +576,20 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     _addressGovernorateId = null;
     _addressDistricts = [];
     _addressDistrictId = null;
+    _addressTowns = [];
+    _addressTownId = null;
+    c['town']?.clear();
   }
 
   void _setAddressDistricts(Map<String, dynamic> governorate) {
     _addressDistricts = _childrenOf(governorate);
     _addressDistrictId =
         _addressDistricts.isNotEmpty ? _value(_addressDistricts.first) : null;
+    _addressTowns = _addressDistrictId == null
+        ? <Map<String, dynamic>>[]
+        : _childrenOf(_addressDistricts.first);
+    _addressTownId = null;
+    c['town']?.clear();
   }
 
   // ==================== معالجة ورفع الصورة الشخصية ====================
@@ -1731,12 +1742,37 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                             value: _addressDistrictId,
                             items: _addressDistricts,
                             onChanged: (v) {
-                              setState(() => _addressDistrictId = v);
+                              final selected = _addressDistricts
+                                  .where((x) => _value(x) == v)
+                                  .toList();
+                              setState(() {
+                                _addressDistrictId = v;
+                                _addressTowns = selected.isEmpty
+                                    ? <Map<String, dynamic>>[]
+                                    : _childrenOf(selected.first);
+                                _addressTownId = null;
+                                c['town']?.clear();
+                              });
                               _focusLive('addressDistrict');
                             },
                           ),
                           const SizedBox(height: 10),
-                          _textField('town', required: true),
+                          _addressDropdown(
+                            label: 'المدينة / القرية *',
+                            value: _addressTownId,
+                            items: _addressTowns,
+                            onChanged: (v) {
+                              final selected = _addressTowns
+                                  .where((x) => _value(x) == v)
+                                  .toList();
+                              setState(() {
+                                _addressTownId = v;
+                                c['town']?.text =
+                                    selected.isEmpty ? '' : _text(selected.first);
+                              });
+                              _liveSyncKey.currentState?.pushValues(_liveValues());
+                            },
+                          ),
                           const SizedBox(height: 10),
                           Row(
                             children: [

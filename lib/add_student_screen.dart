@@ -102,9 +102,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   List<Map<String, dynamic>> _addressCountries = [];
   List<Map<String, dynamic>> _addressGovernorates = [];
   List<Map<String, dynamic>> _addressDistricts = [];
+  List<Map<String, dynamic>> _addressTowns = [];
   String? _addressCountryId;
   String? _addressGovernorateId;
   String? _addressDistrictId;
+  String? _addressTownId;
 
   final Map<String, String> endpoints = const {
     'gender': '/selectoption/Gender',
@@ -546,8 +548,18 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     }
     if (district != null) {
       _addressDistrictId = _value(district);
+      _addressTowns = _children(district);
+      final town = _addressTowns.where((x) => _text(x).trim() == 'الديوانية').toList();
+      if (town.isNotEmpty) {
+        _addressTownId = _value(town.first);
+        c['town']!.text = _text(town.first);
+      } else {
+        _addressTownId = null;
+        c['town']!.clear();
+      }
+    } else {
+      c['town']!.clear();
     }
-    c['town']!.text = 'الديوانية';
   }
 
   void _setAddressGovernorates(Map<String, dynamic> country) {
@@ -555,11 +567,23 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _addressGovernorateId = null;
     _addressDistricts = [];
     _addressDistrictId = null;
+    _addressTowns = [];
+    _addressTownId = null;
+    c['town']?.clear();
   }
 
   void _setAddressDistricts(Map<String, dynamic> governorate) {
     _addressDistricts = _children(governorate);
     _addressDistrictId = null;
+    _addressTowns = [];
+    _addressTownId = null;
+    c['town']?.clear();
+  }
+
+  void _setAddressTowns(Map<String, dynamic> district) {
+    _addressTowns = _children(district);
+    _addressTownId = null;
+    c['town']?.clear();
   }
 
   Future<void> _stageChanged(String? value) async {
@@ -2207,14 +2231,39 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                               value: _addressDistrictId,
                               items: _addressDistricts,
                               onChanged: (v) {
+                                final selected = _addressDistricts
+                                    .where((x) => _value(x) == v)
+                                    .toList();
                                 setState(() {
                                   _addressDistrictId = v;
+                                  _addressTowns = selected.isEmpty
+                                      ? <Map<String, dynamic>>[]
+                                      : _children(selected.first);
+                                  _addressTownId = null;
+                                  c['town']?.clear();
                                 });
                                 _focusLive('addressDistrict');
                               },
                             ),
                             const SizedBox(height: 10),
-                            _textField('town'),
+                            _addressDropdown(
+                              label: 'المدينة / القرية',
+                              voiceKey: 'town',
+                              value: _addressTownId,
+                              items: _addressTowns,
+                              showMic: false,
+                              onChanged: (v) {
+                                final selected = _addressTowns
+                                    .where((x) => _value(x) == v)
+                                    .toList();
+                                setState(() {
+                                  _addressTownId = v;
+                                  c['town']?.text =
+                                      selected.isEmpty ? '' : _text(selected.first);
+                                });
+                                _liveSyncKey.currentState?.pushValues(_liveValues());
+                              },
+                            ),
                             const SizedBox(height: 10),
                             Row(
                               children: [

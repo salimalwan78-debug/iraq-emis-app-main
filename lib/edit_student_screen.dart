@@ -59,9 +59,11 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
   List<Map<String, dynamic>> _addressCountries = [];
   List<Map<String, dynamic>> _addressGovernorates = [];
   List<Map<String, dynamic>> _addressDistricts = [];
+  List<Map<String, dynamic>> _addressTowns = [];
   String? _addressCountryId;
   String? _addressGovernorateId;
   String? _addressDistrictId;
+  String? _addressTownId;
 
   static const Map<String, String> _optionEndpoints = {
     'countryOfBirth': '/selectoption/بلد الولادة',
@@ -348,6 +350,20 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
               _addressDistrictId = selectedId;
               _addressGovernorates = _childrenOf(country);
               _addressDistricts = districts;
+              _addressTowns = _childrenOf(selectedNode!);
+              final storedTown = (address['town'] ?? '').toString().trim();
+              final townMatch = _addressTowns.where(
+                (town) => _optionText(town).trim() == storedTown,
+              ).toList();
+              if (townMatch.isNotEmpty) {
+                _addressTownId = _optionValue(townMatch.first)?.toString();
+              } else if (storedTown.isNotEmpty) {
+                _addressTowns = [
+                  ..._addressTowns,
+                  {'value': '__stored_town__', 'displayName': storedTown},
+                ];
+                _addressTownId = '__stored_town__';
+              }
             }
           }
         }
@@ -375,6 +391,8 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       _addressGovernorateId = null;
       _addressDistrictId = null;
       _addressDistricts = [];
+      _addressTowns = [];
+      _addressTownId = null;
     });
   }
 
@@ -384,6 +402,8 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       _addressGovernorateId = value;
       _addressDistricts = gov.isEmpty ? [] : _childrenOf(gov.first);
       _addressDistrictId = null;
+      _addressTowns = [];
+      _addressTownId = null;
     });
   }
 
@@ -1072,7 +1092,10 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
             _addressGovernorateId = null;
             _addressDistricts = [];
             _addressDistrictId = null;
+            _addressTowns = [];
+            _addressTownId = null;
             address['countryStructureId'] = null;
+            address['town'] = '';
           });
           _focusLive('countryStructureId');
         }, isDark, textColor),
@@ -1083,18 +1106,43 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
             _addressGovernorateId = v;
             _addressDistricts = _childrenOf(gov.first);
             _addressDistrictId = null;
+            _addressTowns = [];
+            _addressTownId = null;
             address['countryStructureId'] = null;
+            address['town'] = '';
           });
           _focusLive('countryStructureId');
         }, isDark, textColor),
         _addressDropdown('القضاء', _addressDistrictId, _addressDistricts, (v) {
+          final district = _addressDistricts
+              .where((x) => _optionValue(x)?.toString() == v)
+              .toList();
           setState(() {
             _addressDistrictId = v;
+            _addressTowns = district.isEmpty ? [] : _childrenOf(district.first);
+            _addressTownId = null;
             address['countryStructureId'] = v == null ? null : int.tryParse(v);
+            address['town'] = '';
           });
           _focusLive('countryStructureId');
         }, isDark, textColor),
-        field('town', address),
+        _addressDropdown(
+          'المدينة / القرية',
+          _addressTownId,
+          _addressTowns,
+          (v) {
+            final town = _addressTowns
+                .where((x) => _optionValue(x)?.toString() == v)
+                .toList();
+            setState(() {
+              _addressTownId = v;
+              address['town'] = town.isEmpty ? '' : _optionText(town.first);
+            });
+            _focusLive('countryStructureId');
+          },
+          isDark,
+          textColor,
+        ),
         field('area', address),
         field('quarter', address),
         field('street', address),
