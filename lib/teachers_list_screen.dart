@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import 'teacher_smart_tools_screen.dart';
 import 'edit_teacher_screen.dart';
+import 'add_teacher_screen.dart';
 
 class TeachersListScreen extends StatefulWidget {
   final String token;
@@ -44,6 +45,21 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
     _loadTeachers();
+  }
+
+  Future<void> _openAddTeacher() async {
+    final added = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddTeacherScreen(
+          token: widget.token,
+          schoolId: widget.schoolId,
+        ),
+      ),
+    );
+    if (added == true && mounted) {
+      await _loadTeachers();
+    }
   }
 
   Future<void> _loadTeachers() async {
@@ -104,7 +120,8 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
     }
   }
 
-  int _asInt(dynamic value) => value is num ? value.toInt() : int.tryParse('$value') ?? 0;
+  int _asInt(dynamic value) =>
+      value is num ? value.toInt() : int.tryParse('$value') ?? 0;
 
   List<Map<String, dynamic>> get _filteredTeachers {
     final q = _query.trim().toLowerCase();
@@ -267,7 +284,10 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
                           const SizedBox(height: 12),
                           Text(
                             dialogError!,
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red,
+                            ),
                             textAlign: TextAlign.center,
                           ),
                         ],
@@ -326,11 +346,19 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
     return Scaffold(
       backgroundColor: bg,
       appBar: AppBar(
-        title: const Text('إدارة المعلمين', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        title: const Text(
+          'إدارة المعلمين',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
         centerTitle: true,
         backgroundColor: const Color(0xFF4527A0),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            tooltip: 'إضافة معلم جديد',
+            onPressed: _openAddTeacher,
+            icon: const Icon(Icons.person_add_alt_1_rounded, color: Colors.white),
+          ),
           IconButton(
             tooltip: 'تحديث',
             onPressed: _loading ? null : _loadTeachers,
@@ -338,10 +366,19 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openAddTeacher,
+        backgroundColor: const Color(0xFF4527A0),
+        icon: const Icon(Icons.person_add_alt_1_rounded, color: Colors.white),
+        label: const Text(
+          'إضافة معلم جديد',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ),
       body: RefreshIndicator(
         onRefresh: _loadTeachers,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 85),
           children: [
             _buildSummary(card, text),
             const SizedBox(height: 14),
@@ -353,12 +390,22 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 leading: Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: Colors.deepPurple.withOpacity(0.10), shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple.withOpacity(0.10),
+                    shape: BoxShape.circle,
+                  ),
                   child: const Icon(Icons.auto_awesome, color: Colors.deepPurple),
                 ),
-                title: Text('الأدوات الذكية للمعلمين', style: TextStyle(fontWeight: FontWeight.bold, color: text)),
+                title: Text(
+                  'الأدوات الذكية للمعلمين',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: text),
+                ),
                 subtitle: const Text('إضافة صور المعلمين جماعيًا مع حفظ سجل الجلسة'),
-                trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 17, color: Colors.deepPurple),
+                trailing: const Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 17,
+                  color: Colors.deepPurple,
+                ),
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -404,7 +451,14 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
     );
   }
 
-  Widget _summaryCard(String title, String value, IconData icon, Color color, Color card, Color text) {
+  Widget _summaryCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+    Color card,
+    Color text,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
       decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(18)),
@@ -412,8 +466,19 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
         children: [
           Icon(icon, color: color, size: 25),
           const SizedBox(height: 5),
-          Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: text)),
-          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey)),
+          Text(
+            value,
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: text),
+          ),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 11,
+              color: Colors.grey,
+            ),
+          ),
         ],
       ),
     );
@@ -422,11 +487,31 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
   Widget _buildSummary(Color card, Color text) {
     return Row(
       children: [
-        Expanded(child: _summaryCard('المعلمون', '${_totalActive == 0 ? _teachers.length : _totalActive}', Icons.people, Colors.deepPurple, card, text)),
+        Expanded(
+          child: _summaryCard(
+            'المعلمون',
+            '${_totalActive == 0 ? _teachers.length : _totalActive}',
+            Icons.people,
+            Colors.deepPurple,
+            card,
+            text,
+          ),
+        ),
         const SizedBox(width: 8),
-        Expanded(child: _summaryCard('ملاك', '$_permanent', Icons.badge, Colors.blue, card, text)),
+        Expanded(
+          child: _summaryCard('ملاك', '$_permanent', Icons.badge, Colors.blue, card, text),
+        ),
         const SizedBox(width: 8),
-        Expanded(child: _summaryCard('عقد', '$_contract', Icons.assignment_ind, Colors.orange, card, text)),
+        Expanded(
+          child: _summaryCard(
+            'عقد',
+            '$_contract',
+            Icons.assignment_ind,
+            Colors.orange,
+            card,
+            text,
+          ),
+        ),
       ],
     );
   }
@@ -474,23 +559,48 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: text), textAlign: TextAlign.right),
+                    Text(
+                      name,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: text,
+                      ),
+                      textAlign: TextAlign.right,
+                    ),
                     const SizedBox(height: 7),
                     Wrap(
                       alignment: WrapAlignment.end,
                       spacing: 6,
                       runSpacing: 5,
                       children: [
-                        if (classification.isNotEmpty) _chip(classification, Colors.deepPurple),
+                        if (classification.isNotEmpty)
+                          _chip(classification, Colors.deepPurple),
                         if (type.isNotEmpty) _chip(type, Colors.blue),
                         _chip(status, status == 'مستمر' ? Colors.green : Colors.orange),
                       ],
                     ),
                     const SizedBox(height: 6),
                     if (national.isNotEmpty)
-                      Text('الهوية الوطنية: $national', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey), textAlign: TextAlign.right),
+                      Text(
+                        'الهوية الوطنية: $national',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                        textAlign: TextAlign.right,
+                      ),
                     if (employeeNo.isNotEmpty)
-                      Text('الرقم الوظيفي: $employeeNo', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey), textAlign: TextAlign.right),
+                      Text(
+                        'الرقم الوظيفي: $employeeNo',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                        textAlign: TextAlign.right,
+                      ),
                   ],
                 ),
               ),
@@ -532,8 +642,14 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
   Widget _chip(String label, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.10), borderRadius: BorderRadius.circular(20)),
-      child: Text(label, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+      ),
     );
   }
 
@@ -545,9 +661,17 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
         children: [
           const Icon(Icons.error_outline, color: Colors.red, size: 42),
           const SizedBox(height: 10),
-          Text(_error!, style: TextStyle(fontWeight: FontWeight.bold, color: text), textAlign: TextAlign.center),
+          Text(
+            _error!,
+            style: TextStyle(fontWeight: FontWeight.bold, color: text),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 14),
-          ElevatedButton.icon(onPressed: _loadTeachers, icon: const Icon(Icons.refresh), label: const Text('إعادة المحاولة')),
+          ElevatedButton.icon(
+            onPressed: _loadTeachers,
+            icon: const Icon(Icons.refresh),
+            label: const Text('إعادة المحاولة'),
+          ),
         ],
       ),
     );
@@ -561,7 +685,10 @@ class _TeachersListScreenState extends State<TeachersListScreen> {
         children: [
           const Icon(Icons.people_outline, size: 55, color: Colors.grey),
           const SizedBox(height: 12),
-          Text(_query.isEmpty ? 'لا توجد بيانات للمعلمين' : 'لا توجد نتائج مطابقة للبحث', style: TextStyle(color: text, fontWeight: FontWeight.bold)),
+          Text(
+            _query.isEmpty ? 'لا توجد بيانات للمعلمين' : 'لا توجد نتائج مطابقة للبحث',
+            style: TextStyle(color: text, fontWeight: FontWeight.bold),
+          ),
         ],
       ),
     );
