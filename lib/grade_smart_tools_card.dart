@@ -350,7 +350,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
 
   Future<void> _run(bool ignore) async {
     if (selectedTerms.isEmpty || selectedStages.isEmpty || selectedSubjects.isEmpty) {
-      _show('اختر الفصول والصفوف والمواد أولاً.', Colors.orange);
+      _show('اختر الصفوف والمواد والفصول أولاً.', Colors.orange);
       return;
     }
 
@@ -503,43 +503,13 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
                 ],
               ),
               const SizedBox(height: 10),
-              Text(status, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 12)),
+              Text(status, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
               if (error != null) ...[
                 const SizedBox(height: 8),
-                Text(error!, style: const TextStyle(fontWeight: FontWeight.bold,color: Colors.red, fontSize: 12)),
+                Text(error!, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 12)),
               ],
               const SizedBox(height: 12),
-              _choiceButton(
-                label: 'الفصول',
-                value: selectedTerms.isEmpty ? 'اختر فصلاً أو عدة فصول' : selectedTerms.join('، '),
-                icon: Icons.event_note_rounded,
-                enabled: !loadingCatalog && _termLabels.isNotEmpty,
-                onTap: _chooseTerms,
-              ),
-              const SizedBox(height: 2),
-              Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF7F8FB),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE1E6EF)),
-                ),
-                child: CheckboxListTile(
-                  dense: true,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  value: allStagesAndSubjects,
-                  onChanged: loadingCatalog ? null : (v) => _setAllStagesAndSubjects(v == true),
-                  title: const Text(
-                    'تطبيق العملية على جميع الصفوف والمواد الدراسية',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  subtitle: const Text(
-                    'عند التفعيل لن تحتاج لاختيار الصفوف والمواد يدوياً.',
-                    style: TextStyle(fontWeight: FontWeight.bold,fontSize: 11),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
+              // الترتيب الجديد: الصف الدراسي ثم المادة الدراسية ثم الفصول في الأسفل
               _choiceButton(
                 label: 'الصف الدراسي',
                 value: selectedStages.isEmpty ? 'اختر صفاً أو عدة صفوف' : selectedStages.map(_stageLabel).join('، '),
@@ -554,6 +524,37 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
                 icon: Icons.menu_book_rounded,
                 enabled: selectedStages.isNotEmpty,
                 onTap: _chooseSubjects,
+              ),
+              const SizedBox(height: 2),
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: dark ? Colors.black26 : const Color(0xFFF7F8FB),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: dark ? Colors.white24 : const Color(0xFFE1E6EF)),
+                ),
+                child: CheckboxListTile(
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: allStagesAndSubjects,
+                  onChanged: loadingCatalog ? null : (v) => _setAllStagesAndSubjects(v == true),
+                  title: const Text(
+                    'تطبيق العملية على جميع الصفوف والمواد الدراسية',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  subtitle: const Text(
+                    'عند التفعيل لن تحتاج لاختيار الصفوف والمواد يدوياً.',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              _choiceButton(
+                label: 'الفصول',
+                value: selectedTerms.isEmpty ? 'اختر فصلاً أو عدة فصول' : selectedTerms.join('، '),
+                icon: Icons.event_note_rounded,
+                enabled: !loadingCatalog && _termLabels.isNotEmpty,
+                onTap: _chooseTerms,
               ),
               const SizedBox(height: 14),
               Row(
@@ -593,15 +594,16 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
     required bool enabled,
     required VoidCallback onTap,
   }) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return InkWell(
       onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 13),
         decoration: BoxDecoration(
-          color: enabled ? const Color(0xFFF7F8FB) : Colors.grey.withOpacity(.08),
+          color: enabled ? (dark ? Colors.black26 : const Color(0xFFF7F8FB)) : Colors.grey.withOpacity(.08),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE1E6EF)),
+          border: Border.all(color: dark ? Colors.white24 : const Color(0xFFE1E6EF)),
         ),
         child: Row(
           children: [
@@ -611,7 +613,7 @@ class _GradeSmartToolsCardState extends State<GradeSmartToolsCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: const TextStyle(fontWeight: FontWeight.bold,fontSize: 12, color: Colors.grey)),
+                  Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
                   const SizedBox(height: 3),
                   Text(value, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
                 ],
