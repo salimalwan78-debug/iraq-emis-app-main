@@ -235,11 +235,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'employeeCategory': 'نوع الموظف *',
     'classification': 'التصنيف *',
     'jobDesignation': 'المسمى الوظيفي',
-    'positionType': 'العنوان الوظيفي *',
     'employmentGrade': 'الدرجة الوظيفية',
     'weeklyTeachingQuota': 'النصاب الأسبوعي للحصص',
-    'dateOfStartWorking': 'تاريخ أول تعيين للموظف *',
     'currentPosition': 'المنصب الحالي *',
+    'positionType': 'العنوان الوظيفي *',
+    'dateOfStartWorking': 'تاريخ أول تعيين للموظف *',
     'employmentStatus': 'الحالة الوظيفية *',
     'employmentStatusReason': 'سبب الحالة الوظيفية',
     'assignedEntityName': 'الجهة المنسب أو المكلف إليها',
@@ -878,7 +878,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         value: safeValue,
         isExpanded: true,
         dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
-        style: TextStyle(color: isDark ? Colors.white : textColor, fontSize: 16, fontWeight: FontWeight.bold),
         decoration: InputDecoration(
           labelText: _label(key),
           labelStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
@@ -886,6 +885,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           fillColor: isDark ? Colors.black12 : Colors.grey[50],
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
+        style: TextStyle(color: isDark ? Colors.white : textColor, fontSize: 16, fontWeight: FontWeight.bold),
         items: uniqueItems.map((item) {
           return DropdownMenuItem<dynamic>(
             value: _optionValue(item),
