@@ -44,6 +44,7 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
   bool _speechListening = false;
   String? _speechError;
   int? _activeVoiceSessionId;
+  int? _activeStudentVoiceId;
   int _nextVoiceSessionId = 0;
   bool _speechStopRequested = false;
   bool _micPointerDown = false;
@@ -292,10 +293,8 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
     Map<String, dynamic> student,
     Set<String> selectedExamIds,
   ) {
-    final rawGrades = student['grades'] ??
-        student['examScores'] ??
-        student['scores'] ??
-        student['marks'];
+    final rawGrades =
+        student['grades'] ?? student['examScores'] ?? student['scores'] ?? student['marks'];
 
     if (rawGrades is List) {
       for (final item in rawGrades) {
@@ -547,6 +546,7 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
     _legacyFinalizationTimer = null;
     _speechStopRequested = false;
     _activeVoiceSessionId = null;
+    _activeStudentVoiceId = null;
     if (mounted) setState(() => _speechListening = false);
   }
 
@@ -595,6 +595,7 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
 
     final sessionId = ++_nextVoiceSessionId;
     _activeVoiceSessionId = sessionId;
+    _activeStudentVoiceId = studentId;
     _scrollGradeFieldIntoView(studentId);
     _speechStopRequested = false;
     if (mounted) {
@@ -687,6 +688,7 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
     }
     final sessionId = ++_nextVoiceSessionId;
     _activeVoiceSessionId = sessionId;
+    _activeStudentVoiceId = studentId;
     _scrollGradeFieldIntoView(studentId);
     _speechStopRequested = false;
     if (mounted) {
@@ -702,20 +704,28 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
     if (saving) return;
     if (!await _ensureMicrophoneAccess()) return;
     if (_usingLegacyVoice) {
-      if (_activeVoiceSessionId != null) {
+      if (_activeVoiceSessionId != null && _activeStudentVoiceId == studentId) {
         await LegacySpeechService.stop();
-        setState(() => _speechListening = false);
-        _activeVoiceSessionId = null;
+        setState(() {
+          _speechListening = false;
+          _activeVoiceSessionId = null;
+          _activeStudentVoiceId = null;
+        });
       } else {
+        if (_activeVoiceSessionId != null) await LegacySpeechService.stop();
         await _startLegacyVoiceSession(studentId);
       }
       return;
     }
-    if (_activeVoiceSessionId != null) {
+    if (_activeVoiceSessionId != null && _activeStudentVoiceId == studentId) {
       await GoogleSpeechService.stopListening();
-      setState(() => _speechListening = false);
-      _activeVoiceSessionId = null;
+      setState(() {
+        _speechListening = false;
+        _activeVoiceSessionId = null;
+        _activeStudentVoiceId = null;
+      });
     } else {
+      if (_activeVoiceSessionId != null) await GoogleSpeechService.stopListening();
       await _startGoogleVoiceSession(studentId);
     }
   }
@@ -742,6 +752,7 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
     }
     if (_activeVoiceSessionId != null) {
       _activeVoiceSessionId = null;
+      _activeStudentVoiceId = null;
       setState(() => _speechListening = false);
       if (_usingLegacyVoice) {
         unawaited(LegacySpeechService.stop());
@@ -776,6 +787,7 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
     setState(() => _voiceSequentialMode = false);
     if (_activeVoiceSessionId != null) {
       _activeVoiceSessionId = null;
+      _activeStudentVoiceId = null;
       setState(() => _speechListening = false);
       if (_usingLegacyVoice) {
         unawaited(LegacySpeechService.stop());
@@ -1047,28 +1059,6 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
                         _headerCard(),
                         const SizedBox(height: 14),
                         _sequentialVoiceControl(),
-                        if (!AppCore.voiceInputEnabled) ...[
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                                color: Colors.orange.shade50,
-                                borderRadius: BorderRadius.circular(12)),
-                            child: const Text('الميكروفون مغلق من الإعدادات.',
-                                style: TextStyle(fontWeight: FontWeight.w600)),
-                          ),
-                        ],
-                        if (_speechError != null) ...[
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                                color: Colors.orange.shade50,
-                                borderRadius: BorderRadius.circular(12)),
-                            child: Text(_speechError!,
-                                style: const TextStyle(fontWeight: FontWeight.w600)),
-                          ),
-                        ],
                         Card(
                           elevation: 0,
                           color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
@@ -1381,6 +1371,10 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
     final ignored = examIgnored == true;
     final name =
         '${student['name'] ?? student['fullName'] ?? student['studentName'] ?? ''}';
+    
+    // التحقق المخصص لجعل أيقونة الميكروفون الخاصة بهذا الطالب تتحول للون الأحمر حصراً عند تفعيله
+    final isThisStudentActiveMic = _speechListening && _activeStudentVoiceId == id;
+
     return Card(
       elevation: 0,
       color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
@@ -1428,10 +1422,10 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
                     tooltip: 'إدخال الدرجة بالصوت',
                     onPressed: () => _toggleVoiceInput(id),
                     icon: Icon(
-                      _speechListening && _activeVoiceSessionId != null
+                      isThisStudentActiveMic
                           ? Icons.mic_rounded
                           : Icons.mic_none_rounded,
-                      color: _speechListening && _activeVoiceSessionId != null
+                      color: isThisStudentActiveMic
                           ? Colors.red
                           : Colors.grey,
                     ),
