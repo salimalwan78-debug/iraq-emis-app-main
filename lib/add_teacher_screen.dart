@@ -49,7 +49,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
   Timer? _liveTimer;
   String _liveStatus = 'المزامنة الحية مع EMIS قيد التشغيل';
 
-  // المسارات الفعلية الموجودة في سيرفر EMIS
   static const Map<String, String> _optionEndpoints = {
     'countryOfBirth': '/selectoption/بلد الولادة',
     'nationality': '/selectoption/الجنسية',
@@ -65,7 +64,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     'specialization': '/selectoption/الإختصاص',
   };
 
-  // القوائم الثابتة المعتمدة في ملفات النظام الأصلي (TeacherFormPage & constants)
   static final Map<String, List<Map<String, dynamic>>> _defaultStaticOptions = {
     'gender': [
       <String, dynamic>{'value': '1', 'displayName': 'ذكر'},
@@ -286,7 +284,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     for (final key in labels.keys) {
       c[key] = TextEditingController();
     }
-    // القيم الافتراضية المعتمدة في نظام EMIS عند فتح نموذج إضافة معلم
     c['nationality']!.text = 'العراق';
     c['issuingCountry']!.text = 'العراق';
     c['countryOfBirth']!.text = 'العراق';
@@ -454,7 +451,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
 
   Future<void> _load() async {
     try {
-      // إظهار الواجهة فوراً بالخيارات الثابتة ثم تحديث الخيارات من السيرفر
       if (mounted) setState(() => loading = false);
 
       for (final entry in _optionEndpoints.entries) {
@@ -543,7 +539,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       _addressCountryId = _value(iraq);
       _addressGovernorates = _childrenOf(iraq);
 
-      // اختيار محافظة القادسية افتراضياً إن وجدت لتسهيل الإدخال
       for (final gov in _addressGovernorates) {
         if (_text(gov).contains('القادسية') || _text(gov).contains('الديوانية')) {
           _addressGovernorateId = _value(gov);
@@ -581,7 +576,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         _addressDistricts.isNotEmpty ? _value(_addressDistricts.first) : null;
   }
 
-  // ==================== معالجة ورفع الصورة الشخصية ====================
   Future<void> _initializeSelfieSegmenter() async {
     _selfieSegmenter ??= SelfieSegmenter(
       mode: SegmenterMode.single,
@@ -802,7 +796,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     return null;
   }
 
-  // ==================== عناصر الواجهة والحقول ====================
   String _formatTypedDate(String value) {
     final digits = value
         .replaceAll(RegExp(r'[^0-9٠-٩۰-۹]'), '')
@@ -833,25 +826,29 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     required List<Map<String, dynamic>> items,
     required ValueChanged<String?> onChanged,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
     final safe = items.any((x) => _value(x) == value) ? value : null;
     return DropdownButtonFormField<String>(
       value: safe,
       isExpanded: true,
+      dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
+      style: TextStyle(fontWeight: FontWeight.bold, color: textColor, fontSize: 16),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        fillColor: isDark ? Colors.black12 : Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF))),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF))),
       ),
-      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       items: items
           .map((x) => DropdownMenuItem<String>(
                 value: _value(x),
                 child: Text(
                   _text(x),
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
                 ),
               ))
           .toList(),
@@ -886,6 +883,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     TextInputType? keyboard,
     int maxLines = 1,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isDate = _isDateKey(key);
     return TextFormField(
       controller: c[key],
@@ -908,7 +906,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         hintText: isDate ? 'YYYY-MM-DD' : null,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
-        fillColor: Colors.white,
+        fillColor: isDark ? Colors.black12 : Colors.white,
         suffixIcon: isDate
             ? IconButton(
                 tooltip: 'اختر من التقويم',
@@ -918,14 +916,14 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
             : null,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
+          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
+          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF)),
         ),
       ),
-      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+      style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87),
       validator: required
           ? (v) => (v == null || v.trim().isEmpty) ? 'هذا الحقل مطلوب' : null
           : null,
@@ -963,6 +961,8 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     bool required = false,
     List<String> fallback = const [],
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
     final values = _values(key);
     for (final x in fallback) {
       if (!values.any((v) => _value(v) == x)) {
@@ -976,19 +976,20 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     return DropdownButtonFormField<String>(
       value: safeValue,
       isExpanded: true,
-      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+      dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
+      style: TextStyle(fontWeight: FontWeight.bold, color: textColor, fontSize: 16),
       decoration: InputDecoration(
         labelText: labels[key] ?? key,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
-        fillColor: Colors.white,
+        fillColor: isDark ? Colors.black12 : Colors.white,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
+          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
+          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF)),
         ),
       ),
       items: values
@@ -998,7 +999,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
               child: Text(
                 _text(x),
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
               ),
             ),
           )
@@ -1024,39 +1025,41 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     );
   }
 
-  Widget _section(String title, List<Widget> children) => Container(
-        margin: const EdgeInsets.only(bottom: 15),
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(.045),
-              blurRadius: 12,
-              offset: const Offset(0, 5),
+  Widget _section(String title, List<Widget> children) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 15),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.045),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF4527A0),
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              title,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF4527A0),
-              ),
-            ),
-            const SizedBox(height: 14),
-            ...children,
-          ],
-        ),
-      );
+          ),
+          const SizedBox(height: 14),
+          ...children,
+        ],
+      ),
+    );
+  }
 
-  // ==================== الحفظ والإرسال إلى EMIS ====================
   void _flattenToFormFields(
     Map<String, String> target,
     String prefix,
@@ -1082,7 +1085,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     final uri = Uri.parse('https://emis.moedu.gov.iq/api/employee/addemployee');
     final jsonString = jsonEncode(payload);
 
-    // 1. المحاولة الأولى: POST بصيغة application/json (الطريقة الرسمية في store-B4UkWgHd.js)
     var response = await http.post(
       uri,
       headers: {
@@ -1096,7 +1098,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       return response;
     }
 
-    // 2. المحاولة الثانية: POST بصيغة multipart/form-data في حال طلب السيرفر FromForm
     final multipart = http.MultipartRequest('POST', uri);
     multipart.headers['Authorization'] = widget.token;
     multipart.headers['Accept'] = 'application/json';
@@ -1136,7 +1137,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     });
 
     try {
-      // 1. رفع الصورة الشخصية إن تم اختيارها
       if (_pickedImage != null) {
         final uploaded = await _uploadImageToEmisServer(_pickedImage!);
         if (uploaded != null && uploaded.isNotEmpty) {
@@ -1144,7 +1144,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         }
       }
 
-      // 2. التحقق من عدم تكرار رقم الهوية أو الرقم الوظيفي
       final idNumber = c['nationalId']!.text.trim();
       final idType = int.tryParse(c['idType']!.text.trim()) ?? 12;
 
@@ -1182,7 +1181,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       final structureIdInt =
           int.tryParse(_addressDistrictId ?? _addressGovernorateId ?? '1') ?? 1;
 
-      // 3. بناء الـ Payload مطابقاً تماماً لدالة X() في TeacherFormPage.js
       final payload = <String, dynamic>{
         'EmployeeIdNumber': empIdNum,
         'FamilyNumber': _n('familyNumber'),
@@ -1324,7 +1322,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
   List<Widget> _buildDynamicIdFields() {
     final idType = int.tryParse(c['idType']?.text.trim() ?? '12') ?? 12;
     if (idType == 3) {
-      // هوية الأحوال المدنية
       return [
         _textField('nationalId', required: true),
         const SizedBox(height: 10),
@@ -1339,7 +1336,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         _textField('issuer'),
       ];
     } else if (idType == 22) {
-      // شهادة الولادة
       return [
         Row(
           children: [
@@ -1358,7 +1354,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         ),
       ];
     } else if (idType == 16) {
-      // وثيقة أخرى
       return [
         Row(
           children: [
@@ -1369,7 +1364,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         ),
       ];
     } else {
-      // البطاقة الوطنية الموحدة (12)
       return [
         _textField(
           'nationalId',
@@ -1382,6 +1376,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final eduLevel = c['educationLevel']?.text.trim() ?? '';
     final showUniv = eduLevel == 'دبلوم' || eduLevel == 'بكالوريوس';
     final showSpec =
@@ -1389,7 +1384,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     final empStatus = c['status']?.text.trim() ?? 'مستمر';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF5F7FA),
       appBar: AppBar(
         title: const Text(
           'إضافة معلم جديد',
@@ -1422,7 +1417,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                           _error(error!),
                         ],
                         const SizedBox(height: 14),
-                        // قسم الصورة الشخصية
                         Center(
                           child: Stack(
                             children: [
@@ -1778,7 +1772,8 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                       ],
                     ),
                   ),
-                ),
+                ],
+              ),
           if (!loading)
             Positioned(
               left: 0,
@@ -1856,4 +1851,109 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
             style: const TextStyle(
                 fontWeight: FontWeight.bold, color: Colors.red)),
       );
+
+  Widget _addressDropdown({
+    required String label,
+    required String? value,
+    required List<Map<String, dynamic>> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final safe = items.any((x) => _value(x) == value) ? value : null;
+    return DropdownButtonFormField<String>(
+      value: safe,
+      isExpanded: true,
+      dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
+      style: TextStyle(fontWeight: FontWeight.bold, color: textColor, fontSize: 16),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+        filled: true,
+        fillColor: isDark ? Colors.black12 : Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF))),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF))),
+      ),
+      items: items
+          .map((x) => DropdownMenuItem<String>(
+                value: _value(x),
+                child: Text(
+                  _text(x),
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+                ),
+              ))
+          .toList(),
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _select(
+    String key, {
+    bool required = false,
+    List<String> fallback = const [],
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final values = _values(key);
+    for (final x in fallback) {
+      if (!values.any((v) => _value(v) == x)) {
+        values.add(<String, dynamic>{'value': x, 'displayName': x});
+      }
+    }
+
+    final current = c[key]!.text.trim();
+    final safeValue = values.any((x) => _value(x) == current) ? current : null;
+
+    return DropdownButtonFormField<String>(
+      value: safeValue,
+      isExpanded: true,
+      dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
+      style: TextStyle(fontWeight: FontWeight.bold, color: textColor, fontSize: 16),
+      decoration: InputDecoration(
+        labelText: labels[key] ?? key,
+        labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+        filled: true,
+        fillColor: isDark ? Colors.black12 : Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF)),
+        ),
+      ),
+      items: values
+          .map(
+            (x) => DropdownMenuItem<String>(
+              value: _value(x),
+              child: Text(
+                _text(x),
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+              ),
+            ),
+          )
+          .where((x) => x.value != null && x.value!.isNotEmpty)
+          .toList(),
+      onTap: () => _focusLive(key),
+      onChanged: (v) {
+        setState(() {
+          c[key]!.text = v ?? '';
+          if (key == 'employmentType') {
+            if (v == 'ملاك') c['classification']!.text = 'معلم';
+            if (v == 'عقد') c['classification']!.text = 'موظف بعقد';
+          }
+        });
+        _focusLive(key);
+        if (key == 'employmentType') {
+          _liveSyncKey.currentState?.refreshOptions(['classification']);
+        }
+      },
+      validator: required
+          ? (v) => (v == null || v.trim().isEmpty) ? 'هذا الحقل مطلوب' : null
+          : null,
+    );
+  }
 }
