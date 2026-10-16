@@ -779,10 +779,13 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
             borderRadius: BorderRadius.circular(15),
           ),
         ),
-        items: data
+        // Flutter may render the selected value using the surrounding theme
+        // instead of the menu item's TextStyle. Set both paths explicitly.
+        selectedItemBuilder: (context) => data
+            .where((x) => _id(x) != null && _id(x)!.isNotEmpty)
             .map(
-              (x) => DropdownMenuItem<String>(
-                value: _id(x),
+              (x) => Align(
+                alignment: AlignmentDirectional.centerStart,
                 child: Text(
                   _label(x),
                   overflow: TextOverflow.ellipsis,
@@ -792,6 +795,32 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
                     color: Theme.of(context).brightness == Brightness.dark
                         ? Colors.white
                         : Colors.black87,
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+        items: data
+            .map(
+              (x) => DropdownMenuItem<String>(
+                value: _id(x),
+                child: DefaultTextStyle.merge(
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white
+                        : Colors.black87,
+                  ),
+                  child: Text(
+                    _label(x),
+                    overflow: TextOverflow.ellipsis,
+                    textDirection: TextDirection.rtl,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white
+                          : Colors.black87,
+                    ),
                   ),
                 ),
               ),

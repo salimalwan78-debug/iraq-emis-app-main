@@ -1698,9 +1698,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
               ? Colors.white
               : Colors.black87,
         ),
-        dropdownColor: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF242424)
-            : Colors.white,
       textDirection: TextDirection.rtl,
       onChanged: (val) {
         if (isDate) {

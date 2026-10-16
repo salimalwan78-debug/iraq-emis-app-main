@@ -850,9 +850,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
               ? Colors.white
               : Colors.black87,
         ),
-        dropdownColor: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF242424)
-            : Colors.white,
       items: items
           .map((x) => DropdownMenuItem<String>(
                 value: _value(x),
