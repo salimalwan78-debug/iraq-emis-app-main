@@ -48,6 +48,11 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
   final Map<String, TextEditingController> _dateControllers = {};
   final Set<String> _speechEnabledFields = {'name','fatherName','grandFatherName','fathersGrandFatherName','surName','motherName','mothersFatherName','mothersGrandFatherName','homeTown','notes','issuer','nameOfDocument','town','area','quarter','street','address1','address2','closestLocation','homePhoneNumber','censusNumber','dateOfBirth','idNumber','jinsiyaIdNumber','recordNumber','pageNumber','birthCertificateNumber','otherIdNumber'};
 
+
+  // ============================================================
+  // EMIS LIVE REFERENCE DATA
+  // ============================================================
+
   final Map<String, List<Map<String, dynamic>>> _options = {};
   final Set<String> _loadingOptions = <String>{};
 
@@ -213,6 +218,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       if (response.statusCode != 200) throw Exception('HTTP ${response.statusCode}');
       final student = _unwrap(jsonDecode(utf8.decode(response.bodyBytes)));
 
+      // These are the real option APIs observed in the supplied EMIS HAR.
       for (final key in _optionEndpoints.keys) {
         await _loadOptions(key);
       }
@@ -361,6 +367,26 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
+  void _setAddressGovernorate(String? value) {
+    final country = _addressCountries.where((x) => _optionValue(x)?.toString() == value).toList();
+    setState(() {
+      _addressCountryId = value;
+      _addressGovernorates = country.isEmpty ? [] : _childrenOf(country.first);
+      _addressGovernorateId = null;
+      _addressDistrictId = null;
+      _addressDistricts = [];
+    });
+  }
+
+  void _setAddressDistrict(String? value) {
+    final gov = _addressGovernorates.where((x) => _optionValue(x)?.toString() == value).toList();
+    setState(() {
+      _addressGovernorateId = value;
+      _addressDistricts = gov.isEmpty ? [] : _childrenOf(gov.first);
+      _addressDistrictId = null;
+    });
+  }
+
   void _onSpeechEvent(Map<String, dynamic> event) {
     if (!mounted || event['sessionId'] != _activeSpeechSession) return;
     final type = event['type']?.toString();
@@ -370,6 +396,8 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
       final key = _activeSpeechKey!;
       if (_isDateField(key)) {
+        // Partial speech results often contain only fragments of a date.
+        // Never replace the field until a complete, valid date is recognized.
         final normalized = _normalizeRecognizedDate(raw);
         if (normalized == null) return;
         final controller = _dateControllers[key];
@@ -384,6 +412,9 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
           _speechError = null;
         });
       } else {
+        // Phone numbers must remain a continuous digit string. Speech services
+        // commonly return digit-by-digit results separated by spaces; retaining
+        // those spaces in an RTL form makes the number appear reversed/split.
         final recognizedText = <String>{'homePhoneNumber', 'idNumber'}
                 .contains(key)
             ? _normalizeDigits(raw).replaceAll(RegExp(r'[^0-9]'), '')
@@ -430,7 +461,7 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       final started = await GoogleSpeechService.startListening(sessionId: id, locale: 'ar-IQ');
       if (!started) {
         _activeSpeechSession = null;
-        throw Exception('تعذر بدء الاستماع.');
+        throw Exception('تعذر بدء الاستماع. تحقق من خدمة التعرف الصوتي على الهاتف.');
       }
       if (mounted) setState(() { _speechListening = true; _speechError = null; });
     } catch (e) {
@@ -448,12 +479,93 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     for (final ch in value.runes) {
       final c = String.fromCharCode(ch);
       final a = arabicIndic.indexOf(c);
-      if (a >= 0) { out.write(a); continue; }
+      if (a >= 0) {
+        out.write(a);
+        continue;
+      }
       final e = easternArabicIndic.indexOf(c);
-      if (e >= 0) { out.write(e); continue; }
+      if (e >= 0) {
+        out.write(e);
+        continue;
+      }
       out.write(c);
     }
     return out.toString();
+  }
+
+  String _normalizeSpokenWord(String word) {
+    var out = word.toLowerCase()
+        .replaceAll(RegExp(r'[ًٌٍَُِّْـٰ]'), '')
+        .replaceAll('أ', 'ا').replaceAll('إ', 'ا').replaceAll('آ', 'ا')
+        .replaceAll('ى', 'ي').replaceAll('ة', 'ه')
+        .replaceAll(RegExp(r'[^\u0600-\u06FFa-z0-9٠-٩۰-۹]'), '')
+        .replaceAll(' ', '');
+    const exact = {'واحد', 'واحدة', 'واحده'};
+    if (out.startsWith('و') && out.length > 1 && !exact.contains(out)) out = out.substring(1);
+    return out;
+  }
+
+  int? _smallArabicNumber(String raw) {
+    final word = _normalizeSpokenWord(raw);
+    const units = <String, int>{
+      'صفر': 0, 'واحد': 1, 'واحدة': 1, 'واحده': 1, 'احد': 1,
+      'اثنان': 2, 'اثنين': 2, 'اثنتان': 2, 'اثنتين': 2, 'اثنتا': 2,
+      'اثنتي': 2, 'اثن': 2, 'ثنين': 2, 'ثنتين': 2,
+      'ثلاثة': 3, 'ثلاث': 3, 'ثلاثه': 3, 'اربعة': 4, 'اربع': 4,
+      'اربعه': 4, 'أربعة': 4, 'خمسة': 5, 'خمس': 5, 'خمسه': 5,
+      'ستة': 6, 'سته': 6, 'ست': 6, 'سبعة': 7, 'سبع': 7, 'سبعه': 7,
+      'ثمانية': 8, 'ثماني': 8, 'تمانية': 8, 'تمانيه': 8, 'ثمنية': 8,
+      'تسعة': 9, 'تسع': 9, 'تسعه': 9, 'عشرة': 10, 'عشر': 10,
+      'الفين': 2000, 'ألفين': 2000,
+      'مائة': 100, 'مائه': 100, 'مئة': 100, 'ميه': 100,
+      'مائتين': 200, 'مئتين': 200, 'ثلاثمائة': 300, 'ثلاثمائه': 300,
+      'اربعمائة': 400, 'اربعمائه': 400, 'أربعمائة': 400, 'خمسمائة': 500,
+      'خمسمائه': 500, 'ستمائة': 600, 'ستمائه': 600, 'سبعمائة': 700,
+      'سبعمائه': 700, 'ثمانمائة': 800, 'ثمانمائه': 800,
+      'تسعمائة': 900, 'تسعمائه': 900,
+      'احدعشر': 11, 'احدعشرة': 11, 'اثناشر': 12, 'اثنعشر': 12,
+      'عشرين': 20, 'عشرون': 20, 'ثلاثين': 30, 'ثلاثون': 30,
+      'اربعين': 40, 'اربعون': 40, 'خمسين': 50, 'خمسون': 50,
+      'ستين': 60, 'ستون': 60, 'سبعين': 70, 'سبعون': 70,
+      'ثمانين': 80, 'ثمانون': 80, 'تسعين': 90, 'تسعون': 90,
+    };
+    if (units.containsKey(word)) return units[word];
+    final digits = _normalizeDigits(word);
+    return RegExp(r'^\d{1,4}$').hasMatch(digits) ? int.tryParse(digits) : null;
+  }
+
+  int? _arabicYearValue(List<String> words) {
+    var total = 0;
+    var found = false;
+    for (var i = 0; i < words.length; i++) {
+      final word = _normalizeSpokenWord(words[i]);
+      if (word.isEmpty || word == 'و') continue;
+      if (word == 'الفين' || word == 'ألفين') { total += 2000; found = true; continue; }
+      if (word == 'الف' || word == 'الاف') { total += 1000; found = true; continue; }
+      if (word == 'مائة' || word == 'مائه' || word == 'مئه' || word == 'مئة' || word == 'ميه') { total += 100; found = true; continue; }
+      const hundreds = <String, int>{
+        'مائتين': 200, 'مئتين': 200, 'ثلاثمائه': 300, 'اربعمائه': 400,
+        'خمسمائه': 500, 'ستمائه': 600, 'سبعمائه': 700, 'ثمانمائه': 800,
+        'تسعمائه': 900,
+      };
+      if (hundreds.containsKey(word)) { total += hundreds[word]!; found = true; continue; }
+
+      final next = i + 1 < words.length ? _normalizeSpokenWord(words[i + 1]) : '';
+      const hundredWords = {'مائة', 'مائه', 'مئه', 'مئة', 'ميه'};
+      final leadingNumber = _smallArabicNumber(word);
+      if (leadingNumber != null && leadingNumber >= 2 && leadingNumber <= 9 && hundredWords.contains(next)) {
+        total += leadingNumber * 100;
+        found = true;
+        i++;
+        continue;
+      }
+
+      final n = _smallArabicNumber(word);
+      if (n != null) { total += n; found = true; continue; }
+      final numeric = RegExp(r'\d{3,4}').firstMatch(_normalizeDigits(word));
+      if (numeric != null) { total += int.parse(numeric.group(0)!); found = true; }
+    }
+    return found ? total : null;
   }
 
   DateTime? _parseSpokenDate(String raw, String key) {
@@ -468,7 +580,13 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         day = digitGroups[0]; month = digitGroups[1]; year = digitGroups[2];
       }
     } else {
-      return null;
+      final cleaned = raw.replaceAll(RegExp(r'[,},;؛/\\|]+'), ' ')
+          .replaceAll('-', ' ').replaceAll('ـ', ' ').trim();
+      final words = cleaned.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      if (words.length < 3) return null;
+      day = _smallArabicNumber(words[0]);
+      month = _smallArabicNumber(words[1]);
+      year = _arabicYearValue(words.sublist(2));
     }
     if (day == null || month == null || year == null) return null;
     if (year < 100) year += year >= 50 ? 1900 : 2000;
@@ -480,6 +598,36 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
   }
 
   String? _normalizeRecognizedDate(String raw) {
+    final value = raw.trim().replaceAll('／', '/').replaceAll('٫', '.');
+    var m = RegExp(r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$').firstMatch(value);
+    if (m != null) {
+      final year = int.parse(m.group(1)!);
+      var month = int.parse(m.group(2)!);
+      var day = int.parse(m.group(3)!);
+
+      // Correct yyyy-dd-MM only when the middle component cannot be a month.
+      if (month > 12 && month <= 31 && day >= 1 && day <= 12) {
+        final temp = month;
+        month = day;
+        day = temp;
+      }
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      final date = DateTime(year, month, day);
+      if (date.year != year || date.month != month || date.day != day) return null;
+      return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+    }
+
+    m = RegExp(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$').firstMatch(value);
+    if (m != null) {
+      // Spoken day-month-year is normalized to the app's yyyy-MM-dd format.
+      final day = int.parse(m.group(1)!);
+      final month = int.parse(m.group(2)!);
+      final year = int.parse(m.group(3)!);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      final date = DateTime(year, month, day);
+      if (date.year != year || date.month != month || date.day != day) return null;
+      return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+    }
     final spokenDate = _parseSpokenDate(raw, 'dateOfBirth');
     if (spokenDate != null) {
       return '${spokenDate.year.toString().padLeft(4, '0')}-'
@@ -493,11 +641,15 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     final v = value.trim();
     final iso = RegExp(r'^(\d{4})[-/]?(\d{2})[-/]?(\d{2})$').firstMatch(v);
     if (iso != null) return '${iso.group(1)}-${iso.group(2)}-${iso.group(3)}';
+    final dmy = RegExp(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$').firstMatch(v);
+    if (dmy != null) return '${dmy.group(3)}-${dmy.group(2)!.padLeft(2, '0')}-${dmy.group(1)!.padLeft(2, '0')}';
     return v.replaceAll('/', '-');
   }
 
   String _formatTypedDate(String value) {
-    final digits = value.replaceAll(RegExp(r'[^0-9٠-٩۰-۹]'), '');
+    final digits = value.replaceAll(RegExp(r'[^0-9٠-٩۰-۹]'), '')
+      .replaceAllMapped(RegExp('[٠-٩]'), (Match m) => String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x0660 + 48))
+      .replaceAllMapped(RegExp('[۰-۹]'), (Match m) => String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x06F0 + 48));
     final limited = digits.length > 8 ? digits.substring(0, 8) : digits;
     var out = limited.substring(0, limited.length >= 4 ? 4 : limited.length);
     if (limited.length > 4) out += '-${limited.substring(4, limited.length >= 6 ? 6 : limited.length)}';
@@ -538,8 +690,6 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       child: DropdownButtonFormField<dynamic>(
         value: safeValue,
         isExpanded: true,
-        dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
-        style: TextStyle(color: isDark ? Colors.white : textColor, fontSize: 16, fontWeight: FontWeight.bold),
         decoration: InputDecoration(
           labelText: requiredField ? '${_label(key)} *' : _label(key),
           labelStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
@@ -547,6 +697,8 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
           fillColor: isDark ? Colors.black12 : Colors.grey[50],
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
+        dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
+        style: TextStyle(color: isDark ? Colors.white : textColor, fontSize: 16, fontWeight: FontWeight.bold),
         items: items.map((item) => DropdownMenuItem<dynamic>(
           value: _optionValue(item),
           child: Text(_optionText(item), style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : textColor)),
@@ -557,6 +709,9 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
           setState(() {
             owner[key] = newValue;
             if (key == 'stageId') owner['classRoomId'] = null;
+            if (key == 'idType' && owner.containsKey('idNumber')) {
+              // Do not erase the stored identity object; only conditional UI changes.
+            }
           });
           if (key == 'stageId') {
             await _loadStageDetails(newValue?.toString());
@@ -685,13 +840,74 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     'apartmentNumber', 'buildingNumber', 'latitude', 'longitude', 'schoolPhoneNumber', 'mobilePhoneNumber', 'employeePhoneNumber', 'email', 'website',
   };
 
-  bool _identityFieldVisible(String key, dynamic idType) {
-    final t = int.tryParse(idType?.toString() ?? '');
-    if (t == 3) return {'idNumber','jinsiyaIdNumber','issuer','recordNumber','pageNumber','issuingCountry','issuingDate','nameOfDocument'}.contains(key);
-    if (t == 12) return {'idNumber'}.contains(key);
-    if (t == 22) return {'birthCertificateNumber','issuer','issuingDate','issuingCountry','nameOfDocument'}.contains(key);
-    if (t == 16) return {'otherIdNumber','nameOfDocument','issuer','issuingDate','issuingCountry'}.contains(key);
-    return true;
+  List<Widget> _buildDynamicFields(Map<String, dynamic> dataMap, bool isDark, Color textColor, {String prefix = ''}) {
+    final widgets = <Widget>[];
+
+    dataMap.forEach((key, value) {
+      if (prefix.isEmpty && !_visibleStudentFields.contains(key)) return;
+      if (prefix == 'address.' && !_visibleAddressFields.contains(key)) return;
+      if (_hiddenStudentResponseFields.contains(key) ||
+          _hiddenAddressResponseFields.contains(key)) return;
+
+      if (value is Map) {
+        if (key == 'identification') {
+          final m = value is Map<String, dynamic>
+              ? value
+              : Map<String, dynamic>.from(value);
+          widgets.add(Card(
+            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+            margin: const EdgeInsets.only(bottom: 15, top: 10),
+            child: Padding(
+              padding: const EdgeInsets.all(15),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'وثيقة التعريف',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.indigo.shade400),
+                  ),
+                  const SizedBox(height: 12),
+                  if (m.containsKey('idType'))
+                    _dropdownField(key: 'idType', owner: m, isDark: isDark, textColor: textColor),
+                  ...m.entries
+                      .where((e) => e.key != 'idType' && _identityFieldVisible(e.key, m['idType']))
+                      .map((e) => _fieldFor(e.key, e.value, m, isDark, textColor)),
+                ],
+              ),
+            ),
+          ));
+          return;
+        }
+
+        widgets.add(Card(
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          margin: const EdgeInsets.only(bottom: 15, top: 10),
+          child: Padding(
+            padding: const EdgeInsets.all(15),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _label(key),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.indigo.shade400),
+                ),
+                const SizedBox(height: 12),
+                ..._buildDynamicFields(
+                  Map<String, dynamic>.from(value),
+                  isDark,
+                  textColor,
+                  prefix: '$prefix$key.',
+                ),
+              ],
+            ),
+          ),
+        ));
+      } else {
+        widgets.add(_fieldFor(key, value, dataMap, isDark, textColor));
+      }
+    });
+
+    return widgets;
   }
 
   Widget _addressDropdown(String label, String? value, List<Map<String, dynamic>> items, ValueChanged<String?> onChanged, bool isDark, Color textColor) {
@@ -719,7 +935,11 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
     );
   }
 
-  Widget _studentSection(String title, List<Widget> children, bool isDark) {
+  Widget _studentSection(
+    String title,
+    List<Widget> children,
+    bool isDark,
+  ) {
     return Card(
       color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
       margin: const EdgeInsets.only(bottom: 14),
@@ -730,7 +950,14 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.indigo.shade400)),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: Colors.indigo.shade400,
+              ),
+            ),
             const SizedBox(height: 13),
             ..._studentGrid(children),
           ],
@@ -790,16 +1017,36 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
 
     final result = <Widget>[
       _studentSection('الاسم الكامل', [
-        field('name'), field('fatherName'), field('grandFatherName'), field('fathersGrandFatherName'),
-        field('surName'), field('motherName'), field('mothersFatherName'), field('mothersGrandFatherName'),
+        field('name'),
+        field('fatherName'),
+        field('grandFatherName'),
+        field('fathersGrandFatherName'),
+        field('surName'),
+        field('motherName'),
+        field('mothersFatherName'),
+        field('mothersGrandFatherName'),
       ], isDark),
-      _studentSection('البيانات الشخصية', [field('dateOfBirth')], isDark),
-      _studentSection('الجنس', [field('gender')], isDark),
       _studentSection('البيانات الشخصية', [
-        field('nationality'), field('countryOfBirth'), field('homeTown'), field('motherTongue'),
-        field('maritalStatus'), field('bloodGroup'), field('religion'), field('homePhoneNumber'),
-        field('notes'), field('specialNeeds'), field('studyLanguage'), field('economicLevel'),
-        field('isCoveredBySocialWelfare'), field('isDroppedOutFromSchool'),
+        field('dateOfBirth'),
+      ], isDark),
+      _studentSection('الجنس', [
+        field('gender'),
+      ], isDark),
+      _studentSection('البيانات الشخصية', [
+        field('nationality'),
+        field('countryOfBirth'),
+        field('homeTown'),
+        field('motherTongue'),
+        field('maritalStatus'),
+        field('bloodGroup'),
+        field('religion'),
+        field('homePhoneNumber'),
+        field('notes'),
+        field('specialNeeds'),
+        field('studyLanguage'),
+        field('economicLevel'),
+        field('isCoveredBySocialWelfare'),
+        field('isDroppedOutFromSchool'),
       ], isDark),
       _studentSection('وثيقة التعريف', [
         if (identification.isNotEmpty) ...[
@@ -811,7 +1058,9 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
         ],
       ], isDark),
       _studentSection('البيانات الدراسية', [
-        field('academicYearId'), field('stageId'), field('classRoomId'),
+        field('academicYearId'),
+        field('stageId'),
+        field('classRoomId'),
       ], isDark),
       _studentSection('العنوان', [
         _addressDropdown('الدولة', _addressCountryId, _addressCountries, (v) {
@@ -845,157 +1094,562 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
           });
           _focusLive('countryStructureId');
         }, isDark, textColor),
-        field('town', address), field('area', address), field('quarter', address),
-        field('street', address), field('address1', address), field('address2', address),
+        field('town', address),
+        field('area', address),
+        field('quarter', address),
+        field('street', address),
+        field('address1', address),
+        field('address2', address),
         field('closestLocation', address),
       ], isDark),
     ];
+
+    final ageReason = student['ageExceptionReason']?.toString() ?? '';
+    final genderReason = student['genderExceptionReason']?.toString() ?? '';
+    if (ageReason.trim().isNotEmpty || genderReason.trim().isNotEmpty) {
+      result.add(
+        _studentSection('الاستثناءات', [
+          if (ageReason.trim().isNotEmpty) field('ageExceptionReason'),
+          if (genderReason.trim().isNotEmpty) field('genderExceptionReason'),
+        ], isDark),
+      );
+    }
+
     return result;
+  }
+
+  bool _identityFieldVisible(String key, dynamic idType) {
+    final t = int.tryParse(idType?.toString() ?? '');
+    if (t == 3) return {'idNumber','jinsiyaIdNumber','issuer','recordNumber','pageNumber','issuingCountry','issuingDate','nameOfDocument'}.contains(key);
+    if (t == 12) return {'idNumber'}.contains(key);
+    if (t == 22) return {'birthCertificateNumber','issuer','issuingDate','issuingCountry','nameOfDocument'}.contains(key);
+    if (t == 16) return {'otherIdNumber','nameOfDocument','issuer','issuingDate','issuingCountry'}.contains(key);
+    return true;
   }
 
   SelfieSegmenter? _selfieSegmenter;
 
   Future<void> _initializeSelfieSegmenter() async {
-    _selfieSegmenter ??= SelfieSegmenter(mode: SegmenterMode.single, enableRawSizeMask: false);
+    _selfieSegmenter ??= SelfieSegmenter(
+      mode: SegmenterMode.single,
+      enableRawSizeMask: false,
+    );
   }
 
-  Future<File?> _removeBackgroundUsingSelfieSegmentation(File imageFile) async {
+  Future<File?> _removeBackgroundUsingSelfieSegmentation(
+    File imageFile,
+  ) async {
+    final stopwatch = Stopwatch()..start();
     File? normalizedFile;
+
     try {
       await _initializeSelfieSegmenter();
+
       final segmenter = _selfieSegmenter;
-      if (segmenter == null) throw Exception('تعذر تهيئة أداة إزالة الخلفية');
-      final bytes = await imageFile.readAsBytes();
-      var source = img.decodeImage(bytes);
-      if (source == null) throw Exception('تعذر قراءة الصورة');
-      source = img.bakeOrientation(source);
-      const maxDimension = 512;
-      if (source.width > maxDimension || source.height > maxDimension) {
-        source = img.copyResize(source, width: source.width >= source.height ? maxDimension : null, height: source.height > source.width ? maxDimension : null);
+      if (segmenter == null) {
+        throw Exception('تعذر تهيئة أداة إزالة الخلفية');
       }
-      normalizedFile = File('${imageFile.path}_seg_${DateTime.now().millisecondsSinceEpoch}.jpg');
-      await normalizedFile.writeAsBytes(img.encodeJpg(source, quality: 90), flush: true);
-      final mask = await segmenter.processImage(InputImage.fromFilePath(normalizedFile.path));
-      if (mask == null) throw Exception('لم يتم الحصول على قناع الشخص');
-      final result = img.Image(width: source.width, height: source.height, numChannels: 4);
-      for (var y = 0; y < source.height; y++) {
-        for (var x = 0; x < source.width; x++) {
-          final index = y * source.width + x;
+
+      final sourceBytes = await imageFile.readAsBytes();
+      var sourceImage = img.decodeImage(sourceBytes);
+
+      if (sourceImage == null) {
+        throw Exception('تعذر قراءة الصورة');
+      }
+
+      sourceImage = img.bakeOrientation(sourceImage);
+
+      const maxDimension = 512;
+      if (sourceImage.width > maxDimension ||
+          sourceImage.height > maxDimension) {
+        sourceImage = img.copyResize(
+          sourceImage,
+          width: sourceImage.width >= sourceImage.height
+              ? maxDimension
+              : null,
+          height: sourceImage.height > sourceImage.width
+              ? maxDimension
+              : null,
+          interpolation: img.Interpolation.linear,
+        );
+      }
+
+      normalizedFile = File(
+        '${imageFile.path}_segmentation_input_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+      await normalizedFile.writeAsBytes(
+        img.encodeJpg(sourceImage, quality: 90),
+        flush: true,
+      );
+
+      final inputImage = InputImage.fromFilePath(normalizedFile.path);
+      final mask = await segmenter.processImage(inputImage);
+
+      if (mask == null) {
+        throw Exception('لم يتم الحصول على قناع الشخص من ML Kit');
+      }
+
+      if (mask.width <= 0 || mask.height <= 0 || mask.confidences.isEmpty) {
+        throw Exception('قناع إزالة الخلفية غير صالح');
+      }
+
+      if (mask.width != sourceImage.width ||
+          mask.height != sourceImage.height) {
+        throw Exception(
+          'أبعاد قناع إزالة الخلفية لا تطابق الصورة: '
+          '${mask.width}x${mask.height} مقابل '
+          '${sourceImage.width}x${sourceImage.height}',
+        );
+      }
+
+      final result = img.Image(
+        width: sourceImage.width,
+        height: sourceImage.height,
+        numChannels: 4,
+      );
+
+      final pixelCount = sourceImage.width * sourceImage.height;
+      if (mask.confidences.length < pixelCount) {
+        throw Exception(
+          'عدد قيم القناع غير كافٍ: ${mask.confidences.length}',
+        );
+      }
+
+      for (var y = 0; y < sourceImage.height; y++) {
+        for (var x = 0; x < sourceImage.width; x++) {
+          final index = y * sourceImage.width + x;
           final confidence = mask.confidences[index].clamp(0.0, 1.0);
-          final alpha = ((confidence - 0.35) / 0.40 * 255.0).round().clamp(0, 255);
-          final p = source.getPixel(x, y);
-          result.setPixelRgba(x, y, p.r, p.g, p.b, alpha);
+
+          final alpha = ((confidence - 0.35) / 0.40 * 255.0)
+              .round()
+              .clamp(0, 255);
+
+          final sourcePixel = sourceImage.getPixel(x, y);
+          result.setPixelRgba(
+            x,
+            y,
+            sourcePixel.r,
+            sourcePixel.g,
+            sourcePixel.b,
+            alpha,
+          );
         }
       }
-      final out = File('${imageFile.path}_nobg_${DateTime.now().millisecondsSinceEpoch}.png');
-      await out.writeAsBytes(img.encodePng(result, level: 6), flush: true);
-      return out;
+
+      final outputPath =
+          '${imageFile.path}_nobg_${DateTime.now().millisecondsSinceEpoch}.png';
+      final outputFile = File(outputPath);
+
+      await outputFile.writeAsBytes(
+        img.encodePng(result, level: 6),
+        flush: true,
+      );
+
+      return outputFile;
+    } catch (e, stackTrace) {
+      debugPrint('ML Kit background removal error: $e');
+      debugPrint('$stackTrace');
+      rethrow;
     } finally {
-      if (normalizedFile != null) { try { if (await normalizedFile.exists()) await normalizedFile.delete(); } catch (_) {} }
+      if (normalizedFile != null) {
+        try {
+          if (await normalizedFile.exists()) {
+            await normalizedFile.delete();
+          }
+        } catch (e) {
+          debugPrint('تعذر حذف ملف المعالجة المؤقت: $e');
+        }
+      }
+      stopwatch.stop();
     }
+  }
+
+  @override
+  void dispose() {
+    _speechSubscription?.cancel();
+    unawaited(GoogleSpeechService.cancelListening());
+    final segmenter = _selfieSegmenter;
+    _selfieSegmenter = null;
+    if (segmenter != null) {
+      segmenter.close();
+    }
+    for (final controller in _dateControllers.values) {
+      controller.dispose();
+    }
+    _dateControllers.clear();
+    super.dispose();
   }
 
   Future<void> _showImagePreviewDialog(File imageFile) async {
     File currentImage = imageFile;
     bool isProcessing = false;
+
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('معاينة الصورة الشخصية', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                height: 220, width: double.infinity,
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-                child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(currentImage, fit: BoxFit.contain)),
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
-              const SizedBox(height: 15),
-              isProcessing
-                  ? const CircularProgressIndicator()
-                  : ElevatedButton.icon(
-                      onPressed: () async {
-                        setDialogState(() => isProcessing = true);
-                        try {
-                          final processed = await _removeBackgroundUsingSelfieSegmentation(currentImage);
-                          if (processed != null && mounted) {
-                            setDialogState(() { currentImage = processed; isProcessing = false; });
-                          }
-                        } catch (e) {
-                          if (mounted) setDialogState(() => isProcessing = false);
-                        }
-                      },
-                      icon: const Icon(Icons.auto_fix_high),
-                      label: const Text('حذف الخلفية'),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.amberAccent),
+              title: const Text(
+                'معاينة الصورة الشخصية',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      height: 220,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: InteractiveViewer(
+                          panEnabled: true,
+                          boundaryMargin: const EdgeInsets.all(20),
+                          minScale: 0.5,
+                          maxScale: 4,
+                          child: Image.file(
+                            currentImage,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Center(
+                                child: Icon(
+                                  Icons.broken_image,
+                                  size: 60,
+                                  color: Colors.grey,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
                     ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: isProcessing ? null : () => Navigator.pop(dialogContext), child: const Text('إلغاء')),
-            ElevatedButton(
-              onPressed: isProcessing ? null : () { setState(() => _pickedImage = currentImage); Navigator.pop(dialogContext); },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              child: const Text('اعتماد', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-            ),
-          ],
-        ),
-      ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'يمكنك تقريب الصورة لمراجعتها قبل اعتمادها',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 12),
+                    ),
+                    const SizedBox(height: 15),
+                    if (isProcessing)
+                      const Column(
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 12),
+                          Text(
+                            'جاري إزالة الخلفية محليًا...',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.blue,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 5),
+                          Text(
+                            'يرجى الانتظار',
+                            style: TextStyle(fontWeight: FontWeight.bold,color: Colors.grey, fontSize: 12),
+                          ),
+                        ],
+                      )
+                    else
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            setDialogState(() => isProcessing = true);
+                            try {
+                              final processed =
+                                  await _removeBackgroundUsingSelfieSegmentation(
+                                currentImage,
+                              );
+
+                              if (processed == null) {
+                                throw Exception(
+                                  'لم يتم الحصول على الصورة المعالجة',
+                                );
+                              }
+
+                              if (!mounted) return;
+
+                              setDialogState(() {
+                                currentImage = processed;
+                                isProcessing = false;
+                              });
+
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('تمت إزالة الخلفية بنجاح'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            } catch (e) {
+                              debugPrint('ML Kit background removal error: $e');
+                              if (!mounted) return;
+
+                              setDialogState(() => isProcessing = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('تعذر إزالة الخلفية: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          },
+                          icon: const Icon(
+                            Icons.auto_fix_high,
+                            color: Colors.black87,
+                          ),
+                          label: const Text(
+                            'حذف الخلفية',
+                            style: TextStyle(
+                              color: Colors.black87,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.amberAccent,
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isProcessing
+                      ? null
+                      : () => Navigator.pop(dialogContext),
+                  child: const Text('إلغاء'),
+                ),
+                ElevatedButton(
+                  onPressed: isProcessing
+                      ? null
+                      : () {
+                          setState(() => _pickedImage = currentImage);
+                          Navigator.pop(dialogContext);
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                  ),
+                  child: const Text(
+                    'اعتماد',
+                    style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
   Future<void> _pickImage(ImageSource source) async {
-    final picked = await ImagePicker().pickImage(source: source, imageQuality: 90, maxWidth: 2000, maxHeight: 2000);
-    if (picked != null && mounted) await _showImagePreviewDialog(File(picked.path));
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        imageQuality: 90,
+        maxWidth: 2500,
+        maxHeight: 2500,
+      );
+
+      if (picked != null && mounted) {
+        await _showImagePreviewDialog(File(picked.path));
+      }
+    } catch (e) {
+      debugPrint('خطأ في اختيار الصورة: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر فتح الكاميرا أو معرض الصور'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _deleteCurrentPhoto() {
-    setState(() { _pickedImage = null; if (_studentData != null) _studentData!['imageUrl'] = null; });
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حذف صورة الطالب')));
+    setState(() {
+      _pickedImage = null;
+      if (_studentData != null) _studentData!['imageUrl'] = null;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم حذف صورة الطالب')),
+    );
   }
 
   Future<String?> _uploadImageToEmisServer(File imageFile) async {
-    final request = http.MultipartRequest('POST', Uri.parse('https://emis.moedu.gov.iq/api/student/uploadimage'));
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('https://emis.moedu.gov.iq/api/student/uploadimage'),
+    );
+
     request.headers['Authorization'] = widget.token;
     request.headers['Accept'] = 'application/json';
-    request.files.add(await http.MultipartFile.fromPath('image', imageFile.path, filename: 'avatar.png'));
+
+    request.files.add(
+      await http.MultipartFile.fromPath(
+        'image',
+        imageFile.path,
+        filename: 'avatar.png',
+      ),
+    );
+
     try {
-      final res = await request.send();
-      final body = await res.stream.bytesToString();
-      if (res.statusCode == 200) {
-        final j = jsonDecode(body);
-        if (j is Map) return j['imageUrl']?.toString();
+      final streamedResponse = await request.send();
+      final responseData =
+          await streamedResponse.stream.bytesToString();
+
+      if (streamedResponse.statusCode == 200) {
+        final jsonResponse = jsonDecode(responseData);
+        if (jsonResponse is Map) {
+          return jsonResponse['imageUrl']?.toString();
+        }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('خطأ في رفع الصورة إلى EMIS: $e');
+    }
+
     return null;
   }
 
   Future<void> _saveStudentData() async {
     if (_studentData == null) return;
     setState(() => _isSaving = true);
+
     try {
       if (_pickedImage != null) {
-        final url = await _uploadImageToEmisServer(_pickedImage!);
-        if (url != null && url.isNotEmpty) _studentData!['imageUrl'] = url;
+        final newImageUrl =
+            await _uploadImageToEmisServer(_pickedImage!);
+
+        if (newImageUrl != null && newImageUrl.isNotEmpty) {
+          _studentData!['imageUrl'] = newImageUrl;
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('تعذر رفع صورة الطالب'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
       }
-      final payload = Map<String, dynamic>.from(_studentData!);
+
+      final studentPayload = Map<String, dynamic>.from(_studentData!);
+      String? dateOnly(dynamic value) {
+        if (value == null) return null;
+        final raw = value.toString().trim();
+        if (raw.isEmpty) return null;
+        final iso = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})').firstMatch(raw);
+        if (iso != null) {
+          final year = int.parse(iso.group(1)!);
+          final month = int.parse(iso.group(2)!);
+          final day = int.parse(iso.group(3)!);
+          final parsed = DateTime.tryParse('$year-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}');
+          if (parsed == null || parsed.year != year || parsed.month != month || parsed.day != day) return null;
+          return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+        }
+        final dmy = RegExp(r'^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$').firstMatch(raw);
+        if (dmy != null) {
+          final day = int.parse(dmy.group(1)!);
+          final month = int.parse(dmy.group(2)!);
+          final year = int.parse(dmy.group(3)!);
+          final parsed = DateTime.tryParse('$year-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}');
+          if (parsed == null || parsed.year != year || parsed.month != month || parsed.day != day) return null;
+          return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+        }
+        return null;
+      }
+
+      final normalizedBirthDate = dateOnly(studentPayload['dateOfBirth']);
+      if (normalizedBirthDate == null) {
+        throw Exception('يرجى إدخال تاريخ ميلاد صحيح بالصيغة yyyy-mm-dd');
+      }
+      studentPayload['dateOfBirth'] = normalizedBirthDate;
+      if (studentPayload['identification'] is Map) {
+        final identification = Map<String, dynamic>.from(studentPayload['identification'] as Map);
+        final issuingDate = identification['issuingDate'];
+        if (issuingDate != null && issuingDate.toString().trim().isNotEmpty) {
+          identification['issuingDate'] = dateOnly(issuingDate);
+        }
+        studentPayload['identification'] = identification;
+      }
+
       final response = await http.post(
-        Uri.parse('https://emis.moedu.gov.iq/api/student/updatestudent'),
-        headers: {'Authorization': widget.token, 'Content-Type': 'application/json', 'Accept': 'application/json'},
-        body: jsonEncode(payload),
+        Uri.parse(
+          'https://emis.moedu.gov.iq/api/student/updatestudent',
+        ),
+        headers: {
+          'Authorization': widget.token,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode(studentPayload),
       );
+
       if (!mounted) return;
+
       if (response.statusCode == 200 || response.statusCode == 204) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم الحفظ بنجاح!'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم الحفظ بنجاح!'),
+            backgroundColor: Colors.green,
+          ),
+        );
         Navigator.pop(context);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('فشل الحفظ: ${response.body}'), backgroundColor: Colors.red));
+        final responseText = response.body.trim();
+        final diagnostic = responseText.isEmpty
+            ? 'لا توجد تفاصيل في استجابة الخادم'
+            : responseText.length > 500
+                ? '${responseText.substring(0, 500)}…'
+                : responseText;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 12),
+            content: Text(
+              'فشل الحفظ (HTTP ${response.statusCode})\n$diagnostic',
+              maxLines: 6,
+              overflow: TextOverflow.ellipsis,
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر الحفظ: $e'), backgroundColor: Colors.red));
+      if (mounted) {
+        final errorText = e.toString();
+        final diagnostic = errorText.length > 500
+            ? '${errorText.substring(0, 500)}…'
+            : errorText;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 12),
+            content: Text(
+              'تعذر إكمال الحفظ\n$diagnostic',
+              maxLines: 6,
+              overflow: TextOverflow.ellipsis,
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -1007,82 +1661,210 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       valueListenable: AppCore.themeNotifier,
       builder: (context, currentMode, child) {
         final isDark = currentMode == ThemeMode.dark;
-        final bgColor = isDark ? const Color(0xFF121212) : const Color(0xFFF5F7FA);
-        final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+        final bgColor =
+            isDark ? const Color(0xFF121212) : const Color(0xFFF5F7FA);
+        final cardColor =
+            isDark ? const Color(0xFF1E1E1E) : Colors.white;
         final textColor = isDark ? Colors.white : Colors.black87;
 
         String imgUrl = _studentData?['imageUrl']?.toString() ?? '';
-        if (imgUrl.isNotEmpty && !imgUrl.startsWith('http')) imgUrl = 'https://emis.moedu.gov.iq$imgUrl';
+        if (imgUrl.isNotEmpty && !imgUrl.startsWith('http')) {
+          imgUrl = 'https://emis.moedu.gov.iq$imgUrl';
+        }
 
         return Scaffold(
           backgroundColor: bgColor,
           appBar: AppBar(
-            title: const Text('تعديل بيانات الطالب', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            flexibleSpace: Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF1A237E), Color(0xFF4A90E2)]))),
+            title: const Text(
+              'تعديل بيانات الطالب',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            flexibleSpace: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xFF1A237E),
+                    Color(0xFF4A90E2),
+                  ],
+                ),
+              ),
+            ),
             iconTheme: const IconThemeData(color: Colors.white),
           ),
           body: Stack(
             children: [
               _isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : _studentData == null
-                      ? const Center(child: Text('فشل جلب البيانات'))
-                      : Column(
-                          children: [
-                            Expanded(
-                              child: Form(
-                                key: _formKey,
-                                child: ListView(
-                                  padding: const EdgeInsets.all(15),
+              : _studentData == null
+                  ? const Center(child: Text('فشل جلب البيانات'))
+                  : Column(
+                      children: [
+                        Expanded(
+                          child: Form(
+                            key: _formKey,
+                            child: ListView(
+                            padding: const EdgeInsets.all(15),
+                            children: [
+                              Center(
+                                child: Stack(
                                   children: [
-                                    Center(
-                                      child: Stack(
-                                        children: [
-                                          Container(
-                                            width: 140, height: 140,
-                                            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: Colors.blueAccent, width: 3)),
-                                            child: ClipOval(
-                                              child: _pickedImage != null
-                                                  ? Image.file(_pickedImage!, fit: BoxFit.cover)
-                                                  : imgUrl.isNotEmpty
-                                                      ? Image.network(imgUrl, headers: {'Authorization': widget.token}, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 80, color: Colors.grey))
-                                                      : const Icon(Icons.person, size: 80, color: Colors.grey),
-                                            ),
-                                          ),
-                                          Positioned(bottom: 0, right: 0, child: CircleAvatar(backgroundColor: Colors.blue, radius: 20, child: IconButton(icon: const Icon(Icons.camera_alt, color: Colors.white, size: 18), onPressed: () => _pickImage(ImageSource.camera)))),
-                                          Positioned(bottom: 0, left: 0, child: CircleAvatar(backgroundColor: Colors.green, radius: 20, child: IconButton(icon: const Icon(Icons.photo_library, color: Colors.white, size: 18), onPressed: () => _pickImage(ImageSource.gallery)))),
-                                        ],
+                                    Container(
+                                      width: 140,
+                                      height: 140,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.blueAccent,
+                                          width: 3,
+                                        ),
+                                      ),
+                                      child: ClipOval(
+                                        child: _pickedImage != null
+                                            ? Image.file(
+                                                _pickedImage!,
+                                                fit: BoxFit.cover,
+                                              )
+                                            : imgUrl.isNotEmpty
+                                                ? Image.network(
+                                                    imgUrl,
+                                                    headers: {
+                                                      'Authorization':
+                                                          widget.token,
+                                                    },
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (
+                                                      context,
+                                                      error,
+                                                      stackTrace,
+                                                    ) {
+                                                      return Icon(
+                                                        Icons.person,
+                                                        size: 80,
+                                                        color: Colors.grey[400],
+                                                      );
+                                                    },
+                                                  )
+                                                : Icon(
+                                                    Icons.person,
+                                                    size: 80,
+                                                    color: Colors.grey[400],
+                                                  ),
                                       ),
                                     ),
-                                    const SizedBox(height: 10),
-                                    Center(child: TextButton.icon(onPressed: _deleteCurrentPhoto, icon: const Icon(Icons.delete_forever, color: Colors.red), label: const Text('حذف الصورة الحالية', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))),
-                                    const SizedBox(height: 15),
-                                    ..._buildStudentFormSections(isDark, textColor),
+                                    Positioned(
+                                      bottom: 0,
+                                      right: 0,
+                                      child: CircleAvatar(
+                                        backgroundColor: Colors.blue,
+                                        radius: 20,
+                                        child: IconButton(
+                                          icon: const Icon(
+                                            Icons.camera_alt,
+                                            color: Colors.white,
+                                            size: 18,
+                                          ),
+                                          onPressed: () => _pickImage(
+                                            ImageSource.camera,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      bottom: 0,
+                                      left: 0,
+                                      child: CircleAvatar(
+                                        backgroundColor: Colors.green,
+                                        radius: 20,
+                                        child: IconButton(
+                                          icon: const Icon(
+                                            Icons.photo_library,
+                                            color: Colors.white,
+                                            size: 18,
+                                          ),
+                                          onPressed: () => _pickImage(
+                                            ImageSource.gallery,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.all(15),
-                              color: cardColor,
-                              child: SizedBox(
-                                width: double.infinity, height: 55,
-                                child: ElevatedButton(
-                                  onPressed: _isSaving ? null : _saveStudentData,
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green[700], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                                  child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('حفظ', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 10),
+                              Center(
+                                child: TextButton.icon(
+                                  onPressed: _deleteCurrentPhoto,
+                                  icon: const Icon(
+                                    Icons.delete_forever,
+                                    color: Colors.red,
+                                  ),
+                                  label: const Text(
+                                    'حذف الصورة الحالية',
+                                    style: TextStyle(
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 15),
+                              ..._buildStudentFormSections(
+                                isDark,
+                                textColor,
+                              ),
+                            ],
+                          ),
+                          ),
                         ),
+                        Container(
+                          padding: const EdgeInsets.all(15),
+                          color: cardColor,
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: 55,
+                            child: ElevatedButton(
+                              onPressed:
+                                  _isSaving ? null : _saveStudentData,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green[700],
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: _isSaving
+                                  ? const CircularProgressIndicator(
+                                      color: Colors.white,
+                                    )
+                                  : const Text(
+                                      'حفظ',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
               Positioned(
-                left: 0, bottom: 0,
+                left: 0,
+                bottom: 0,
                 child: EmisLiveSync(
                   key: _liveSyncKey,
                   url: 'https://emis.moedu.gov.iq/centers/schools/${_studentData?['schoolId'] ?? ''}/individuals/students/management',
-                  mode: 'edit', entity: 'student', token: widget.token, recordId: widget.studentId,
-                  aliases: _liveAliases(), onSnapshot: _applyLiveSnapshot, onStatus: (v) {},
+                  mode: 'edit',
+                  entity: 'student',
+                  token: widget.token,
+                  recordId: widget.studentId,
+                  aliases: _liveAliases(),
+                  onSnapshot: _applyLiveSnapshot,
+                  onStatus: (v) { if (mounted) setState(() => _liveStatus = v); },
                 ),
               ),
             ],
@@ -1107,9 +1889,18 @@ class PlainTextField extends StatefulWidget {
   final bool micActive;
 
   const PlainTextField({
-    super.key, required this.label, required this.initialValue, required this.isDark,
-    required this.textColor, this.textDirection, required this.onChanged,
-    this.readOnly = false, this.requiredField = false, this.onTap, this.onMic, this.micActive = false,
+    super.key,
+    required this.label,
+    required this.initialValue,
+    required this.isDark,
+    required this.textColor,
+    this.textDirection,
+    required this.onChanged,
+    this.readOnly = false,
+    this.requiredField = false,
+    this.onTap,
+    this.onMic,
+    this.micActive = false,
   });
 
   @override
@@ -1122,7 +1913,9 @@ class _PlainTextFieldState extends State<PlainTextField> {
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.initialValue?.toString() ?? '');
+    _controller = TextEditingController(
+      text: widget.initialValue?.toString() ?? '',
+    );
   }
 
   @override
@@ -1130,12 +1923,18 @@ class _PlainTextFieldState extends State<PlainTextField> {
     super.didUpdateWidget(oldWidget);
     final next = widget.initialValue?.toString() ?? '';
     if (next != _controller.text) {
-      _controller.value = TextEditingValue(text: next, selection: TextSelection.collapsed(offset: next.length));
+      _controller.value = TextEditingValue(
+        text: next,
+        selection: TextSelection.collapsed(offset: next.length),
+      );
     }
   }
 
   @override
-  void dispose() { _controller.dispose(); super.dispose(); }
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1148,13 +1947,20 @@ class _PlainTextFieldState extends State<PlainTextField> {
         onTap: widget.onTap,
         validator: null,
         textDirection: widget.textDirection,
-        style: TextStyle(fontWeight: FontWeight.bold, color: widget.textColor, fontSize: 16),
+        style: TextStyle(fontWeight: FontWeight.bold,
+          color: widget.textColor,
+          fontSize: 16,
+        ),
         decoration: InputDecoration(
           labelText: widget.label,
-          labelStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
-          filled: true, fillColor: widget.isDark ? Colors.black12 : Colors.grey[50],
+          labelStyle: const TextStyle(color: Colors.grey, fontweight: FontWeight.bold),
+          filled: true,
+          fillColor: widget.isDark ? Colors.black12 : Colors.grey[50],
           suffixIcon: widget.onMic == null ? null : IconButton(tooltip: 'الإدخال الصوتي', onPressed: widget.onMic, icon: Icon(widget.micActive ? Icons.mic_rounded : Icons.mic_none_rounded, color: widget.micActive ? Colors.red : null)),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
         ),
       ),
     );
