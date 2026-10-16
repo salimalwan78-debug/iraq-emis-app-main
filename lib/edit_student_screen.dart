@@ -1953,7 +1953,7 @@ class _PlainTextFieldState extends State<PlainTextField> {
         ),
         decoration: InputDecoration(
           labelText: widget.label,
-          labelStyle: const TextStyle(color: Colors.grey, fontweight: FontWeight.bold),
+          labelStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
           filled: true,
           fillColor: widget.isDark ? Colors.black12 : Colors.grey[50],
           suffixIcon: widget.onMic == null ? null : IconButton(tooltip: 'الإدخال الصوتي', onPressed: widget.onMic, icon: Icon(widget.micActive ? Icons.mic_rounded : Icons.mic_none_rounded, color: widget.micActive ? Colors.red : null)),

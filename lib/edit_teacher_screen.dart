@@ -1279,7 +1279,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             textColor,
             (v) {
               final country = _addressCountries
-                  .where((x) => _value(x) == v)
+                  .where((x) => _sameValue(_optionValue(x), v))
                   .toList();
               if (country.isEmpty) return;
               setState(() {
@@ -1301,7 +1301,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             textColor,
             (v) {
               final gov = _addressGovernorates
-                  .where((x) => _value(x) == v)
+                  .where((x) => _sameValue(_optionValue(x), v))
                   .toList();
               if (gov.isEmpty) return;
               setState(() {
