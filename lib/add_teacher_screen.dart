@@ -936,9 +936,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
               ? Colors.white
               : Colors.black87,
         ),
-        dropdownColor: Theme.of(context).brightness == Brightness.dark
-            ? const Color(0xFF242424)
-            : Colors.white,
       validator: required
           ? (v) => (v == null || v.trim().isEmpty) ? 'هذا الحقل مطلوب' : null
           : null,
