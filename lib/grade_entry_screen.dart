@@ -485,7 +485,6 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
     }
   }
 
-  // دوال الصوت والتعرف الصوتي لحقول الدرجات
   void _showVoiceMessage(String message) {
     if (!mounted) return;
     setState(() => _speechError = message);
@@ -660,7 +659,6 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
       }
 
       if (text.isNotEmpty) {
-        // نحدد الطالب الذي يتم إدخال الدرجة له حالياً عبر التسلسل النشط
         final studentIds = grades.keys.toList();
         if (_sequentialVoiceIndex >= 0 && _sequentialVoiceIndex < studentIds.length) {
           final targetStudentId = studentIds[_sequentialVoiceIndex];
@@ -885,6 +883,11 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
       ),
     );
   }
+
+  String _normalizeNumber(String value) => value
+      .replaceAll('٠','0').replaceAll('١','1').replaceAll('٢','2').replaceAll('٣','3').replaceAll('٤','4')
+      .replaceAll('٥','5').replaceAll('٦','6').replaceAll('٧','7').replaceAll('٨','8').replaceAll('٩','9')
+      .replaceAll(' ', '').replaceAll('،', '.').replaceAll(',', '.').replaceAll('٫', '.');
 
   Future<http.Response> _postGrade(
     int studentId,
