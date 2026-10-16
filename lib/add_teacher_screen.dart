@@ -840,21 +840,14 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       value: safe,
       isExpanded: true,
       dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
-      style: TextStyle(fontWeight: FontWeight.bold, color: textColor, fontSize: 16),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
         fillColor: isDark ? Colors.black12 : Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF)),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
       ),
+      style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
       items: items
           .map((x) => DropdownMenuItem<String>(
                 value: _value(x),
@@ -896,7 +889,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     TextInputType? keyboard,
     int maxLines = 1,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isDate = _isDateKey(key);
     return TextFormField(
       controller: c[key],
@@ -919,7 +911,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         hintText: isDate ? 'YYYY-MM-DD' : null,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
         filled: true,
-        fillColor: isDark ? Colors.black12 : Colors.white,
+        fillColor: Colors.white,
         suffixIcon: isDate
             ? IconButton(
                 tooltip: 'اختر من التقويم',
@@ -929,14 +921,14 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
             : null,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF)),
+          borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF)),
+          borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
       ),
-      style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87),
+      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
       validator: required
           ? (v) => (v == null || v.trim().isEmpty) ? 'هذا الحقل مطلوب' : null
           : null,
@@ -990,7 +982,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       value: safeValue,
       isExpanded: true,
       dropdownColor: isDark ? const Color(0xFF252525) : Colors.white,
-      style: TextStyle(fontWeight: FontWeight.bold, color: textColor, fontSize: 16),
+      style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
       decoration: InputDecoration(
         labelText: labels[key] ?? key,
         labelStyle: const TextStyle(fontWeight: FontWeight.bold),
@@ -998,11 +990,11 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         fillColor: isDark ? Colors.black12 : Colors.white,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF)),
+          borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFE1E6EF)),
+          borderSide: const BorderSide(color: Color(0xFFE1E6EF)),
         ),
       ),
       items: values
@@ -1038,40 +1030,37 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     );
   }
 
-  Widget _section(String title, List<Widget> children) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 15),
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(.045),
-            blurRadius: 12,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            title,
-            textAlign: TextAlign.right,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF4527A0),
+  Widget _section(String title, List<Widget> children) => Container(
+        margin: const EdgeInsets.only(bottom: 15),
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(.045),
+              blurRadius: 12,
+              offset: const Offset(0, 5),
             ),
-          ),
-          const SizedBox(height: 14),
-          ...children,
-        ],
-      ),
-    );
-  }
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF4527A0),
+              ),
+            ),
+            const SizedBox(height: 14),
+            ...children,
+          ],
+        ),
+      );
 
   // ==================== الحفظ والإرسال إلى EMIS ====================
   void _flattenToFormFields(
@@ -1399,7 +1388,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final eduLevel = c['educationLevel']?.text.trim() ?? '';
     final showUniv = eduLevel == 'دبلوم' || eduLevel == 'بكالوريوس';
     final showSpec =
@@ -1407,7 +1395,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     final empStatus = c['status']?.text.trim() ?? 'مستمر';
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF121212) : const Color(0xFFF5F7FA),
+      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         title: const Text(
           'إضافة معلم جديد',
