@@ -323,50 +323,34 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
       _addressCountryId = _optionValue(iraq)?.toString();
       _addressGovernorates = _childrenOf(iraq);
 
-      Map<String, dynamic>? selectedNode;
-      void walk(Map<String, dynamic> node, String? countryId, String? governorateId) {
-        final id = _optionValue(node)?.toString();
-        if (stored != null && id == stored) {
-          selectedNode = node;
-          _addressCountryId = countryId ?? id;
-          _addressGovernorateId = governorateId;
-        }
-        for (final child in _childrenOf(node)) {
-          walk(child, countryId ?? id, governorateId ?? id);
-        }
-      }
+      var foundStoredLocation = false;
       for (final country in _addressCountries) {
-        walk(country, _optionValue(country)?.toString(), null);
-      }
+        for (final gov in _childrenOf(country)) {
+          final districts = _childrenOf(gov);
+          for (final district in districts) {
+            final districtId = _optionValue(district)?.toString();
+            final subdistricts = _childrenOf(district);
+            final matchingSubdistrict = subdistricts.where(
+              (item) => _optionValue(item)?.toString() == stored,
+            ).toList();
 
-      if (selectedNode != null) {
-        final selectedId = _optionValue(selectedNode!)?.toString();
-        for (final country in _addressCountries) {
-          for (final gov in _childrenOf(country)) {
-            final districts = _childrenOf(gov);
-            if (districts.any((d) => _optionValue(d)?.toString() == selectedId)) {
+            if (districtId == stored || matchingSubdistrict.isNotEmpty) {
               _addressCountryId = _optionValue(country)?.toString();
               _addressGovernorateId = _optionValue(gov)?.toString();
-              _addressDistrictId = selectedId;
+              _addressDistrictId = districtId;
               _addressGovernorates = _childrenOf(country);
               _addressDistricts = districts;
-              _addressTowns = _childrenOf(selectedNode!);
-              final storedTown = (address['town'] ?? '').toString().trim();
-              final townMatch = _addressTowns.where(
-                (town) => _optionText(town).trim() == storedTown,
-              ).toList();
-              if (townMatch.isNotEmpty) {
-                _addressTownId = _optionValue(townMatch.first)?.toString();
-              } else if (storedTown.isNotEmpty) {
-                _addressTowns = [
-                  ..._addressTowns,
-                  {'value': '__stored_town__', 'displayName': storedTown},
-                ];
-                _addressTownId = '__stored_town__';
-              }
+              _addressTowns = subdistricts;
+              _addressTownId = matchingSubdistrict.isEmpty
+                  ? null
+                  : _optionValue(matchingSubdistrict.first)?.toString();
+              foundStoredLocation = true;
+              break;
             }
           }
+          if (foundStoredLocation) break;
         }
+        if (foundStoredLocation) break;
       }
       if (_addressGovernorateId == null && _addressGovernorates.isNotEmpty) {
         _addressGovernorateId = null;
@@ -1095,7 +1079,6 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
             _addressTowns = [];
             _addressTownId = null;
             address['countryStructureId'] = null;
-            address['town'] = '';
           });
           _focusLive('countryStructureId');
         }, isDark, textColor),
@@ -1109,7 +1092,6 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
             _addressTowns = [];
             _addressTownId = null;
             address['countryStructureId'] = null;
-            address['town'] = '';
           });
           _focusLive('countryStructureId');
         }, isDark, textColor),
@@ -1122,27 +1104,25 @@ class _EditStudentScreenState extends State<EditStudentScreen> {
             _addressTowns = district.isEmpty ? [] : _childrenOf(district.first);
             _addressTownId = null;
             address['countryStructureId'] = v == null ? null : int.tryParse(v);
-            address['town'] = '';
           });
           _focusLive('countryStructureId');
         }, isDark, textColor),
         _addressDropdown(
-          'المدينة / القرية',
+          'الناحية',
           _addressTownId,
           _addressTowns,
           (v) {
-            final town = _addressTowns
-                .where((x) => _optionValue(x)?.toString() == v)
-                .toList();
             setState(() {
               _addressTownId = v;
-              address['town'] = town.isEmpty ? '' : _optionText(town.first);
+              address['countryStructureId'] =
+                  int.tryParse(v ?? _addressDistrictId ?? '');
             });
             _focusLive('countryStructureId');
           },
           isDark,
           textColor,
         ),
+        field('town', address),
         field('area', address),
         field('quarter', address),
         field('street', address),

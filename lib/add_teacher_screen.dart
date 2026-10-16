@@ -350,7 +350,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         'addressCountry': _addressCountryId ?? '',
         'addressGovernorate': _addressGovernorateId ?? '',
         'addressDistrict': _addressDistrictId ?? '',
-        'countryStructureId': _addressDistrictId ?? '',
+        'countryStructureId': _addressTownId ?? _addressDistrictId ?? '',
       };
 
   void _focusLive(String key) {
@@ -578,7 +578,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     _addressDistrictId = null;
     _addressTowns = [];
     _addressTownId = null;
-    c['town']?.clear();
   }
 
   void _setAddressDistricts(Map<String, dynamic> governorate) {
@@ -589,7 +588,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         ? <Map<String, dynamic>>[]
         : _childrenOf(_addressDistricts.first);
     _addressTownId = null;
-    c['town']?.clear();
   }
 
   // ==================== معالجة ورفع الصورة الشخصية ====================
@@ -1219,7 +1217,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       final empStatus = _n('status') ?? 'مستمر';
       final schoolIdInt = int.tryParse(widget.schoolId) ?? 1;
       final structureIdInt =
-          int.tryParse(_addressDistrictId ?? _addressGovernorateId ?? '1') ?? 1;
+          int.tryParse(_addressTownId ?? _addressDistrictId ?? _addressGovernorateId ?? '1') ?? 1;
 
       // 3. بناء الـ Payload مطابقاً تماماً لدالة X() في TeacherFormPage.js
       final payload = <String, dynamic>{
@@ -1738,7 +1736,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                           ),
                           const SizedBox(height: 10),
                           _addressDropdown(
-                            label: 'القضاء / الناحية *',
+                            label: 'القضاء *',
                             value: _addressDistrictId,
                             items: _addressDistricts,
                             onChanged: (v) {
@@ -1751,28 +1749,22 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                                     ? <Map<String, dynamic>>[]
                                     : _childrenOf(selected.first);
                                 _addressTownId = null;
-                                c['town']?.clear();
                               });
                               _focusLive('addressDistrict');
                             },
                           ),
                           const SizedBox(height: 10),
                           _addressDropdown(
-                            label: 'المدينة / القرية *',
+                            label: 'الناحية *',
                             value: _addressTownId,
                             items: _addressTowns,
                             onChanged: (v) {
-                              final selected = _addressTowns
-                                  .where((x) => _value(x) == v)
-                                  .toList();
-                              setState(() {
-                                _addressTownId = v;
-                                c['town']?.text =
-                                    selected.isEmpty ? '' : _text(selected.first);
-                              });
+                              setState(() => _addressTownId = v);
                               _liveSyncKey.currentState?.pushValues(_liveValues());
                             },
                           ),
+                          const SizedBox(height: 10),
+                          _textField('town', required: true),
                           const SizedBox(height: 10),
                           Row(
                             children: [

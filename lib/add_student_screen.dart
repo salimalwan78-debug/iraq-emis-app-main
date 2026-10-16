@@ -288,7 +288,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'addressCountry': _addressCountryId ?? '',
         'addressGovernorate': _addressGovernorateId ?? '',
         'addressDistrict': _addressDistrictId ?? '',
-        'countryStructureId': _addressDistrictId ?? '',
+        'countryStructureId': _addressTownId ?? _addressDistrictId ?? '',
         'isCoveredBySocialWelfare': _socialWelfare ? 'true' : 'false',
       };
 
@@ -371,6 +371,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           .toList();
       if (match.isNotEmpty) {
         _addressDistrictId = _value(match.first);
+        _addressTowns = _children(match.first);
+        _addressTownId = null;
         changed = true;
       }
     }
@@ -549,17 +551,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (district != null) {
       _addressDistrictId = _value(district);
       _addressTowns = _children(district);
-      final town = _addressTowns.where((x) => _text(x).trim() == 'الديوانية').toList();
-      if (town.isNotEmpty) {
-        _addressTownId = _value(town.first);
-        c['town']!.text = _text(town.first);
-      } else {
-        _addressTownId = null;
-        c['town']!.clear();
-      }
-    } else {
-      c['town']!.clear();
+      final subdistrict = _addressTowns
+          .where((x) => _text(x).trim() == 'الديوانية')
+          .toList();
+      _addressTownId =
+          subdistrict.isEmpty ? null : _value(subdistrict.first);
     }
+    // أبقِ حقل المدينة / القرية نصياً كما كان في النسخة الأصلية.
+    c['town']!.text = 'الديوانية';
   }
 
   void _setAddressGovernorates(Map<String, dynamic> country) {
@@ -569,7 +568,6 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _addressDistrictId = null;
     _addressTowns = [];
     _addressTownId = null;
-    c['town']?.clear();
   }
 
   void _setAddressDistricts(Map<String, dynamic> governorate) {
@@ -577,13 +575,11 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     _addressDistrictId = null;
     _addressTowns = [];
     _addressTownId = null;
-    c['town']?.clear();
   }
 
   void _setAddressTowns(Map<String, dynamic> district) {
     _addressTowns = _children(district);
     _addressTownId = null;
-    c['town']?.clear();
   }
 
   Future<void> _stageChanged(String? value) async {
@@ -1896,7 +1892,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         'genderExceptionReason': null,
         'address': {
           'addressType': 1,
-          'countryStructureId': int.parse(_addressDistrictId!),
+          'countryStructureId': int.parse(_addressTownId ?? _addressDistrictId!),
           'town': _n('town') ?? '',
           'area': _n('area') ?? '',
           'quarter': _n('quarter') ?? '',
@@ -2240,30 +2236,24 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                                       ? <Map<String, dynamic>>[]
                                       : _children(selected.first);
                                   _addressTownId = null;
-                                  c['town']?.clear();
                                 });
                                 _focusLive('addressDistrict');
                               },
                             ),
                             const SizedBox(height: 10),
                             _addressDropdown(
-                              label: 'المدينة / القرية',
-                              voiceKey: 'town',
+                              label: 'الناحية',
+                              voiceKey: 'addressTown',
                               value: _addressTownId,
                               items: _addressTowns,
                               showMic: false,
                               onChanged: (v) {
-                                final selected = _addressTowns
-                                    .where((x) => _value(x) == v)
-                                    .toList();
-                                setState(() {
-                                  _addressTownId = v;
-                                  c['town']?.text =
-                                      selected.isEmpty ? '' : _text(selected.first);
-                                });
+                                setState(() => _addressTownId = v);
                                 _liveSyncKey.currentState?.pushValues(_liveValues());
                               },
                             ),
+                            const SizedBox(height: 10),
+                            _textField('town'),
                             const SizedBox(height: 10),
                             Row(
                               children: [
