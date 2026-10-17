@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
@@ -48,7 +50,8 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
   String? error;
 
   final GlobalKey<EmisLiveSyncState> _liveSyncKey = GlobalKey<EmisLiveSyncState>();
-  Timer? _liveTimer;
+  Timer? _debouncePushTimer;
+  DateTime _lastLocalEditTime = DateTime.fromMillisecondsSinceEpoch(0);
   String _liveStatus = 'المزامنة الحية مع EMIS قيد التشغيل';
 
   // المسارات الفعلية الموجودة في سيرفر EMIS
@@ -303,7 +306,6 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     c['currentPosition']!.text = 'مدرس';
     c['educationLevel']!.text = 'بكالوريوس';
 
-    _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _load();
   }
 
@@ -320,7 +322,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
 
   @override
   void dispose() {
-    _liveTimer?.cancel();
+    _debouncePushTimer?.cancel();
     final segmenter = _selfieSegmenter;
     _selfieSegmenter = null;
     if (segmenter != null) segmenter.close();
@@ -353,16 +355,26 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         'countryStructureId': _addressTownId ?? _addressDistrictId ?? '',
       };
 
-  void _focusLive(String key) {
-    _liveSyncKey.currentState?.focusField(key);
-    _liveSyncKey.currentState?.pushValues(_liveValues());
+  void _schedulePushLive() {
+    _lastLocalEditTime = DateTime.now();
+    _debouncePushTimer?.cancel();
+    _debouncePushTimer = Timer(const Duration(milliseconds: 450), () {
+      if (mounted) {
+        _liveSyncKey.currentState?.pushValues(_liveValues());
+      }
+    });
   }
 
-  void _pushLive() {
-    _liveSyncKey.currentState?.pushValues(_liveValues());
+  void _focusLive(String key) {
+    _liveSyncKey.currentState?.focusField(key);
+    _schedulePushLive();
   }
 
   void _applyLiveSnapshot(Map<String, String> values) {
+    // منع الكتابة العكسية فوق نص يكتبه المستخدم حالياً
+    if (DateTime.now().difference(_lastLocalEditTime).inMilliseconds < 1200) {
+      return;
+    }
     bool changed = false;
     for (final entry in values.entries) {
       final targetKey = entry.key == 'idNumber' ? 'nationalId' : entry.key;
@@ -456,28 +468,29 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
 
   Future<void> _load() async {
     try {
-      // إظهار الواجهة فوراً بالخيارات الثابتة ثم تحديث الخيارات من السيرفر
+      // إظهار الواجهة فوراً بالخيارات الثابتة ثم تحديث الخيارات من السيرفر بالتوازي
       if (mounted) setState(() => loading = false);
 
-      for (final entry in _optionEndpoints.entries) {
-        final fetched = await _list(entry.key == 'positionType'
-            ? '/SelectOption/نوع الوظيفة'
-            : entry.value);
-        if (fetched.isNotEmpty) {
-          final existing = options[entry.key] ?? <Map<String, dynamic>>[];
-          final merged = <Map<String, dynamic>>[...fetched];
-          for (final ex in existing) {
-            final v = _value(ex);
-            if (v.isNotEmpty && !merged.any((m) => _value(m) == v)) {
-              merged.add(ex);
+      await Future.wait([
+        ..._optionEndpoints.entries.map((entry) async {
+          final fetched = await _list(entry.key == 'positionType'
+              ? '/SelectOption/نوع الوظيفة'
+              : entry.value);
+          if (fetched.isNotEmpty) {
+            final existing = options[entry.key] ?? <Map<String, dynamic>>[];
+            final merged = <Map<String, dynamic>>[...fetched];
+            for (final ex in existing) {
+              final v = _value(ex);
+              if (v.isNotEmpty && !merged.any((m) => _value(m) == v)) {
+                merged.add(ex);
+              }
             }
+            options[entry.key] = merged;
           }
-          options[entry.key] = merged;
-        }
-      }
-
-      await _loadEmployeesOptions();
-      await _loadCountryStructure();
+        }),
+        _loadEmployeesOptions(),
+        _loadCountryStructure(),
+      ]);
 
       if ((options['positionType'] ?? []).isNotEmpty &&
           c['positionType']!.text.trim().isEmpty) {
@@ -553,6 +566,9 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
           if (_addressDistricts.isNotEmpty) {
             _addressDistrictId = _value(_addressDistricts.first);
             _addressTowns = _childrenOf(_addressDistricts.first);
+            if (_addressTowns.isNotEmpty) {
+              _addressTownId = _value(_addressTowns.first);
+            }
           }
           break;
         }
@@ -587,7 +603,8 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     _addressTowns = _addressDistrictId == null
         ? <Map<String, dynamic>>[]
         : _childrenOf(_addressDistricts.first);
-    _addressTownId = null;
+    _addressTownId =
+        _addressTowns.isNotEmpty ? _value(_addressTowns.first) : null;
   }
 
   // ==================== معالجة ورفع الصورة الشخصية ====================
@@ -598,6 +615,56 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     );
   }
 
+  static Uint8List _normalizeImageIsolate(Uint8List bytes) {
+    var source = img.decodeImage(bytes);
+    if (source == null) throw Exception('تعذر قراءة الصورة');
+    source = img.bakeOrientation(source);
+
+    const maxDimension = 512;
+    if (source.width > maxDimension || source.height > maxDimension) {
+      source = img.copyResize(
+        source,
+        width: source.width >= source.height ? maxDimension : null,
+        height: source.height > source.width ? maxDimension : null,
+        interpolation: img.Interpolation.linear,
+      );
+    }
+    return Uint8List.fromList(img.encodeJpg(source, quality: 90));
+  }
+
+  static Uint8List _applyMaskIsolate(Map<String, dynamic> args) {
+    final Uint8List normalizedBytes = args['bytes'] as Uint8List;
+    final List<double> confidences = args['confidences'] as List<double>;
+    final int maskWidth = args['maskWidth'] as int;
+    final int maskHeight = args['maskHeight'] as int;
+
+    final source = img.decodeImage(normalizedBytes);
+    if (source == null) throw Exception('تعذر قراءة الصورة المعالجة');
+
+    if (maskWidth != source.width || maskHeight != source.height) {
+      throw Exception('أبعاد القناع غير متطابقة مع أبعاد الصورة');
+    }
+
+    final pixelCount = source.width * source.height;
+    if (confidences.length < pixelCount) {
+      throw Exception('بيانات القناع غير مكتملة');
+    }
+
+    final result =
+        img.Image(width: source.width, height: source.height, numChannels: 4);
+    for (var y = 0; y < source.height; y++) {
+      for (var x = 0; x < source.width; x++) {
+        final index = y * source.width + x;
+        final confidence = confidences[index].clamp(0.0, 1.0);
+        final alpha =
+            ((confidence - 0.35) / 0.40 * 255.0).round().clamp(0, 255);
+        final pixel = source.getPixel(x, y);
+        result.setPixelRgba(x, y, pixel.r, pixel.g, pixel.b, alpha);
+      }
+    }
+    return Uint8List.fromList(img.encodePng(result, level: 6));
+  }
+
   Future<File?> _removeBackgroundUsingSelfieSegmentation(File imageFile) async {
     File? normalizedFile;
     try {
@@ -605,25 +672,13 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       final segmenter = _selfieSegmenter;
       if (segmenter == null) throw Exception('تعذر تهيئة أداة إزالة الخلفية');
 
-      final bytes = await imageFile.readAsBytes();
-      var source = img.decodeImage(bytes);
-      if (source == null) throw Exception('تعذر قراءة الصورة');
-      source = img.bakeOrientation(source);
-
-      const maxDimension = 512;
-      if (source.width > maxDimension || source.height > maxDimension) {
-        source = img.copyResize(
-          source,
-          width: source.width >= source.height ? maxDimension : null,
-          height: source.height > source.width ? maxDimension : null,
-          interpolation: img.Interpolation.linear,
-        );
-      }
+      final rawBytes = await imageFile.readAsBytes();
+      final normalizedBytes =
+          await Isolate.run(() => _normalizeImageIsolate(rawBytes));
 
       normalizedFile = File(
           '${imageFile.path}_seg_${DateTime.now().millisecondsSinceEpoch}.jpg');
-      await normalizedFile.writeAsBytes(img.encodeJpg(source, quality: 90),
-          flush: true);
+      await normalizedFile.writeAsBytes(normalizedBytes, flush: true);
 
       final mask = await segmenter.processImage(
         InputImage.fromFilePath(normalizedFile.path),
@@ -635,22 +690,20 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         throw Exception('لم يتم الحصول على قناع صالح للشخص');
       }
 
-      final result =
-          img.Image(width: source.width, height: source.height, numChannels: 4);
-      for (var y = 0; y < source.height; y++) {
-        for (var x = 0; x < source.width; x++) {
-          final index = y * source.width + x;
-          final confidence = mask.confidences[index].clamp(0.0, 1.0);
-          final alpha =
-              ((confidence - 0.35) / 0.40 * 255.0).round().clamp(0, 255);
-          final pixel = source.getPixel(x, y);
-          result.setPixelRgba(x, y, pixel.r, pixel.g, pixel.b, alpha);
-        }
-      }
+      final confidencesCopy = List<double>.from(mask.confidences);
+      final maskW = mask.width;
+      final maskH = mask.height;
+
+      final pngBytes = await Isolate.run(() => _applyMaskIsolate({
+            'bytes': normalizedBytes,
+            'confidences': confidencesCopy,
+            'maskWidth': maskW,
+            'maskHeight': maskH,
+          }));
 
       final output = File(
           '${imageFile.path}_nobg_${DateTime.now().millisecondsSinceEpoch}.png');
-      await output.writeAsBytes(img.encodePng(result, level: 6), flush: true);
+      await output.writeAsBytes(pngBytes, flush: true);
       return output;
     } finally {
       if (normalizedFile != null) {
@@ -841,6 +894,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     required String? value,
     required List<Map<String, dynamic>> items,
     required ValueChanged<String?> onChanged,
+    bool required = false,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final menuTextColor = isDark ? Colors.white : Colors.black87;
@@ -876,6 +930,9 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                 ),
               ))
           .toList(),
+      validator: required
+          ? (v) => (v == null || v.trim().isEmpty) ? 'هذا الحقل مطلوب' : null
+          : null,
       onChanged: onChanged,
     );
   }
@@ -950,7 +1007,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       validator: required
           ? (v) => (v == null || v.trim().isEmpty) ? 'هذا الحقل مطلوب' : null
           : null,
-      onChanged: (_) => _liveSyncKey.currentState?.pushValues(_liveValues()),
+      onChanged: (_) => _schedulePushLive(),
       onTap: () => _focusLive(key),
     );
   }
@@ -1173,11 +1230,13 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
     });
 
     try {
-      // 1. رفع الصورة الشخصية إن تم اختيارها
+      // 1. رفع الصورة الشخصية إن تم اختيارها والتأكد من نجاح الرفع
       if (_pickedImage != null) {
         final uploaded = await _uploadImageToEmisServer(_pickedImage!);
         if (uploaded != null && uploaded.isNotEmpty) {
           _uploadedImageUrl = uploaded;
+        } else {
+          throw Exception('تعذر رفع الصورة الشخصية إلى خادم EMIS، يرجى المحاولة مرة أخرى');
         }
       }
 
@@ -1216,8 +1275,9 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
       final quota = int.tryParse(c['weeklyTeachingQuota']?.text.trim() ?? '');
       final empStatus = _n('status') ?? 'مستمر';
       final schoolIdInt = int.tryParse(widget.schoolId) ?? 1;
-      final structureIdInt =
-          int.tryParse(_addressTownId ?? _addressDistrictId ?? _addressGovernorateId ?? '1') ?? 1;
+      final selectedStructureId =
+          _addressTownId ?? _addressDistrictId ?? _addressGovernorateId;
+      final structureIdInt = int.tryParse(selectedStructureId ?? '') ?? 1;
 
       // 3. بناء الـ Payload مطابقاً تماماً لدالة X() في TeacherFormPage.js
       final payload = <String, dynamic>{
@@ -1239,7 +1299,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
         'Name': _n('name') ?? '',
         'FatherName': _n('fatherName') ?? '',
         'GrandFatherName': _n('grandFatherName') ?? '',
-        'FathersGrandFatherName': _n('fathersGrandFatherName') ?? '',
+        'FathersGrandFatherName': _n('fathersGrandFatherName'),
         'SurName': _n('surName') ?? '',
         'MotherName': _n('motherName') ?? '',
         'MothersFatherName': _n('mothersFatherName') ?? '',
@@ -1702,9 +1762,10 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                         ]),
                         _section('العنوان ومعلومات الاتصال', [
                           _addressDropdown(
-                            label: 'الدولة',
+                            label: 'الدولة *',
                             value: _addressCountryId,
                             items: _addressCountries,
+                            required: true,
                             onChanged: (v) {
                               final item = _addressCountries
                                   .where((x) => _value(x) == v)
@@ -1719,9 +1780,10 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                           ),
                           const SizedBox(height: 10),
                           _addressDropdown(
-                            label: 'المحافظة',
+                            label: 'المحافظة *',
                             value: _addressGovernorateId,
                             items: _addressGovernorates,
+                            required: true,
                             onChanged: (v) {
                               final item = _addressGovernorates
                                   .where((x) => _value(x) == v)
@@ -1739,6 +1801,7 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                             label: 'القضاء *',
                             value: _addressDistrictId,
                             items: _addressDistricts,
+                            required: true,
                             onChanged: (v) {
                               final selected = _addressDistricts
                                   .where((x) => _value(x) == v)
@@ -1748,7 +1811,9 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                                 _addressTowns = selected.isEmpty
                                     ? <Map<String, dynamic>>[]
                                     : _childrenOf(selected.first);
-                                _addressTownId = null;
+                                _addressTownId = _addressTowns.isNotEmpty
+                                    ? _value(_addressTowns.first)
+                                    : null;
                               });
                               _focusLive('addressDistrict');
                             },
@@ -1758,9 +1823,10 @@ class _AddTeacherScreenState extends State<AddTeacherScreen> {
                             label: 'الناحية *',
                             value: _addressTownId,
                             items: _addressTowns,
+                            required: _addressTowns.isNotEmpty,
                             onChanged: (v) {
                               setState(() => _addressTownId = v);
-                              _liveSyncKey.currentState?.pushValues(_liveValues());
+                              _schedulePushLive();
                             },
                           ),
                           const SizedBox(height: 10),
