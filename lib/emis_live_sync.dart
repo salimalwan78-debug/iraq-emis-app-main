@@ -48,6 +48,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       ..addJavaScriptChannel(
         'EmisSyncChannel',
         onMessageReceived: (message) {
+          if (!mounted) return;
           try {
             final decoded = jsonDecode(message.message);
             if (decoded is! Map) return;
@@ -113,20 +114,27 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         NavigationDelegate(
           onPageStarted: (_) {
             _ready = false;
-            widget.onStatus?.call('جاري فتح صفحة EMIS للمزامنة...');
+            if (mounted) {
+              widget.onStatus?.call('جاري فتح صفحة EMIS للمزامنة...');
+            }
           },
           onPageFinished: (url) async {
-            if (_injectingToken) return;
+            if (!mounted || _injectingToken) return;
             final reloaded = await _injectAuthentication();
-            if (reloaded) return;
+            if (reloaded || !mounted) return;
             await _installBridge();
             await Future<void>.delayed(const Duration(milliseconds: 500));
+            if (!mounted) return;
             await refreshSchema();
             await Future<void>.delayed(const Duration(milliseconds: 700));
-            widget.onStatus?.call('تم فتح نموذج EMIS وجلب بنيته وخياراته');
+            if (mounted) {
+              widget.onStatus?.call('تم فتح نموذج EMIS وجلب بنيته وخياراته');
+            }
           },
           onWebResourceError: (error) {
-            widget.onStatus?.call('تعذر تحميل صفحة EMIS: ${error.errorCode}');
+            if (mounted) {
+              widget.onStatus?.call('تعذر تحميل صفحة EMIS: ${error.errorCode}');
+            }
           },
         ),
       )
@@ -200,6 +208,13 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
     final js = '''
 (function(){
   try {
+    // تنظيف أي مؤقتات أو مراقبات سابقة لمنع تسريب الذاكرة وتكرار الإرسال
+    if (window.__EMIS_APP_BRIDGE__ && typeof window.__EMIS_APP_BRIDGE__.cleanup === 'function') {
+      try { window.__EMIS_APP_BRIDGE__.cleanup(); } catch (_) {}
+    }
+
+    const prevApplied = (window.__EMIS_APP_BRIDGE__ && window.__EMIS_APP_BRIDGE__.appliedSelectValues) || {};
+
     window.__EMIS_APP_BRIDGE__ = {
       aliases: $aliases,
       recordId: $id,
@@ -209,7 +224,29 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       last: '',
       schemaLast: '',
       triedEmptySelects: {},
-      optionsCollected: {}
+      optionsCollected: {},
+      appliedSelectValues: prevApplied,
+      isSettingFields: false,
+      timers: [],
+      observers: [],
+      listeners: []
+    };
+
+    const b = window.__EMIS_APP_BRIDGE__;
+
+    const addTimer = (id) => { b.timers.push(id); return id; };
+    const addListener = (target, type, fn, opts) => {
+      target.addEventListener(type, fn, opts);
+      b.listeners.push({target, type, fn, opts});
+    };
+
+    b.cleanup = () => {
+      b.timers.forEach(t => { try { clearInterval(t); clearTimeout(t); } catch(e) {} });
+      b.timers.length = 0;
+      b.observers.forEach(o => { try { o.disconnect(); } catch(e) {} });
+      b.observers.length = 0;
+      b.listeners.forEach(l => { try { l.target.removeEventListener(l.type, l.fn, l.opts); } catch(e) {} });
+      b.listeners.length = 0;
     };
 
     const send = (type, payload) => {
@@ -276,11 +313,11 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       return [...new Set(out.map(norm).filter(Boolean))];
     };
 
-    const aliases = window.__EMIS_APP_BRIDGE__.aliases || {};
+    const aliases = b.aliases || {};
 
-    const sortedAliasKeys = Object.keys(aliases).sort((a, b) => {
+    const sortedAliasKeys = Object.keys(aliases).sort((a, bKey) => {
       const la = Math.max(...(aliases[a] || ['']).map(s => norm(s).length), 0);
-      const lb = Math.max(...(aliases[b] || ['']).map(s => norm(s).length), 0);
+      const lb = Math.max(...(aliases[bKey] || ['']).map(s => norm(s).length), 0);
       return lb - la;
     });
 
@@ -364,10 +401,11 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
     let lastDomSize = 0;
 
     const scan = () => {
+      if (b.isSettingFields) return;
       const now = Date.now();
       const domSize = document.querySelectorAll('.q-field').length;
 
-      if (now - lastScanTime < 80 && domSize === lastDomSize) return;
+      if (now - lastScanTime < 120 && domSize === lastDomSize) return;
       lastScanTime = now;
       lastDomSize = domSize;
 
@@ -409,7 +447,6 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
         };
       });
 
-      const b = window.__EMIS_APP_BRIDGE__;
       const schemaShape = {};
       Object.keys(schema).forEach(k => {
         const meta = Object.assign({}, schema[k]);
@@ -427,11 +464,11 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
               const opts = schema[k].options || [];
               if (opts.length > 0) return false;
               const tries = b.triedEmptySelects[k] || 0;
-              if (tries >= 3) return false;
+              if (tries >= 2) return false;
               b.triedEmptySelects[k] = tries + 1;
               return true;
             });
-          if (selectKeys.length) setTimeout(() => collectOptions(selectKeys), 250);
+          if (selectKeys.length) addTimer(setTimeout(() => collectOptions(selectKeys), 300));
         }
       }
       const serial = JSON.stringify(fields);
@@ -451,7 +488,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       try { el.dispatchEvent(new Event('blur', {bubbles:true})); } catch(e) {}
     };
 
-    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    const sleep = (ms) => new Promise(resolve => addTimer(setTimeout(resolve, ms)));
 
     const findField = (key) => {
       const wanted = norm(key);
@@ -542,7 +579,6 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
     };
 
     const collectOptions = async (keys) => {
-      const b = window.__EMIS_APP_BRIDGE__;
       const out = {};
       for (const key of keys) {
         const values = await readQSelectOptions(key);
@@ -554,94 +590,108 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       if (Object.keys(out).length) send('options', {options: out});
       return out;
     };
-    window.__EMIS_APP_BRIDGE__.collectOptions = (keys) => collectOptions(keys || []);
-    window.__EMIS_APP_BRIDGE__.scanNow = () => scan();
+    b.collectOptions = (keys) => collectOptions(keys || []);
+    b.scanNow = () => scan();
 
-    window.__EMIS_APP_BRIDGE__.setFields = (values) => {
+    b.setFields = (values) => {
       const vals = values || {};
-      for (const [key, value] of Object.entries(vals)) {
-        const best = findField(key);
-        if (!best) continue;
-        try {
-          const qfield = best.closest ? best.closest('.q-field') : null;
-          const qnative = qfield ? qfield.querySelector('.q-field__native') : null;
-          if (qfield && qnative && qfield.classList.contains('q-select')) {
-            const wanted = norm(String(value ?? ''));
-            const current = norm(qnative.value || '');
-            if (current === wanted) continue;
-            qfield.scrollIntoView({block:'center', inline:'nearest'});
-            (qfield.querySelector('.q-field__control') || qnative || qfield).click();
-            setTimeout(() => {
-              const items = [...document.querySelectorAll('.q-menu .q-item, .q-menu [role="option"]')];
-              const item = items.find(o => {
-                const text = norm(o.innerText || o.textContent || '');
-                const attrs = ['data-value','data-id','value','aria-label'].map(a => norm(o.getAttribute(a) || ''));
-                return text === wanted || text.includes(wanted) || attrs.includes(wanted);
-              });
-              if (item) item.click();
-              else document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
-            }, 120);
-          } else if (best.tagName === 'SELECT') {
-            const wanted = String(value ?? '');
-            const option = [...best.options].find(o =>
-              String(o.value) === wanted || norm(o.textContent) === norm(wanted)
-            );
-            if (option && (best.value !== option.value || norm(best.options[best.selectedIndex]?.textContent) !== norm(value))) {
-              best.value = option.value;
-              best.dispatchEvent(new Event('input', {bubbles:true}));
-              best.dispatchEvent(new Event('change', {bubbles:true}));
+      b.isSettingFields = true;
+      try {
+        for (const [key, value] of Object.entries(vals)) {
+          const strVal = String(value ?? '').trim();
+          if (!strVal) continue;
+          const best = findField(key);
+          if (!best) continue;
+          try {
+            const qfield = best.closest ? best.closest('.q-field') : null;
+            const qnative = qfield ? qfield.querySelector('.q-field__native') : null;
+            if (qfield && qnative && qfield.classList.contains('q-select')) {
+              const wanted = norm(strVal);
+              const current = norm(qnative.value || qnative.innerText || '');
+              // منع إعادة فتح القائمة إذا تم تطبيق نفس القيمة سابقاً
+              if (current === wanted || b.appliedSelectValues[key] === wanted) continue;
+              b.appliedSelectValues[key] = wanted;
+
+              qfield.scrollIntoView({block:'center', inline:'nearest'});
+              (qfield.querySelector('.q-field__control') || qnative || qfield).click();
+              addTimer(setTimeout(() => {
+                const items = [...document.querySelectorAll('.q-menu .q-item, .q-menu [role="option"]')];
+                const item = items.find(o => {
+                  const text = norm(o.innerText || o.textContent || '');
+                  const attrs = ['data-value','data-id','value','aria-label'].map(a => norm(o.getAttribute(a) || ''));
+                  return text === wanted || text.includes(wanted) || attrs.includes(wanted);
+                });
+                if (item) item.click();
+                else document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
+              }, 120));
+            } else if (best.tagName === 'SELECT') {
+              const wanted = strVal;
+              const option = [...best.options].find(o =>
+                String(o.value) === wanted || norm(o.textContent) === norm(wanted)
+              );
+              if (option && (best.value !== option.value || norm(best.options[best.selectedIndex]?.textContent) !== norm(value))) {
+                best.value = option.value;
+                best.dispatchEvent(new Event('input', {bubbles:true}));
+                best.dispatchEvent(new Event('change', {bubbles:true}));
+              }
+            } else if (best.isContentEditable) {
+              if (norm(best.textContent) === norm(strVal)) continue;
+              best.textContent = strVal;
+              best.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data: strVal}));
+            } else {
+              const inputEl = (best.tagName === 'INPUT' || best.tagName === 'TEXTAREA')
+                ? best
+                : best.querySelector?.('input, textarea');
+              if (!inputEl) continue;
+              if (String(inputEl.value ?? '') === strVal) continue;
+              nativeSet(inputEl, strVal);
             }
-          } else if (best.isContentEditable) {
-            if (norm(best.textContent) === norm(String(value ?? ''))) continue;
-            best.textContent = String(value ?? '');
-            best.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data: String(value ?? '')}));
-          } else {
-            if (String(best.value ?? '') === String(value ?? '')) continue;
-            nativeSet(best, value ?? '');
-          }
-        } catch(e) {}
+          } catch(e) {}
+        }
+      } finally {
+        addTimer(setTimeout(() => {
+          b.isSettingFields = false;
+          scan();
+        }, 350));
       }
-      scan();
-      setTimeout(scan, 200);
-      setTimeout(scan, 500);
-      setTimeout(scan, 1000);
-      setTimeout(scan, 2000);
-      setTimeout(scan, 3500);
     };
 
-    window.__EMIS_APP_BRIDGE__.focusField = (key) => {
+    b.focusField = (key) => {
       const best = findField(key);
       if (!best) return false;
       try {
         best.scrollIntoView({block:'center', inline:'nearest'});
-        best.focus();
-        best.click();
+        const inputEl = (best.tagName === 'INPUT' || best.tagName === 'TEXTAREA')
+          ? best
+          : (best.querySelector?.('input, textarea') || best);
+        inputEl.focus?.();
+        inputEl.click?.();
         send('focus', {field: key});
         return true;
       } catch(e) { return false; }
     };
 
-    const clickText = (patterns) => {
-      const els = [...document.querySelectorAll('button,a,[role="button"],.q-btn,.q-item')];
-      for (const el of els) {
-        const t = norm(el.innerText || el.getAttribute('aria-label') || '');
-        if (patterns.some(p => p.test(t))) {
-          try { el.click(); return true; } catch(e) {}
+    const openTarget = () => {
+      if (b.opened) return true;
+      const currentPath = norm(location.pathname);
+
+      // دعم وضع الإضافة
+      if (b.mode === 'add' && currentPath.includes('/management/add')) {
+        if (document.querySelectorAll('.q-field, input, select').length > 0) {
+          b.opened = true;
+          send('status', {message: 'تم تحميل نموذج إضافة المعلم من EMIS'});
+          return true;
         }
       }
-      return false;
-    };
 
-    const openTarget = () => {
-      const b = window.__EMIS_APP_BRIDGE__;
-      if (b.opened) return true;
+      // دعم وضع التعديل
       const id = norm(b.recordId);
-      if (!id) return false;
-      const currentPath = norm(location.pathname);
-      if (currentPath.includes('/management/edit/') && currentPath.includes(id)) {
-        b.opened = true;
-        send('status', {message: 'تم تحميل نموذج تعديل المعلم من EMIS'});
-        return true;
+      if (id && currentPath.includes('/management/edit/') && currentPath.includes(id)) {
+        if (document.querySelectorAll('.q-field, input, select').length > 0) {
+          b.opened = true;
+          send('status', {message: 'تم تحميل نموذج تعديل المعلم من EMIS'});
+          return true;
+        }
       }
       return false;
     };
@@ -649,13 +699,13 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
     let scanTimer = null;
     const scheduleScan = (delay) => {
       if (scanTimer) clearTimeout(scanTimer);
-      scanTimer = setTimeout(() => { scanTimer = null; scan(); }, delay || 100);
+      scanTimer = addTimer(setTimeout(() => { scanTimer = null; scan(); }, delay || 120));
     };
 
-    document.addEventListener('input', scan, true);
-    document.addEventListener('change', scan, true);
-    document.addEventListener('blur', () => scheduleScan(80), true);
-    document.addEventListener('focusin', (e) => {
+    addListener(document, 'input', () => scheduleScan(120), true);
+    addListener(document, 'change', () => scheduleScan(120), true);
+    addListener(document, 'blur', () => scheduleScan(100), true);
+    addListener(document, 'focusin', (e) => {
       const key = fieldKey(e.target);
       if (key) send('focus', {field: key});
     }, true);
@@ -671,13 +721,13 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
       return containers.length ? containers : [document.body];
     };
 
-    const observers = [];
     const startObservers = () => {
-      observers.forEach(o => { try { o.disconnect(); } catch(e) {} });
-      observers.length = 0;
+      b.observers.forEach(o => { try { o.disconnect(); } catch(e) {} });
+      b.observers.length = 0;
       const containers = findFormContainers();
       containers.forEach(container => {
         const obs = new MutationObserver(mutations => {
+          if (b.isSettingFields) return;
           let relevant = false;
           for (const m of mutations) {
             if (m.type === 'childList') {
@@ -699,7 +749,7 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
             }
             if (relevant) break;
           }
-          if (relevant) scheduleScan(100);
+          if (relevant) scheduleScan(150);
         });
         obs.observe(container, {
           subtree: true,
@@ -707,41 +757,44 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
           attributes: true,
           attributeFilter: ['class', 'aria-expanded', 'aria-hidden', 'style', 'disabled', 'readonly', 'value']
         });
-        observers.push(obs);
+        b.observers.push(obs);
       });
     };
 
     const openAndScan = () => {
-      const b = window.__EMIS_APP_BRIDGE__;
+      const wasOpened = b.opened;
       const opened = openTarget();
-      if (opened && !b.opened) b.opened = true;
-      if (opened) startObservers();
+      if (opened && !wasOpened) {
+        startObservers();
+      }
       scan();
     };
 
     let tries = 0;
-    const bootstrapTimer = setInterval(() => {
+    const bootstrapTimer = addTimer(setInterval(() => {
       tries++;
       openAndScan();
-      if (window.__EMIS_APP_BRIDGE__.opened || tries > 30) {
+      if (b.opened || tries > 25) {
         clearInterval(bootstrapTimer);
-        setInterval(() => {
-          if (document.hidden) return;
+        if (!b.opened) startObservers();
+        addTimer(setInterval(() => {
+          if (document.hidden || b.isSettingFields) return;
           scan();
-        }, 2000);
+        }, 2500));
       }
-    }, 400);
+    }, 450));
 
     let lastHref = location.href;
-    setInterval(() => {
+    addTimer(setInterval(() => {
       if (location.href !== lastHref) {
         lastHref = location.href;
-        window.__EMIS_APP_BRIDGE__.opened = false;
-        window.__EMIS_APP_BRIDGE__.last = '';
-        window.__EMIS_APP_BRIDGE__.schemaLast = '';
+        b.opened = false;
+        b.last = '';
+        b.schemaLast = '';
+        b.appliedSelectValues = {};
         scheduleScan(500);
       }
-    }, 800);
+    }, 800));
 
     scan();
     send('status', {message: 'جسر المزامنة الذكي جاهز'});
@@ -777,13 +830,17 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
     }
   } catch(e) {}
 })();''';
-    try { await controller.runJavaScript(js); } catch (_) {}
+    try {
+      await controller.runJavaScript(js);
+    } catch (_) {}
   }
 
   Future<void> refreshSchema() async {
     if (!_ready) return;
     try {
-      await controller.runJavaScript('''(function(){try{if(window.__EMIS_APP_BRIDGE__ && window.__EMIS_APP_BRIDGE__.scanNow) window.__EMIS_APP_BRIDGE__.scanNow();}catch(e){}})();''');
+      await controller.runJavaScript(
+        '''(function(){try{if(window.__EMIS_APP_BRIDGE__ && window.__EMIS_APP_BRIDGE__.scanNow) window.__EMIS_APP_BRIDGE__.scanNow();}catch(e){}})();''',
+      );
     } catch (_) {}
   }
 
@@ -820,6 +877,12 @@ class EmisLiveSyncState extends State<EmisLiveSync> {
 
   @override
   void dispose() {
+    // تنظيف موارد الجافاسكريبت وإيقاف الصفحة عند إغلاق الشاشة
+    try {
+      controller.runJavaScript(
+        '''(function(){try{if(window.__EMIS_APP_BRIDGE__ && window.__EMIS_APP_BRIDGE__.cleanup) window.__EMIS_APP_BRIDGE__.cleanup();}catch(e){}})();''',
+      );
+    } catch (_) {}
     super.dispose();
   }
 

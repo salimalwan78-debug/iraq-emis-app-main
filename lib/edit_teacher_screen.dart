@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
@@ -31,7 +33,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   final GlobalKey<EmisLiveSyncState> _liveSyncKey = GlobalKey<EmisLiveSyncState>();
-  Timer? _liveTimer;
+  Timer? _debouncePushTimer;
+  DateTime _lastLocalEditTime = DateTime.fromMillisecondsSinceEpoch(0);
   String _liveStatus = 'المزامنة الحية مع EMIS قيد التشغيل';
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
@@ -226,7 +229,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'idType': 'نوع الهوية *',
     'issuingCountry': 'بلد الإصدار *',
     'idNumber': 'رقم الوثيقة / البطاقة الوطنية *',
-    'issuingDate': 'تاريخ الإصدار',
+    'issuingDate': 'تاريخ الإصدار *',
     'employeeIdNumber': 'الرقم الوظيفي',
     'familyNumber': 'الرقم العائلي',
     'nameOfDocument': 'نوع الوثيقة *',
@@ -243,8 +246,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     'positionType': 'العنوان الوظيفي *',
     'dateOfStartWorking': 'تاريخ أول تعيين للموظف *',
     'employmentStatus': 'الحالة الوظيفية *',
-    'employmentStatusReason': 'سبب الحالة الوظيفية',
-    'assignedEntityName': 'الجهة المنسب أو المكلف إليها',
+    'employmentStatusReason': 'سبب الحالة الوظيفية *',
+    'assignedEntityName': 'الجهة المنسب أو المكلف إليها *',
     'status': 'حالة السجل',
     'educationLevel': 'التحصيل الدراسي *',
     'universityName': 'إسم الكلية / المعهد',
@@ -274,7 +277,6 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   void initState() {
     super.initState();
     _initStaticOptions();
-    _liveTimer = Timer.periodic(const Duration(milliseconds: 700), (_) => _pushLive());
     _fetchTeacherData();
   }
 
@@ -324,11 +326,19 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     return result;
   }
 
-  void _pushLive() => _liveSyncKey.currentState?.pushValues(_liveValues());
+  void _schedulePushLive() {
+    _lastLocalEditTime = DateTime.now();
+    _debouncePushTimer?.cancel();
+    _debouncePushTimer = Timer(const Duration(milliseconds: 450), () {
+      if (mounted) {
+        _liveSyncKey.currentState?.pushValues(_liveValues());
+      }
+    });
+  }
 
   void _focusLive(String key) {
     _liveSyncKey.currentState?.focusField(key);
-    _liveSyncKey.currentState?.pushValues(_liveValues());
+    _schedulePushLive();
   }
 
   dynamic _liveCoerce(dynamic old, String value) {
@@ -340,6 +350,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 
   void _applyLiveSnapshot(Map<String, String> values) {
+    // تجنب الكتابة العكسية فوق نص يكتبه المستخدم حالياً
+    if (DateTime.now().difference(_lastLocalEditTime).inMilliseconds < 1200) {
+      return;
+    }
     final data = _teacherData;
     if (data == null) return;
     final identification = data['identification'] is Map
@@ -355,12 +369,26 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         final next = _liveCoerce(data[key], entry.value);
         if ('${data[key]}' != '$next') {
           data[key] = next;
+          if (_isDateField(key) && _dateControllers.containsKey(key)) {
+            final formatted = _formatDateValue('$next');
+            _dateControllers[key]!.value = TextEditingValue(
+              text: formatted,
+              selection: TextSelection.collapsed(offset: formatted.length),
+            );
+          }
           changed = true;
         }
       } else if (identification.containsKey(key)) {
         final next = _liveCoerce(identification[key], entry.value);
         if ('${identification[key]}' != '$next') {
           identification[key] = next;
+          if (_isDateField(key) && _dateControllers.containsKey(key)) {
+            final formatted = _formatDateValue('$next');
+            _dateControllers[key]!.value = TextEditingValue(
+              text: formatted,
+              selection: TextSelection.collapsed(offset: formatted.length),
+            );
+          }
           changed = true;
         }
       } else if (address.containsKey(key)) {
@@ -528,12 +556,14 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         });
       }
 
-      for (final key in _optionEndpoints.keys) {
-        await _loadOptions(key);
-      }
-      await _loadEmployeesOptions();
+      // جلب كافة القوائم المساندة وهيكل العناوين على التوازي لتسريع الأداء
+      await Future.wait([
+        ..._optionEndpoints.keys.map((key) => _loadOptions(key)),
+        _loadEmployeesOptions(),
+        _loadCountryStructure(),
+      ]);
+
       _ensureOptionIncludesCurrentValue(teacher);
-      await _loadCountryStructure();
 
       if (mounted) setState(() {});
     } catch (e) {
@@ -796,6 +826,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   String _label(String key) => _officialArabicNames[key] ?? key;
 
+  bool _isRequiredKey(String key) => _label(key).contains('*');
+
   bool _isDateField(String key) => <String>{
         'dateOfBirth',
         'issuingDate',
@@ -843,6 +875,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }) {
     final rawItems = _options[key] ?? const <Map<String, dynamic>>[];
     final value = owner[key];
+    final requiredField = _isRequiredKey(key);
 
     final uniqueItems = <Map<String, dynamic>>[];
     for (final item in rawItems) {
@@ -894,6 +927,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             ),
           );
         }).toList(),
+        validator: requiredField
+            ? (v) => (v == null || v.toString().trim().isEmpty)
+                ? 'هذا الحقل مطلوب'
+                : null
+            : null,
         onChanged: (newValue) {
           setState(() => owner[key] = newValue);
           _focusLive(key);
@@ -940,43 +978,53 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           key: key, owner: owner, isDark: isDark, textColor: textColor);
     }
 
+    final requiredField = _isRequiredKey(key);
+
     if (_isDateField(key)) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 15),
-        child: TextFormField(
-          key: ValueKey('date-$key'),
-          controller: _dateControllers.putIfAbsent(
-            key,
-            () => TextEditingController(
-                text: _formatDateValue(value?.toString() ?? '')),
-          ),
-          keyboardType: TextInputType.number,
-          inputFormatters: [
-            TextInputFormatter.withFunction((oldValue, newValue) {
-              final formatted = _formatTypedDate(newValue.text);
-              return TextEditingValue(
-                text: formatted,
-                selection: TextSelection.collapsed(offset: formatted.length),
-              );
-            }),
-          ],
-          onChanged: (v) {
-            owner[key] = v;
-            _focusLive(key);
-          },
-          onTap: () => _focusLive(key),
-          style: TextStyle(
-              color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
-          decoration: InputDecoration(
-            labelText: _label(key),
-            suffixIcon: IconButton(
-              tooltip: 'اختيار التاريخ',
-              onPressed: () => _pickDate(owner, key),
-              icon: const Icon(Icons.calendar_month),
+      final controller = _dateControllers.putIfAbsent(
+        key,
+        () => TextEditingController(
+            text: _formatDateValue(value?.toString() ?? '')),
+      );
+      return _FullWidthFieldWrapper(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 15),
+          child: TextFormField(
+            key: ValueKey('date-$key'),
+            controller: controller,
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              TextInputFormatter.withFunction((oldValue, newValue) {
+                final formatted = _formatTypedDate(newValue.text);
+                return TextEditingValue(
+                  text: formatted,
+                  selection: TextSelection.collapsed(offset: formatted.length),
+                );
+              }),
+            ],
+            validator: requiredField
+                ? (v) => (v == null || v.trim().isEmpty)
+                    ? 'هذا الحقل مطلوب'
+                    : null
+                : null,
+            onChanged: (v) {
+              owner[key] = v;
+              _schedulePushLive();
+            },
+            onTap: () => _focusLive(key),
+            style: TextStyle(
+                color: textColor, fontSize: 16, fontWeight: FontWeight.bold),
+            decoration: InputDecoration(
+              labelText: _label(key),
+              suffixIcon: IconButton(
+                tooltip: 'اختيار التاريخ',
+                onPressed: () => _pickDate(owner, key),
+                icon: const Icon(Icons.calendar_month),
+              ),
+              filled: true,
+              fillColor: isDark ? Colors.black12 : Colors.grey[50],
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            filled: true,
-            fillColor: isDark ? Colors.black12 : Colors.grey[50],
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
       );
@@ -987,9 +1035,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       initialValue: value,
       isDark: isDark,
       textColor: textColor,
+      requiredField: requiredField,
       onChanged: (v) {
         owner[key] = v;
-        _focusLive(key);
+        _schedulePushLive();
       },
       onTap: () => _focusLive(key),
     );
@@ -1030,27 +1079,15 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     final rows = <Widget>[];
     for (var i = 0; i < children.length;) {
       final current = children[i];
-      final isDate = current is Padding &&
-          current.child is TextFormField &&
-          (current.child as TextFormField).key is ValueKey &&
-          ((current.child as TextFormField).key as ValueKey)
-              .value
-              .toString()
-              .startsWith('date-');
-      if (isDate) {
+      final isFullWidth = current is _FullWidthFieldWrapper;
+      if (isFullWidth) {
         rows.add(SizedBox(width: double.infinity, child: current));
         i++;
       } else {
         final next =
             i + 1 < children.length ? children[i + 1] : const SizedBox();
-        final nextIsDate = next is Padding &&
-            next.child is TextFormField &&
-            (next.child as TextFormField).key is ValueKey &&
-            ((next.child as TextFormField).key as ValueKey)
-                .value
-                .toString()
-                .startsWith('date-');
-        if (nextIsDate) {
+        final nextIsFullWidth = next is _FullWidthFieldWrapper;
+        if (nextIsFullWidth) {
           rows.add(SizedBox(width: double.infinity, child: current));
           i++;
         } else {
@@ -1076,8 +1113,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     List<Map<String, dynamic>> items,
     bool isDark,
     Color textColor,
-    ValueChanged<String?> onChanged,
-  ) {
+    ValueChanged<String?> onChanged, {
+    bool required = false,
+  }) {
     final safe =
         items.any((x) => _optionValue(x)?.toString() == value) ? value : null;
     return Padding(
@@ -1103,6 +1141,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                   ),
                 ))
             .toList(),
+        validator: required
+            ? (v) => (v == null || v.trim().isEmpty) ? 'هذا الحقل مطلوب' : null
+            : null,
         onChanged: onChanged,
       ),
     );
@@ -1271,7 +1312,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'العنوان ومعلومات الاتصال',
         [
           _addressDropdown(
-            'الدولة',
+            'الدولة *',
             _addressCountryId,
             _addressCountries,
             isDark,
@@ -1293,9 +1334,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
               });
               _focusLive('countryStructureId');
             },
+            required: true,
           ),
           _addressDropdown(
-            'المحافظة',
+            'المحافظة *',
             _addressGovernorateId,
             _addressGovernorates,
             isDark,
@@ -1315,9 +1357,10 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
               });
               _focusLive('countryStructureId');
             },
+            required: true,
           ),
           _addressDropdown(
-            'القضاء',
+            'القضاء *',
             _addressDistrictId,
             _addressDistricts,
             isDark,
@@ -1330,15 +1373,18 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                 _addressDistrictId = v;
                 _addressTowns =
                     district.isEmpty ? [] : _childrenOf(district.first);
-                _addressTownId = null;
+                _addressTownId = _addressTowns.isNotEmpty
+                    ? _optionValue(_addressTowns.first)?.toString()
+                    : null;
                 address['countryStructureId'] =
-                    v == null ? null : int.tryParse(v);
+                    int.tryParse(_addressTownId ?? v ?? '');
               });
               _focusLive('countryStructureId');
             },
+            required: true,
           ),
           _addressDropdown(
-            'الناحية',
+            'الناحية *',
             _addressTownId,
             _addressTowns,
             isDark,
@@ -1351,6 +1397,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
               });
               _focusLive('countryStructureId');
             },
+            required: _addressTowns.isNotEmpty,
           ),
           field('town', address),
           field('area', address),
@@ -1376,6 +1423,56 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
     );
   }
 
+  static Uint8List _normalizeImageIsolate(Uint8List bytes) {
+    var source = img.decodeImage(bytes);
+    if (source == null) throw Exception('تعذر قراءة الصورة');
+    source = img.bakeOrientation(source);
+
+    const maxDimension = 512;
+    if (source.width > maxDimension || source.height > maxDimension) {
+      source = img.copyResize(
+        source,
+        width: source.width >= source.height ? maxDimension : null,
+        height: source.height > source.width ? maxDimension : null,
+        interpolation: img.Interpolation.linear,
+      );
+    }
+    return Uint8List.fromList(img.encodeJpg(source, quality: 90));
+  }
+
+  static Uint8List _applyMaskIsolate(Map<String, dynamic> args) {
+    final Uint8List normalizedBytes = args['bytes'] as Uint8List;
+    final List<double> confidences = args['confidences'] as List<double>;
+    final int maskWidth = args['maskWidth'] as int;
+    final int maskHeight = args['maskHeight'] as int;
+
+    final source = img.decodeImage(normalizedBytes);
+    if (source == null) throw Exception('تعذر قراءة الصورة المعالجة');
+
+    if (maskWidth != source.width || maskHeight != source.height) {
+      throw Exception('أبعاد القناع غير متطابقة');
+    }
+
+    final pixelCount = source.width * source.height;
+    if (confidences.length < pixelCount) {
+      throw Exception('بيانات القناع غير مكتملة');
+    }
+
+    final result =
+        img.Image(width: source.width, height: source.height, numChannels: 4);
+    for (var y = 0; y < source.height; y++) {
+      for (var x = 0; x < source.width; x++) {
+        final index = y * source.width + x;
+        final confidence = confidences[index].clamp(0.0, 1.0);
+        final alpha =
+            ((confidence - 0.35) / 0.40 * 255.0).round().clamp(0, 255);
+        final pixel = source.getPixel(x, y);
+        result.setPixelRgba(x, y, pixel.r, pixel.g, pixel.b, alpha);
+      }
+    }
+    return Uint8List.fromList(img.encodePng(result, level: 6));
+  }
+
   Future<File?> _removeBackgroundUsingSelfieSegmentation(File imageFile) async {
     File? normalizedFile;
     try {
@@ -1383,25 +1480,13 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
       final segmenter = _selfieSegmenter;
       if (segmenter == null) throw Exception('تعذر تهيئة أداة إزالة الخلفية');
 
-      final bytes = await imageFile.readAsBytes();
-      var source = img.decodeImage(bytes);
-      if (source == null) throw Exception('تعذر قراءة الصورة');
-      source = img.bakeOrientation(source);
-
-      const maxDimension = 512;
-      if (source.width > maxDimension || source.height > maxDimension) {
-        source = img.copyResize(
-          source,
-          width: source.width >= source.height ? maxDimension : null,
-          height: source.height > source.width ? maxDimension : null,
-          interpolation: img.Interpolation.linear,
-        );
-      }
+      final rawBytes = await imageFile.readAsBytes();
+      final normalizedBytes =
+          await Isolate.run(() => _normalizeImageIsolate(rawBytes));
 
       normalizedFile = File(
           '${imageFile.path}_seg_${DateTime.now().millisecondsSinceEpoch}.jpg');
-      await normalizedFile.writeAsBytes(img.encodeJpg(source, quality: 90),
-          flush: true);
+      await normalizedFile.writeAsBytes(normalizedBytes, flush: true);
 
       final mask = await segmenter.processImage(
         InputImage.fromFilePath(normalizedFile.path),
@@ -1412,31 +1497,21 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           mask.confidences.isEmpty) {
         throw Exception('لم يتم الحصول على قناع صالح للشخص');
       }
-      if (mask.width != source.width || mask.height != source.height) {
-        throw Exception('أبعاد القناع غير متطابقة');
-      }
 
-      final result =
-          img.Image(width: source.width, height: source.height, numChannels: 4);
-      final pixelCount = source.width * source.height;
-      if (mask.confidences.length < pixelCount) {
-        throw Exception('بيانات القناع غير مكتملة');
-      }
+      final confidencesCopy = List<double>.from(mask.confidences);
+      final maskW = mask.width;
+      final maskH = mask.height;
 
-      for (var y = 0; y < source.height; y++) {
-        for (var x = 0; x < source.width; x++) {
-          final index = y * source.width + x;
-          final confidence = mask.confidences[index].clamp(0.0, 1.0);
-          final alpha =
-              ((confidence - 0.35) / 0.40 * 255.0).round().clamp(0, 255);
-          final pixel = source.getPixel(x, y);
-          result.setPixelRgba(x, y, pixel.r, pixel.g, pixel.b, alpha);
-        }
-      }
+      final pngBytes = await Isolate.run(() => _applyMaskIsolate({
+            'bytes': normalizedBytes,
+            'confidences': confidencesCopy,
+            'maskWidth': maskW,
+            'maskHeight': maskH,
+          }));
 
       final output = File(
           '${imageFile.path}_nobg_${DateTime.now().millisecondsSinceEpoch}.png');
-      await output.writeAsBytes(img.encodePng(result, level: 6), flush: true);
+      await output.writeAsBytes(pngBytes, flush: true);
       return output;
     } finally {
       if (normalizedFile != null) {
@@ -1597,11 +1672,15 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   void _deleteCurrentPhoto() {
     setState(() {
-      _pickedImage = null;
-      if (_teacherData != null) _teacherData!['imageUrl'] = null;
+      if (_pickedImage != null) {
+        // إذا كان المستخدم قد اختار صورة جديدة للتو، نلغي الصورة الجديدة فقط ونستعيد الأصلية
+        _pickedImage = null;
+      } else if (_teacherData != null) {
+        _teacherData!['imageUrl'] = null;
+      }
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم حذف صورة المعلم')),
+      const SnackBar(content: Text('تم إزالة الصورة المحددة')),
     );
   }
 
@@ -1703,6 +1782,16 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   Future<void> _saveTeacherData() async {
     if (_teacherData == null) return;
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يرجى إكمال جميع الحقول المطلوبة المعلّمة بـ (*)'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isSaving = true);
 
     try {
@@ -1791,8 +1880,9 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'Nationality': text('nationality'),
         'CountryOfBirth': text('countryOfBirth'),
         'HomeTown': text('homeTown'),
-        'IdentificationId': 0,
+        'IdentificationId': old['identificationId'] ?? identification['id'] ?? 0,
         'Identification': <String, dynamic>{
+          if (identification['id'] != null) 'id': identification['id'],
           'IdNumber': (identification['idNumber'] ?? '').toString().trim(),
           'IssuingCountry':
               (identification['issuingCountry'] ?? 'العراق').toString().trim(),
@@ -1805,8 +1895,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           'issuer': _nullable(identification['issuer']?.toString()),
           'issuingDate': dateOnly(identification['issuingDate']),
         },
-        'FatherIdentificationId': null,
-        'FatherIdentification': null,
+        'FatherIdentificationId': old['fatherIdentificationId'],
+        'FatherIdentification': old['fatherIdentification'],
         'MotherTongue':
             text('motherTongue').isNotEmpty ? text('motherTongue') : 'العربية',
         'MaritalStatus': text('maritalStatus'),
@@ -1822,7 +1912,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
         'EmergencyContactPhoneNumber':
             _nullable(text('emergencyContactPhoneNumber')),
         'Address': <String, dynamic>{
-          'AddressType': 1,
+          if (oldAddress['id'] != null) 'id': oldAddress['id'],
+          'AddressType': oldAddress['addressType'] ?? 1,
           'Town': (oldAddress['town'] ?? '').toString().trim(),
           'Area': (oldAddress['area'] ?? '').toString().trim(),
           'Quarter': (oldAddress['quarter'] ?? '').toString().trim(),
@@ -1830,8 +1921,8 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           'ClosestLocation':
               (oldAddress['closestLocation'] ?? '').toString().trim(),
           'countryStructureId': oldAddress['countryStructureId'] ?? 1,
-          'Latitude': '0',
-          'Longitude': '0',
+          'Latitude': oldAddress['latitude']?.toString() ?? '0',
+          'Longitude': oldAddress['longitude']?.toString() ?? '0',
           'ApartmentNumber': oldAddress['apartmentNumber']?.toString() ?? '',
           'BuildingNumber': oldAddress['buildingNumber']?.toString() ?? '',
           'Address1': (oldAddress['address1'] ?? '').toString().trim(),
@@ -1841,7 +1932,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
           'MobilePhoneNumber':
               (oldAddress['mobilePhoneNumber'] ?? '').toString().trim(),
           'Email': (oldAddress['email'] ?? '').toString().trim(),
-          'Fax': '',
+          'Fax': oldAddress['fax']?.toString() ?? '',
           'Website': oldAddress['website']?.toString() ?? '',
         },
         'AgeExceptionReason': old['ageExceptionReason'],
@@ -1899,29 +1990,65 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
             : 1);
     final empStatus = (_teacherData?['employmentStatus'] ?? 'مستمر').toString();
     final isCurrentlyActive = empStatus.isEmpty || empStatus == 'مستمر';
-    final startWorking =
-        _cleanDate(_teacherData?['dateOfStartWorking']).isNotEmpty
+
+    final rawPositions =
+        old['employmentPositions'] ?? old['EmploymentPositions'];
+    final existingPositions = rawPositions is List
+        ? rawPositions
+            .whereType<Map>()
+            .map((x) => x.map((k, v) => MapEntry(k.toString(), v)))
+            .toList()
+        : <Map<String, dynamic>>[];
+
+    final originalInitiateDate = existingPositions.isNotEmpty
+        ? _cleanDate(existingPositions.first['initiateDate'] ??
+            existingPositions.first['InitiateDate'])
+        : '';
+
+    final startWorking = originalInitiateDate.isNotEmpty
+        ? originalInitiateDate
+        : (_cleanDate(_teacherData?['dateOfStartWorking']).isNotEmpty
             ? _cleanDate(_teacherData?['dateOfStartWorking'])
-            : DateTime.now().toIso8601String().split('T').first;
+            : DateTime.now().toIso8601String().split('T').first);
+
+    final rawStatuses = old['employmentStatuses'] ?? old['EmploymentStatuses'];
+    final existingStatuses = rawStatuses is List
+        ? rawStatuses
+            .whereType<Map>()
+            .map((x) => x.map((k, v) => MapEntry(k.toString(), v)))
+            .toList()
+        : <Map<String, dynamic>>[];
+
+    final firstStatus = existingStatuses.isNotEmpty
+        ? Map<String, dynamic>.from(existingStatuses.first)
+        : <String, dynamic>{};
+
+    firstStatus['StatusType'] = empStatus;
+    firstStatus['DisEngagementDate'] = firstStatus['disEngagementDate'] ?? firstStatus['DisEngagementDate'];
+    firstStatus['MinistryOfficialDocumentNumber'] =
+        firstStatus['ministryOfficialDocumentNumber'] ??
+            firstStatus['MinistryOfficialDocumentNumber'];
+    firstStatus['Reason'] =
+        _nullable(_teacherData?['employmentStatusReason']?.toString());
+    firstStatus['AssignedEntityName'] =
+        _nullable(_teacherData?['assignedEntityName']?.toString());
+    firstStatus['CurrentBelongToEntityId'] = schoolIdInt;
+
+    final firstPosition = existingPositions.isNotEmpty
+        ? Map<String, dynamic>.from(existingPositions.first)
+        : <String, dynamic>{};
+    firstPosition['Position'] = (_teacherData?['currentPosition'] ?? '').toString();
+    firstPosition['InitiateDate'] = startWorking;
 
     return <String, dynamic>{
+      if (old['id'] != null) 'id': old['id'],
       'EmploymentStatuses': <Map<String, dynamic>>[
-        <String, dynamic>{
-          'StatusType': empStatus,
-          'DisEngagementDate': null,
-          'MinistryOfficialDocumentNumber': null,
-          'Reason':
-              _nullable(_teacherData?['employmentStatusReason']?.toString()),
-          'AssignedEntityName':
-              _nullable(_teacherData?['assignedEntityName']?.toString()),
-          'CurrentBelongToEntityId': schoolIdInt,
-        }
+        firstStatus,
+        if (existingStatuses.length > 1) ...existingStatuses.sublist(1),
       ],
       'EmploymentPositions': <Map<String, dynamic>>[
-        <String, dynamic>{
-          'Position': (_teacherData?['currentPosition'] ?? '').toString(),
-          'InitiateDate': startWorking,
-        }
+        firstPosition,
+        if (existingPositions.length > 1) ...existingPositions.sublist(1),
       ],
       'IsCurrentlyActive': isCurrentlyActive,
       'CurrentBelongToEntityId': schoolIdInt,
@@ -1940,7 +2067,7 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
 
   @override
   void dispose() {
-    _liveTimer?.cancel();
+    _debouncePushTimer?.cancel();
     final segmenter = _selfieSegmenter;
     _selfieSegmenter = null;
     if (segmenter != null) segmenter.close();
@@ -2081,8 +2208,11 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
                                     onPressed: _deleteCurrentPhoto,
                                     icon: const Icon(Icons.delete_forever,
                                         color: Colors.red),
-                                    label: const Text('حذف الصورة الحالية',
-                                        style: TextStyle(
+                                    label: Text(
+                                        _pickedImage != null
+                                            ? 'التراجع عن الصورة الجديدة'
+                                            : 'حذف الصورة الحالية',
+                                        style: const TextStyle(
                                             color: Colors.red,
                                             fontWeight: FontWeight.bold)),
                                   ),
@@ -2143,6 +2273,14 @@ class _EditTeacherScreenState extends State<EditTeacherScreen> {
   }
 }
 
+class _FullWidthFieldWrapper extends StatelessWidget {
+  final Widget child;
+  const _FullWidthFieldWrapper({required this.child});
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
 class PlainTextField extends StatefulWidget {
   final String label;
   final dynamic initialValue;
@@ -2150,6 +2288,7 @@ class PlainTextField extends StatefulWidget {
   final Color textColor;
   final Function(String) onChanged;
   final bool readOnly;
+  final bool requiredField;
   final VoidCallback? onTap;
   final VoidCallback? onMic;
   final bool micActive;
@@ -2162,6 +2301,7 @@ class PlainTextField extends StatefulWidget {
     required this.textColor,
     required this.onChanged,
     this.readOnly = false,
+    this.requiredField = false,
     this.onTap,
     this.onMic,
     this.micActive = false,
@@ -2208,7 +2348,9 @@ class _PlainTextFieldState extends State<PlainTextField> {
         readOnly: widget.readOnly,
         onChanged: widget.onChanged,
         onTap: widget.onTap,
-        validator: null,
+        validator: widget.requiredField
+            ? (v) => (v == null || v.trim().isEmpty) ? 'هذا الحقل مطلوب' : null
+            : null,
         style: TextStyle(
             fontWeight: FontWeight.bold, color: widget.textColor, fontSize: 16),
         decoration: InputDecoration(

@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AppCore {
   static ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
   static final AudioPlayer audioPlayer = AudioPlayer();
-  static bool isAudioMuted = true; // اجعل القيمة الافتراضية صحيحة (موقف لحين قراءة التفضيلات)
+  static bool isAudioMuted = true; // القيمة الافتراضية صامت لحين قراءة التفضيلات
   static double currentVolume = 0.5;
   static bool voiceInputEnabled = true;
   // التشغيل التلقائي للتنقل الصوتي بين الحقول في نموذج إضافة الطالب.
@@ -23,14 +23,21 @@ class AppCore {
   static int voiceFinalizationTimeoutMs = 2400;
   static double voiceArrowOpacity = 0.25;
 
+  // متغيرات داخلية لمنع تضارب تشغيل الصوت وإدارة دورة حياة التطبيق
+  static bool _isPlayingRequest = false;
+  static bool _lifecycleObserverAdded = false;
+  static final _AppLifecycleObserver _lifecycleObserver = _AppLifecycleObserver();
+
   static Future<void> initPreferences() async {
+    _ensureLifecycleObserver();
+
     final prefs = await SharedPreferences.getInstance();
     bool isDark = prefs.getBool('isDark') ?? false;
     themeNotifier.value = isDark ? ThemeMode.dark : ThemeMode.light;
 
     // قراءة الحالة المحفوظة بدقة (افتراضياً صامت إلى أن يفعله المستخدم)
     isAudioMuted = prefs.getBool('isAudioMuted') ?? true;
-    currentVolume = prefs.getDouble('currentVolume') ?? 0.5;
+    currentVolume = (prefs.getDouble('currentVolume') ?? 0.5).clamp(0.0, 1.0);
     voiceInputEnabled = prefs.getBool('voiceInputEnabled') ?? true;
     voiceSequentialAutoStart = prefs.getBool('voiceSequentialAutoStart') ?? false;
     voiceRecognitionEngine = prefs.getString('voiceRecognitionEngine') ?? 'google';
@@ -40,8 +47,9 @@ class AppCore {
     voiceMinimumSpeechMs = prefs.getInt('voiceMinimumSpeechMs') ?? 2500;
     voiceRestartDelayMs = prefs.getInt('voiceRestartDelayMs') ?? 4100;
     voiceFinalizationTimeoutMs = prefs.getInt('voiceFinalizationTimeoutMs') ?? 2400;
-    voiceArrowOpacity = prefs.getDouble('voiceArrowOpacity') ?? 0.25;
-    voiceArrowOpacity = voiceArrowOpacity.clamp(0.20, 0.90);
+    voiceArrowOpacity = (prefs.getDouble('voiceArrowOpacity') ?? 0.25).clamp(0.20, 0.90);
+
+    await audioPlayer.setReleaseMode(ReleaseMode.loop);
     await audioPlayer.setVolume(currentVolume);
 
     if (!isAudioMuted) {
@@ -51,40 +59,73 @@ class AppCore {
     }
   }
 
+  static void _ensureLifecycleObserver() {
+    if (_lifecycleObserverAdded) return;
+    try {
+      WidgetsBinding.instance.addObserver(_lifecycleObserver);
+      _lifecycleObserverAdded = true;
+    } catch (_) {}
+  }
+
   static Future<void> saveThemePreference(bool isDark) async {
+    // تحديث الواجهة فوراً دون انتظار الكتابة في الذاكرة لمنع أي تأخير بصري
+    themeNotifier.value = isDark ? ThemeMode.dark : ThemeMode.light;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('isDark', isDark);
-    themeNotifier.value = isDark ? ThemeMode.dark : ThemeMode.light;
   }
 
   static Future<void> playRelaxMusic() async {
-    if (isAudioMuted) return;
-    audioPlayer.setReleaseMode(ReleaseMode.loop);
-    if (audioPlayer.state != PlayerState.playing) {
-      await audioPlayer.play(AssetSource('relax.mp3'));
+    if (isAudioMuted || _isPlayingRequest) return;
+    _isPlayingRequest = true;
+    try {
+      await audioPlayer.setReleaseMode(ReleaseMode.loop);
       await audioPlayer.setVolume(currentVolume);
+      if (audioPlayer.state != PlayerState.playing) {
+        await audioPlayer.play(AssetSource('relax.mp3'));
+      }
+    } catch (e) {
+      debugPrint('خطأ أثناء تشغيل الصوت: $e');
+    } finally {
+      _isPlayingRequest = false;
     }
+  }
+
+  static Future<void> pauseMusicForBackground() async {
+    try {
+      if (audioPlayer.state == PlayerState.playing) {
+        await audioPlayer.pause();
+      }
+    } catch (_) {}
+  }
+
+  static Future<void> resumeMusicFromBackground() async {
+    if (isAudioMuted) return;
+    try {
+      if (audioPlayer.state == PlayerState.paused) {
+        await audioPlayer.resume();
+      } else if (audioPlayer.state != PlayerState.playing) {
+        await playRelaxMusic();
+      }
+    } catch (_) {}
   }
 
   static Future<void> toggleAudio() async {
     isAudioMuted = !isAudioMuted;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isAudioMuted', isAudioMuted);
-
     if (isAudioMuted) {
       await audioPlayer.stop();
     } else {
       await playRelaxMusic();
     }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isAudioMuted', isAudioMuted);
   }
 
   static Future<void> setVolume(double vol) async {
-    currentVolume = vol;
+    currentVolume = vol.clamp(0.0, 1.0);
+    await audioPlayer.setVolume(currentVolume);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('currentVolume', vol);
-    await audioPlayer.setVolume(vol);
+    await prefs.setDouble('currentVolume', currentVolume);
   }
-
 
   static Future<void> setVoiceInputEnabled(bool enabled) async {
     voiceInputEnabled = enabled;
@@ -155,15 +196,34 @@ class AppCore {
     voiceFinalizationTimeoutMs = 2400;
     voiceArrowOpacity = 0.25;
     for (final key in [
-      'voiceAutoRestart', 'voicePossibleSilenceMs', 'voiceCompleteSilenceMs',
-      'voiceMinimumSpeechMs', 'voiceRestartDelayMs', 'voiceFinalizationTimeoutMs',
+      'voiceAutoRestart',
+      'voicePossibleSilenceMs',
+      'voiceCompleteSilenceMs',
+      'voiceMinimumSpeechMs',
+      'voiceRestartDelayMs',
+      'voiceFinalizationTimeoutMs',
       'voiceArrowOpacity',
     ]) {
       await prefs.remove(key);
     }
   }
-  static void toggleTheme() {
+
+  static Future<void> toggleTheme() async {
     bool isDark = themeNotifier.value == ThemeMode.dark;
-    saveThemePreference(!isDark);
+    await saveThemePreference(!isDark);
+  }
+}
+
+class _AppLifecycleObserver extends WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      AppCore.pauseMusicForBackground();
+    } else if (state == AppLifecycleState.resumed) {
+      AppCore.resumeMusicFromBackground();
+    }
   }
 }

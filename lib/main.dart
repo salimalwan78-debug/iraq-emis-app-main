@@ -7,8 +7,12 @@ import 'app_core.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // تهيئة وحفظ قراءة الإعدادات المحلية (الوضع الداكن والصوت) قبل بدء التطبيق
-  await AppCore.initPreferences();
+  // تهيئة وحفظ قراءة الإعدادات المحلية مع مهلة أمان لمنع تعليق التطبيق على الشاشة البيضاء
+  try {
+    await AppCore.initPreferences().timeout(const Duration(seconds: 2));
+  } catch (e) {
+    debugPrint('InitPreferences timeout or error: $e');
+  }
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const MyApp());
